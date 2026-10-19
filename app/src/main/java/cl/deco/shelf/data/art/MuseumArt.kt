@@ -17,6 +17,8 @@ import kotlin.random.Random
 
 /**
  * Obras de dominio público (CC0) para el modo arte.
+ * Colección curada local: si `getExternalFilesDir("art")` trae index.json con obras (se carga por adb push,
+ * ya recortadas a 16:9), se usa solo esa y no se descarga nada. Si está vacía, modo online:
  * Primaria: Art Institute of Chicago (api.artic.edu, IIIF). Respaldo: The Met Collection API (v1.1 search).
  * Bloqueante: llamar desde executor.
  */
@@ -50,7 +52,59 @@ class MuseumArt(private val context: Context) : ArtSource {
 
     private enum class Source { AIC, MET }
 
-    override fun next(): Artwork? = synchronized(indexLock) {
+    /** Obra de la colección curada local (index.json generado en el Mac). [home] false = excluida del fondo. */
+    private data class LocalEntry(val art: Artwork, val home: Boolean)
+
+    private val localDir: File? by lazy { context.getExternalFilesDir("art") }
+    private var localCache: List<LocalEntry> = emptyList()
+    private var localStamp = -1L
+
+    /** Lee index.json local (cacheado según lastModified). Lista vacía si no hay colección. */
+    private fun loadLocal(): List<LocalEntry> = synchronized(indexLock) {
+        val dir = localDir ?: return emptyList()
+        val f = File(dir, "index.json")
+        val stamp = if (f.exists()) f.lastModified() else 0L
+        if (stamp == localStamp) return localCache
+        localStamp = stamp
+        localCache = try {
+            if (stamp == 0L) emptyList() else {
+                val arr = JSONArray(f.readText())
+                val list = (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.getJSONObject(i)
+                    val img = File(dir, o.getString("file"))
+                    if (!img.exists()) return@mapNotNull null
+                    LocalEntry(
+                        Artwork(
+                            id = "local-" + o.getString("id"),
+                            title = o.getString("title"),
+                            artist = o.optString("artist"),
+                            year = o.optString("year").takeIf { it.isNotBlank() },
+                            museum = o.optString("museum"),
+                            file = img,
+                        ),
+                        home = o.optBoolean("home", true),
+                    )
+                }
+                list.shuffled(Random(LOCAL_SEED)) // orden fijo pero sin agrupar por artista
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "index.json local inválido: ${e.message}")
+            emptyList()
+        }
+        localCache
+    }
+
+    private fun nextLocal(forHome: Boolean): Artwork? {
+        val list = loadLocal().filter { !forHome || it.home }
+        if (list.isEmpty()) return null
+        val key = if (forHome) KEY_LAST_LOCAL_HOME else KEY_LAST_LOCAL_ALL
+        val idx = (prefs.getInt(key, -1) + 1).mod(list.size)
+        prefs.edit().putInt(key, idx).apply()
+        return list[idx].art
+    }
+
+    override fun next(forHome: Boolean): Artwork? = synchronized(indexLock) {
+        if (loadLocal().isNotEmpty()) return nextLocal(forHome)
         val entries = loadIndex()
         if (entries.isEmpty()) return null
         val last = prefs.getInt(KEY_LAST, -1)
@@ -62,6 +116,7 @@ class MuseumArt(private val context: Context) : ArtSource {
 
     override fun prefetch(max: Int) {
         if (max <= 0) return
+        if (loadLocal().isNotEmpty()) return // colección curada local: no se descarga nada
         val have = synchronized(indexLock) { loadIndex().map { it.id }.toMutableSet() }
         var added = 0
         val artists = CURATED.shuffled(Random(System.nanoTime()))
@@ -304,6 +359,9 @@ class MuseumArt(private val context: Context) : ArtSource {
         const val TAG = "MuseumArt"
         const val UA = "Shelf-TV-Launcher/0.1"
         const val KEY_LAST = "last_index"
+        const val KEY_LAST_LOCAL_HOME = "last_local_home"
+        const val KEY_LAST_LOCAL_ALL = "last_local_all"
+        const val LOCAL_SEED = 585
         const val TIMEOUT_MS = 8_000
         const val IMG_TIMEOUT_MS = 15_000
         const val MIN_RATIO = 1.2f

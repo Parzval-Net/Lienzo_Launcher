@@ -115,7 +115,7 @@ class ArtDreamService : DreamService() {
         val src = art ?: return
         try {
             io.execute {
-                val artwork = runCatching { src.next() }.getOrNull()
+                val artwork = runCatching { src.next(forHome = false) }.getOrNull()
                 val bmp = artwork?.let { runCatching { compose(it) }.onFailure { e -> Log.w(TAG, "decode: $e") }.getOrNull() }
                 main.post { if (attached) show(artwork, bmp) }
             }
