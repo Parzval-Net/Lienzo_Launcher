@@ -62,6 +62,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     private lateinit var blurView: ImageView
     private lateinit var dimView: View
     private lateinit var gridFade: View
+    private lateinit var gridName: android.widget.TextView
     private lateinit var glowL: View
     private lateinit var glowR: View
     private lateinit var topBar: TopBar
@@ -114,16 +115,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         store = FavoritesStore(this)
         screenH = resources.displayMetrics.heightPixels
 
-        val sw = resources.displayMetrics.widthPixels
-        val marginX = dp(48)
-        val cellW = (sw - 2 * marginX) / 5
-        val gPadX = dp(10)
-        val gridTileW = cellW - 2 * gPadX
-        val gridTileH = gridTileW * 3 / 5
         val radius = dpf(12f)
-
         val dockGeo = CellGeo(dp(110), dp(66), dp(5), dp(10), dp(10), false)
-        val gridGeo = CellGeo(gridTileW, gridTileH, gPadX, dp(8), dp(20), true)
+        val gridGeo = dockGeo
+        val gridTileW = dockGeo.tileW
+        val gridTileH = dockGeo.tileH
         loader = ImageLoader(this, gridTileW, gridTileH, radius)
         adapter = AppAdapter(loader, dockGeo, gridGeo, radius, this)
 
@@ -162,19 +158,25 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
 
         // Grilla de todas las apps: oculta abajo, sube con DPAD_DOWN
         gridRv = ShelfRecycler(this).apply {
-            layoutManager = GridLayoutManager(this@MainActivity, 5)
+            layoutManager = GridLayoutManager(this@MainActivity, 7)
             adapter = this@MainActivity.adapter.grid
             setHasFixedSize(true)
             itemAnimator = null
             clipToPadding = false
             clipChildren = false
-            setPadding(marginX, dp(12), marginX, dp(24))
+            setPadding(dp(8), dp(70), dp(8), dp(24))
             isFocusable = false
             overScrollMode = View.OVER_SCROLL_NEVER
             visibility = View.INVISIBLE
             translationY = screenH.toFloat()
         }
-        content.addView(gridRv, FrameLayout.LayoutParams(-1, screenH - dp(84)).apply { topMargin = dp(84) })
+        content.addView(gridRv, FrameLayout.LayoutParams(dp(7 * 110 + 7 * 10 + 16), screenH - dp(84), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(84) })
+        gridName = tv(this, 34f, Ui.TEXT, "sans-serif-medium").apply {
+            maxLines = 1
+            setShadowLayer(5f, 0f, 1f, 0xB3000000.toInt())
+            visibility = View.INVISIBLE
+        }
+        content.addView(gridName, FrameLayout.LayoutParams(-2, -2))
         gridFade = View(this).apply {
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xAA000000.toInt(), 0x00000000))
             alpha = 0f
@@ -519,6 +521,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         set(blurView, if (grid) 1f else 0f)
         set(dimView, if (grid) 0.55f else 0f)
         set(gridFade, if (grid) 1f else 0f)
+        if (!grid) gridName.visibility = View.INVISIBLE
         if (grid) set(gridRv, 1f, 0f) else set(gridRv, 1f, screenH.toFloat(), View.INVISIBLE)
         when {
             grid -> set(dockBox, 0f, dpf(30f), View.INVISIBLE)
@@ -564,7 +567,20 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     }
 
     override fun onFocus(e: AppEntry, slot: Int) {
-        if (!adapter.isFav(slot)) return
+        if (!adapter.isFav(slot)) {
+            gridName.text = e.label
+            main.post {
+                val v = (currentFocus as? FocusCell)?.content ?: return@post
+                val loc = IntArray(2)
+                v.getLocationOnScreen(loc)
+                val w = gridName.paint.measureText(e.label)
+                val x = loc[0].coerceIn(dp(48), (resources.displayMetrics.widthPixels - w - dp(48)).toInt())
+                (gridName.layoutParams as FrameLayout.LayoutParams).apply { leftMargin = x; topMargin = (loc[1] - dp(46)).coerceAtLeast(dp(40)) }
+                gridName.requestLayout()
+                gridName.visibility = View.VISIBLE
+            }
+            return
+        }
         lastDockSlot = slot
         val pkg = e.component.packageName
         if (pkg != shelfPkg) { shelfView.clear(); shelfPkg = null }
@@ -736,7 +752,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
 
     private fun moveStep(dx: Int, dy: Int) {
         val from = focusedSlot() ?: return
-        val to = if (adapter.isFav(from)) from + dx else from + dx + dy * 5
+        val to = if (adapter.isFav(from)) from + dx else from + dx + dy * 7
         if (adapter.move(from, to)) focusAt(to)
     }
 
@@ -810,7 +826,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
                 openGrid()
                 return true
             }
-            if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && slot != null && slot - AppAdapter.GRID < 5 && adapter.favCount > 0) {
+            if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && slot != null && slot - AppAdapter.GRID < 7 && adapter.favCount > 0) {
                 closeGrid()
                 return true
             }
