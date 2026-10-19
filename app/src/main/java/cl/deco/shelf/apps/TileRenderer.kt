@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.util.Log
@@ -23,20 +24,19 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Normaliza el banner o ícono ACTUAL de cada app a un tile 5:3 homogéneo (w x h px, esquinas redondeadas ya aplicadas).
+ * Normaliza el banner o ícono ACTUAL de cada app a un tile 16:9 homogéneo (w x h px, esquinas redondeadas ya aplicadas).
  * Siempre parte del arte instalado, así una actualización de la app trae su arte nuevo. Pipeline:
- * - Banner con borde uniforme (moda del perímetro en 32x18 o borde transparente): recorta márgenes (alpha y color de
- *   borde con tolerancia), recentra con 8% de padding y rellena con el color de borde.
- * - Banner a sangre (borde no uniforme): cubre el tile (crop centrado) si el aspecto es parecido, si no contiene.
+ * - Banner opaco 16:9: escala exacta al tile desde su mayor resolución, sin trim, relleno ni crop (idéntico al oficial).
+ * - Banner con transparencia: logo recortado por alpha, centrado con 8% de padding, sobre su color promedio oscurecido.
  * - Solo ícono adaptive: foreground al 60% del alto sobre degradado diagonal de su background. Legacy: 50% con sombra.
  * - Overrides artesanales por paquete (IconOverrides) solo para apps sin arte propio. Nunca para marcas.
- * Acabado: brillo especular arriba (blanco 0 a 12%) y borde interior de 1 px blanco al 8%.
+ * Acabado: esquinas redondeadas y borde interior de 1 px blanco al 6% (el brillo especular solo en el tile enfocado).
  * Cache en disco cacheDir/tiles/{pkg}_{versionCode}_{hash}.png: la clave incluye versionCode, una actualización
  * con Shelf cerrado se detecta sola al arrancar. Bloqueante: llamar fuera del main thread.
  */
 class TileRenderer(private val context: Context, private val w: Int, private val h: Int, private val radius: Float) {
 
-    enum class Kind { BANNER, ADAPTIVE, LEGACY, OVERRIDE }
+    enum class Kind { BANNER, ADAPTIVE, LEGACY, OVERRIDE, LOGO }
 
     private val pm = context.packageManager
     private val dir = File(context.cacheDir, "tiles")
@@ -44,7 +44,14 @@ class TileRenderer(private val context: Context, private val w: Int, private val
     /** Último tipo usado por clave de app (solo para diagnóstico y reporte). */
     val kinds = java.util.concurrent.ConcurrentHashMap<String, Kind>()
 
+    private var purged = false
+
     fun tile(entry: AppEntry, original: Boolean): Bitmap? {
+        if (!purged) {
+            purged = true
+            // Formato de cache nuevo: borra los tiles de revisiones anteriores
+            dir.listFiles()?.filter { !it.name.contains("_r$RENDER_REV") }?.forEach { it.delete() }
+        }
         val f = cacheFile(entry, original)
         if (f != null && f.exists()) {
             BitmapFactory.decodeFile(f.path)?.let { return it }
@@ -70,7 +77,7 @@ class TileRenderer(private val context: Context, private val w: Int, private val
         val pkg = entry.component.packageName
         val ver = try { pm.getPackageInfo(pkg, 0).longVersionCode } catch (_: PackageManager.NameNotFoundException) { return null }
         val hash = Integer.toHexString(entry.component.className.hashCode())
-        return File(dir, "${pkg}_${ver}_$hash${if (original) "_o" else ""}.png")
+        return File(dir, "${pkg}_${ver}_${hash}_r$RENDER_REV${if (original) "_o" else ""}.png")
     }
 
     private fun render(entry: AppEntry, original: Boolean): Bitmap? {
@@ -78,7 +85,10 @@ class TileRenderer(private val context: Context, private val w: Int, private val
         val c = Canvas(flat)
         val kind: Kind
         val override = IconOverrides.forComponent(entry.component)?.let { context.getDrawable(it) }
-        if (override != null) {
+        val logo = IconOverrides.officialLogo(entry.component.packageName)
+        if (logo != null && !original && drawOfficialLogo(c, entry.component.packageName, logo)) {
+            kind = Kind.LOGO
+        } else if (override != null) {
             override.setBounds(0, 0, w, h); override.draw(c)
             kind = Kind.OVERRIDE
         } else {
@@ -99,45 +109,99 @@ class TileRenderer(private val context: Context, private val w: Int, private val
         return finish(flat, shine = !original)
     }
 
+    // ---- Logo oficial resuelto en runtime desde la app instalada ----
+
+    /**
+     * Fondo con degradado diagonal del color de marca de la app (18% más oscuro al final) y su logo vectorial oficial
+     * centrado al 62% del ancho, dibujado directo a la resolución final. Ambos recursos se buscan por nombre en la app
+     * instalada: sobrevive a las actualizaciones y no redibuja la marca. Si algo falta devuelve false (cae al banner).
+     */
+    private fun drawOfficialLogo(c: Canvas, pkg: String, spec: IconOverrides.OfficialLogo): Boolean = try {
+        val pctx = context.createPackageContext(pkg, 0)
+        val res = pctx.resources
+        val did = res.getIdentifier(spec.drawable, "drawable", pkg)
+        val d = if (did != 0) res.getDrawable(did, pctx.theme) else null
+        if (d == null) false else {
+            val cid = res.getIdentifier(spec.color, "color", pkg)
+            val base = if (cid != 0) res.getColor(cid, pctx.theme) or 0xFF000000.toInt() else spec.fallback
+            c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply {
+                shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), base, mix(base, Color.BLACK, 0.18f), Shader.TileMode.CLAMP)
+            })
+            val iw = d.intrinsicWidth.takeIf { it > 0 } ?: 148
+            val ih = d.intrinsicHeight.takeIf { it > 0 } ?: 64
+            val dw = (w * 0.62f).toInt()
+            val dh = (dw * ih / iw.toFloat()).toInt()
+            val l = (w - dw) / 2; val t = (h - dh) / 2
+            d.setBounds(l, t, l + dw, t + dh); d.draw(c)
+            true
+        }
+    } catch (e: Throwable) { Log.w(TAG, "logo oficial $pkg: $e"); false }
+
     // ---- Banner ----
 
+    /**
+     * Tiles 16:9 (formato nativo de los banners de Android TV). Banner opaco (< 2% de píxeles con alpha < 250) y de
+     * aspecto cercano a 16:9: se dibuja completo a escala exacta, sin crop, sin relleno y sin padding, desde su mayor
+     * resolución (nunca escala hacia arriba para luego bajar). Banner con transparencia o de otro aspecto: logo
+     * recortado por alpha, centrado con 8% de padding sobre el color promedio de sus píxeles opacos oscurecido 35%.
+     */
     private fun drawBanner(c: Canvas, banner: Drawable) {
+        val bmp = (banner as? BitmapDrawable)?.bitmap
+        val iw = bmp?.width ?: banner.intrinsicWidth
+        val ih = bmp?.height ?: banner.intrinsicHeight
+        val ar = if (iw > 0 && ih > 0) iw / ih.toFloat() else 16f / 9f
+        val opaque = if (bmp != null) !bmp.hasAlpha() || opaqueShare(bmp) >= 0.98f else opaqueShare(rasterize(banner, 128, 72)) >= 0.98f
+        if (opaque && ar in 1.6f..1.95f) exactBanner(c, banner, bmp) else logoOnColor(c, banner)
+    }
+
+    private fun exactBanner(c: Canvas, banner: Drawable, bmp: Bitmap?) {
+        if (bmp != null) {
+            // Origen mucho mayor que el tile: reducir a la mitad antes para no aliasar
+            var src: Bitmap = bmp; var owned = false
+            while (w / src.width.toFloat() < 0.5f) {
+                val half = Bitmap.createScaledBitmap(src, max(1, src.width / 2), max(1, src.height / 2), true)
+                if (owned) src.recycle()
+                src = half; owned = true
+            }
+            c.drawBitmap(src, null, RectF(0f, 0f, w.toFloat(), h.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
+            if (owned) src.recycle()
+        } else {
+            // Vector u otro drawable: directo a la resolución final
+            banner.setBounds(0, 0, w, h); banner.draw(c)
+        }
+    }
+
+    private fun logoOnColor(c: Canvas, banner: Drawable) {
         val src = toBitmap(banner)
         val px = IntArray(EW * EH)
         val sm = Bitmap.createScaledBitmap(src, EW, EH, true)
         sm.getPixels(px, 0, EW, 0, 0, EW, EH)
         if (sm !== src) sm.recycle()
-        val edge = edgeColor(px)
-        val uniform = edge.transparent || edge.share >= UNIFORM_SHARE
-        if (uniform && !edge.transparent) {
-            c.drawColor(edge.color)
-            val box = contentBox(src, edge.color) ?: Rect(0, 0, src.width, src.height)
-            val cw = box.width(); val ch = box.height()
-            val s = min(w * (1f - 2 * PAD) / cw, h * (1f - 2 * PAD) / ch).coerceAtMost(MAX_UP)
-            val dw = cw * s; val dh = ch * s
-            val l = (w - dw) / 2f; val t = (h - dh) / 2f
-            c.drawBitmap(src, box, RectF(l, t, l + dw, t + dh), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
-        } else if (edge.transparent) {
-            // Logo sobre transparente: degradado del color dominante y logo recortado al 8% de padding
-            val base = dominant(px)
-            gradient(c, base)
-            val box = contentBox(src, null) ?: Rect(0, 0, src.width, src.height)
-            val cw = box.width(); val ch = box.height()
-            val s = min(w * (1f - 2 * PAD) / cw, h * (1f - 2 * PAD) / ch).coerceAtMost(MAX_UP)
-            val dw = cw * s; val dh = ch * s
-            val l = (w - dw) / 2f; val t = (h - dh) / 2f
-            c.drawBitmap(src, box, RectF(l, t, l + dw, t + dh), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
-        } else {
-            // Arte a sangre: cover si el aspecto es cercano a 5:3, si no contain sobre el color dominante
-            val ar = src.width / src.height.toFloat()
-            val cover = ar in 1.45f..2.05f
-            val s = if (cover) max(w / src.width.toFloat(), h / src.height.toFloat()) else min(w / src.width.toFloat(), h / src.height.toFloat())
-            val dw = src.width * s; val dh = src.height * s
-            if (!cover) c.drawColor(dominant(px))
-            val l = (w - dw) / 2f; val t = (h - dh) / 2f
-            c.drawBitmap(src, null, RectF(l, t, l + dw, t + dh), Paint(Paint.FILTER_BITMAP_FLAG))
-        }
+        c.drawColor(mix(dominant(px), Color.BLACK, 0.35f))
+        val box = contentBox(src) ?: Rect(0, 0, src.width, src.height)
+        val cw = box.width(); val ch = box.height()
+        val s = min(w * (1f - 2 * PAD) / cw, h * (1f - 2 * PAD) / ch).coerceAtMost(MAX_UP)
+        val dw = cw * s; val dh = ch * s
+        val l = (w - dw) / 2f; val t = (h - dh) / 2f
+        c.drawBitmap(src, box, RectF(l, t, l + dw, t + dh), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
         src.recycle()
+    }
+
+    /** Fracción de píxeles (muestreo en grilla de 64x36) con alpha >= 250. */
+    private fun opaqueShare(b: Bitmap): Float {
+        var n = 0; var ok = 0
+        for (gy in 0 until 36) for (gx in 0 until 64) {
+            val p = b.getPixel(gx * (b.width - 1) / 63, gy * (b.height - 1) / 35)
+            n++; if (Color.alpha(p) >= 250) ok++
+        }
+        return ok / n.toFloat()
+    }
+
+    private fun rasterize(d: Drawable, rw: Int, rh: Int): Bitmap {
+        val b = Bitmap.createBitmap(rw, rh, Bitmap.Config.ARGB_8888)
+        val old = d.copyBounds()
+        d.setBounds(0, 0, rw, rh); d.draw(Canvas(b)); d.bounds = old
+        return b
     }
 
     private fun drawBannerOriginal(c: Canvas, banner: Drawable) {
@@ -161,54 +225,22 @@ class TileRenderer(private val context: Context, private val w: Int, private val
         return b
     }
 
-    private class Edge(val color: Int, val share: Float, val transparent: Boolean)
-
-    /** Moda (cubos de 8 niveles por canal) de los píxeles del perímetro de la versión 32x18. */
-    private fun edgeColor(px: IntArray): Edge {
-        val counts = HashMap<Int, Int>()
-        val sums = HashMap<Int, IntArray>()
-        var transparent = 0; var total = 0
-        fun add(i: Int) {
-            total++
-            val p = px[i]
-            if (Color.alpha(p) < 128) { transparent++; return }
-            val r = Color.red(p); val g = Color.green(p); val b = Color.blue(p)
-            val k = (r shr 5 shl 6) or (g shr 5 shl 3) or (b shr 5)
-            counts[k] = (counts[k] ?: 0) + 1
-            val s = sums.getOrPut(k) { IntArray(3) }
-            s[0] += r; s[1] += g; s[2] += b
-        }
-        for (x in 0 until EW) { add(x); add((EH - 1) * EW + x) }
-        for (y in 1 until EH - 1) { add(y * EW); add(y * EW + EW - 1) }
-        if (transparent * 100 >= total * 60) return Edge(0, 1f, true)
-        val best = counts.maxByOrNull { it.value } ?: return Edge(0, 1f, true)
-        val s = sums.getValue(best.key); val n = best.value
-        return Edge(Color.rgb(s[0] / n, s[1] / n, s[2] / n), best.value / total.toFloat(), false)
-    }
-
-    /** Caja de contenido: píxeles con alpha visible y distintos del color de borde (tolerancia). Null si no hay o es casi todo. */
-    private fun contentBox(src: Bitmap, edge: Int?): Rect? {
+    /** Caja de contenido por alpha (sin usar color de borde). Null si no hay o es casi todo transparente. */
+    private fun contentBox(src: Bitmap): Rect? {
         val sw = src.width; val sh = src.height
         val px = IntArray(sw * sh)
         src.getPixels(px, 0, sw, 0, 0, sw, sh)
         var x0 = sw; var y0 = sh; var x1 = -1; var y1 = -1
-        val er = if (edge != null) Color.red(edge) else 0
-        val eg = if (edge != null) Color.green(edge) else 0
-        val eb = if (edge != null) Color.blue(edge) else 0
         for (y in 0 until sh) {
             val row = y * sw
             for (x in 0 until sw) {
-                val p = px[row + x]
-                if (Color.alpha(p) < ALPHA_MIN) continue
-                if (edge != null && max(abs(Color.red(p) - er), max(abs(Color.green(p) - eg), abs(Color.blue(p) - eb))) <= TOL) continue
+                if (Color.alpha(px[row + x]) < ALPHA_MIN) continue
                 if (x < x0) x0 = x; if (x > x1) x1 = x
                 if (y < y0) y0 = y; if (y > y1) y1 = y
             }
         }
         if (x1 < x0 || y1 < y0) return null
-        val box = Rect(x0, y0, x1 + 1, y1 + 1)
-        if (box.width() * box.height() < 0.02f * sw * sh) return null
-        return box
+        return Rect(x0, y0, x1 + 1, y1 + 1)
     }
 
     // ---- Solo ícono ----
@@ -224,7 +256,7 @@ class TileRenderer(private val context: Context, private val w: Int, private val
     }
 
     private fun drawLegacy(c: Canvas, icon: Drawable, original: Boolean) {
-        gradient(c, averageColor(icon))
+        gradient(c, mix(averageColor(icon), Color.BLACK, if (original) 0f else 0.35f))
         val side = (h * if (original) 0.55f else 0.50f).toInt()
         val l = (w - side) / 2; val t = (h - side) / 2
         val tmp = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
@@ -256,11 +288,9 @@ class TileRenderer(private val context: Context, private val w: Int, private val
         })
         flat.recycle()
         if (shine) {
-            c.drawRoundRect(rect, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                shader = LinearGradient(0f, 0f, 0f, h * 0.5f, 0x1FFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
-            })
+            // Solo borde interior de 1 px blanco al 6%; el brillo especular vive únicamente en el tile enfocado
             c.drawRoundRect(RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), radius, radius, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE; strokeWidth = 1f; color = 0x14FFFFFF
+                style = Paint.Style.STROKE; strokeWidth = 1f; color = 0x0FFFFFFF
             })
         }
         return out
@@ -295,6 +325,7 @@ class TileRenderer(private val context: Context, private val w: Int, private val
 
     private companion object {
         const val TAG = "ShelfTiles"
+        const val RENDER_REV = 5 // subir al cambiar el algoritmo: invalida los tiles en disco
         const val EW = 32
         const val EH = 18
         const val UNIFORM_SHARE = 0.6f

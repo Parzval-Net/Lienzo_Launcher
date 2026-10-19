@@ -39,4 +39,41 @@ object BitmapUtil {
         if (scaled !== bmp) bmp.recycle()
         return scaled
     }
+
+    /** Último fondo bueno ya escalado (JPEG q87) para pintar el arranque en frío sin flash negro. */
+    fun saveJpeg(b: Bitmap, f: java.io.File) {
+        try {
+            val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+            tmp.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 87, it) }
+            tmp.renameTo(f)
+        } catch (_: Exception) {}
+    }
+
+    fun loadJpeg565(f: java.io.File): Bitmap? =
+        if (!f.exists()) null else BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })
+
+    /**
+     * Fondo exacto de [w]x[h] en RGB_565 (recorte centrado a 16:9, una sola copia en memoria) y mutable para
+     * hornear el scrim inferior. Así la GPU no necesita escalar ni mezclar una capa extra a pantalla completa.
+     */
+    fun coverFile(path: String, w: Int, h: Int, bake: (Bitmap) -> Unit): Bitmap? {
+        val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, b)
+        if (b.outWidth <= 0) return null
+        val src = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            inSampleSize = sampleFor(b.outWidth, b.outHeight, w, h)
+            inPreferredConfig = Bitmap.Config.ARGB_8888 // origen completo; el dithering se aplica al bajar a 565
+        }) ?: return null
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
+        val s = maxOf(w / src.width.toFloat(), h / src.height.toFloat())
+        val cw = (w / s).toInt().coerceAtMost(src.width); val ch = (h / s).toInt().coerceAtMost(src.height)
+        val l = (src.width - cw) / 2; val t = (src.height - ch) / 2
+        android.graphics.Canvas(out).drawBitmap(
+            src, android.graphics.Rect(l, t, l + cw, t + ch), android.graphics.Rect(0, 0, w, h),
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.DITHER_FLAG), // dither: evita banding en cielos y degradados suaves
+        )
+        src.recycle()
+        bake(out)
+        return out
+    }
 }

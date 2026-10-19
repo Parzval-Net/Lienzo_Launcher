@@ -73,8 +73,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var dimView: View
     private lateinit var gridFade: View
     private lateinit var gridName: android.widget.TextView
-    private lateinit var glowL: View
-    private lateinit var glowR: View
+    private lateinit var gridHeader: android.widget.TextView
+    private lateinit var gridScrim: View
+    private lateinit var scrimBg: GradientDrawable
+    private var tileDp = 112
+    private var cellDp = 124
     private lateinit var topBar: TopBar
     private lateinit var shelfView: TopShelfView
     private lateinit var today: TodayPanel
@@ -108,6 +111,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private var blurBmp: Bitmap? = null
     private var artId: String? = null
     private var palette: Palette? = null
+    private lateinit var rootView: FrameLayout
     private enum class HomeState { DOCK, GRID, TOPBAR, ART_MODE }
     private var state = HomeState.DOCK
     private var stateBeforeArt = HomeState.DOCK
@@ -138,9 +142,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         screenH = resources.displayMetrics.heightPixels
 
         val radius = dpf(12f)
-        // Tile 100x60 dp con 7 dp de margen por lado: gap de 28 px entre tiles (foco 1.06 sin solapes), 8 favoritas caben en 960 dp
-        val dockGeo = CellGeo(dp(100), dp(60), dp(7), dp(10), dp(10), false)
-        val gridGeo = dockGeo
+        // Tiles 16:9 (formato nativo de los banners). 224x126 px con gap de 24 px: 7 tiles ocupan 1712 px.
+        // Con 8 favoritas el tile baja a 196x110 px para que quepan en el dock.
+        tileDp = if (prefs.dockMax >= 8) 98 else 112
+        cellDp = tileDp + 12
+        val tileH = tileDp * 9 / 16
+        val dockGeo = CellGeo(dp(tileDp), dp(tileH), dp(6), dp(10), dp(10), false)
+        // En la grilla el nombre va bajo el tile enfocado: más aire inferior entre filas
+        val gridGeo = CellGeo(dp(tileDp), dp(tileH), dp(6), dp(10), dp(26), false)
         loader = ImageLoader(this, TILE_W, TILE_H, radius)
         adapter = AppAdapter(loader, dockGeo, gridGeo, radius, this)
 
@@ -149,6 +158,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF181B26.toInt(), 0xFF0A0A10.toInt()),
         )
         window.setBackgroundDrawable(null)
+        rootView = root
         content = FrameLayout(this)
         root.addView(content, ViewGroup.LayoutParams(-1, -1))
 
@@ -156,26 +166,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         artView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         blurView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
         dimView = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f }
-        val scrim = View(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0, 0)).apply {
-                setColors(intArrayOf(0x00000000, 0x00000000, 0x99000000.toInt()), floatArrayOf(0f, 0.55f, 1f))
-            }
-        }
-        fun glow() = View(this).apply {
-            background = GradientDrawable().apply {
-                gradientType = GradientDrawable.RADIAL_GRADIENT
-                gradientRadius = dpf(190f)
-                setColors(intArrayOf(0x4D000000, 0x00000000))
-            }
-        }
-        glowL = glow()
-        glowR = glow()
         content.addView(artView, ViewGroup.LayoutParams(-1, -1))
         content.addView(blurView, ViewGroup.LayoutParams(-1, -1))
         content.addView(dimView, ViewGroup.LayoutParams(-1, -1))
-        content.addView(scrim, ViewGroup.LayoutParams(-1, -1))
-        content.addView(glowL, FrameLayout.LayoutParams(dp(380), dp(380)).apply { leftMargin = dp(-40); topMargin = dp(-150) })
-        content.addView(glowR, FrameLayout.LayoutParams(dp(380), dp(380), Gravity.END).apply { rightMargin = dp(-100); topMargin = dp(-150) })
 
         // Grilla de todas las apps: oculta abajo, sube con DPAD_DOWN
         gridRv = ShelfRecycler(this).apply {
@@ -183,9 +176,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             adapter = this@MainActivity.adapter.grid
             setHasFixedSize(true)
             itemAnimator = null
-            clipToPadding = false
+            clipToPadding = true // las filas que suben se recortan bajo el encabezado, no lo pisan
             clipChildren = false
-            setPadding(dp(8), dp(154), dp(8), dp(24))
+            setPadding(dp(8), dp(160), dp(8), dp(24))
             setItemViewCacheSize(14)
             isFocusable = false
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -193,12 +186,25 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             translationY = screenH.toFloat()
         }
         // Ancho = columnas reales (se ajusta en rebuild) para centrar la grilla con el mismo eje que el dock
-        content.addView(gridRv, FrameLayout.LayoutParams(dp(GRID_COLS * CELL_DP + 16), screenH, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
-        gridName = tv(this, 34f, Ui.TEXT, "sans-serif-medium").apply {
+        content.addView(gridRv, FrameLayout.LayoutParams(dp(GRID_COLS * cellDp + 16), screenH, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        // Scrim solo detrás de la grilla (y=220 px: 0%, y=520 px: 45%, constante hacia abajo); arriba la obra queda limpia
+        scrimBg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x73000000, 0x73000000))
+        gridScrim = View(this).apply { background = scrimBg; alpha = 0f; visibility = View.INVISIBLE }
+        content.addView(gridScrim, FrameLayout.LayoutParams(-1, screenH - 220).apply { topMargin = 220 })
+        // Nombre de la app enfocada, bajo su tile (como tvOS)
+        gridName = tv(this, 18f, Ui.TEXT, "sans-serif-medium").apply {
             maxLines = 1
-            setShadowLayer(5f, 0f, 1f, 0xB3000000.toInt())
+            setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
             visibility = View.INVISIBLE
         }
+        gridHeader = tv(this, 20f, Ui.TEXT, "sans-serif-medium").apply {
+            text = "Todas las apps"
+            setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
+            alpha = 0f
+            visibility = View.INVISIBLE
+        }
+        // Posición por márgenes (applyState anima translationY de las vistas que controla)
+        content.addView(gridHeader, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = dp(138) })
         content.addView(gridName, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START))
         // Degradado suave desde el borde superior (sin escalón): la barra superior y las filas que suben quedan legibles
         gridFade = View(this).apply {
@@ -238,6 +244,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             topMargin = dp(18); leftMargin = dp(34); rightMargin = dp(34)
         })
 
+        // Orden de dibujo: el dock atenuado queda debajo de la grilla; la barra superior encima de todo
+        gridRv.bringToFront(); gridHeader.bringToFront(); gridName.bringToFront(); gridFade.bringToFront(); topBar.bringToFront()
         today = TodayPanel(this).apply { onNeedYear = { loadHolidays(it) }; setCity(prefs.cityName) }
         menu = MenuPanel(this)
         settings = SettingsPanel(this)
@@ -288,7 +296,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         })
         reloadApps()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
-        val rotate = currentArt == null || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
+        restoreLastArt()
+        val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
         if (rotate) lastArt = System.currentTimeMillis()
         loadArt(rotate)
         main.post(tick)
@@ -403,11 +412,17 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             var blur: Bitmap? = null
             var pal: Palette? = null
             if (a != null) {
-                bmp = try { BitmapUtil.decodeFile(a.file.path, 1920, 1080) } catch (_: Throwable) { null }
-                if (bmp != null) {
-                    blur = makeBlur(bmp)
-                    pal = try { Palette.from(bmp) } catch (_: Throwable) { null }
-                }
+                // Blur y paleta salen de la obra limpia; el scrim inferior se hornea después (una capa menos en GPU)
+                var tmpBlur: Bitmap? = null
+                var tmpPal: Palette? = null
+                bmp = try {
+                    BitmapUtil.coverFile(a.file.path, 1920, 1080) { b ->
+                        tmpBlur = makeBlur(b)
+                        tmpPal = try { Palette.from(b) } catch (_: Throwable) { null }
+                        bakeScrim(b)
+                    }
+                } catch (_: Throwable) { null }
+                blur = tmpBlur; pal = tmpPal
             }
             val art = a
             main.post {
@@ -418,13 +433,70 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
     }
 
+    private val lastBgFile get() = File(filesDir, "lastbg.jpg")
+
+    /** Guarda el fondo ya escalado y horneado, y la obra (ruta) para reusarla en el próximo arranque en frío. */
+    private fun saveLastArt(a: Artwork, bmp: Bitmap) {
+        prefs.sp.edit().putString("last_art_id", a.id).putString("last_art_path", a.file.path)
+            .putLong("last_art_ts", System.currentTimeMillis()).apply()
+        val copy = try { bmp.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null } ?: return
+        ioArt.execute { BitmapUtil.saveJpeg(copy, lastBgFile); copy.recycle() }
+    }
+
+    /** Arranque en frío: pinta el último fondo bueno de inmediato y lo toma como obra vigente si no venció. */
+    private fun restoreLastArt() {
+        if (artBmp != null || currentArt != null) return
+        val path = prefs.sp.getString("last_art_path", null) ?: return
+        val ts = prefs.sp.getLong("last_art_ts", 0L)
+        val f = File(path)
+        if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return
+        // La obra vigente se fija ya (loadArt la reutiliza sin rotar); solo el bitmap se pinta de forma asíncrona
+        currentArt = Artwork(prefs.sp.getString("last_art_id", "last") ?: "last", "", "", null, "", f)
+        ioArt.execute {
+            val b = BitmapUtil.loadJpeg565(lastBgFile)
+            main.post {
+                if (b == null || artBmp != null || !started) { b?.recycle(); return@post }
+                artBmp = b
+                artView.setImageBitmap(b)
+                artView.alpha = 1f
+                rootView.background = null
+                artId = currentArt?.id
+            }
+        }
+    }
+
+    private fun bakeScrim(b: Bitmap) {
+        val h = b.height.toFloat()
+        val cv = android.graphics.Canvas(b)
+        cv.drawRect(0f, 0f, b.width.toFloat(), h, android.graphics.Paint().apply {
+            shader = android.graphics.LinearGradient(0f, 0f, 0f, h, intArrayOf(0, 0, 0x99000000.toInt()), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        })
+        // Halos oscuros en las esquinas superiores (detrás del reloj y del clima), horneados en el fondo
+        val r = b.width * 380f / 1920f
+        for (cx in floatArrayOf(b.width * 300f / 1920f, b.width * 1740f / 1920f)) {
+            cv.drawCircle(cx, h * 80f / 1080f, r, android.graphics.Paint().apply {
+                shader = android.graphics.RadialGradient(cx, h * 80f / 1080f, r, 0x4D000000, 0, android.graphics.Shader.TileMode.CLAMP)
+            })
+        }
+    }
+
     /** Blur precalculado una vez: 960x540 y reducción interna 1/8; el radio sale del ajuste "Desenfoque en grilla". */
-    private fun makeBlur(bmp: Bitmap): Bitmap? = try {
+    private fun makeBlur(bmp: Bitmap): Bitmap? = if (prefs.blurLevel == 0) null else try {
         val small = Bitmap.createScaledBitmap(bmp, 960, 540, true)
         val b = Blur.blurred(small, BLUR_RADII[prefs.blurLevel])
         if (b !== small) small.recycle()
-        b
+        desaturate(b)
     } catch (_: Throwable) { null }
+
+    /** Baja la saturación del blur (los cafés de Turner o Monet no deben teñir toda la grilla). */
+    private fun desaturate(b: Bitmap): Bitmap {
+        val out = Bitmap.createBitmap(b.width, b.height, Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(out).drawBitmap(b, 0f, 0f, android.graphics.Paint().apply {
+            colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.55f) })
+        })
+        b.recycle()
+        return out
+    }
 
     /** Cambió el nivel de desenfoque: recalcula solo el blur a partir de la obra actual. */
     private fun rebuildBlur() {
@@ -444,6 +516,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun applyArt(a: Artwork, bmp: Bitmap, blur: Bitmap?, pal: Palette? = null) {
         currentArt = a
         palette = pal
+        if (a.id != artId) saveLastArt(a, bmp)
         applyPalette(animate = artBmp != null)
         val old = artBmp
         val newD = BitmapDrawable(resources, bmp)
@@ -452,8 +525,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (old == null) {
             artView.setImageDrawable(newD)
             if (artPlayer == null) {
-                artView.alpha = 0f
-                artView.animate().alpha(1f).setDuration(350).start()
+                artView.alpha = 1f
+                rootView.background = null // la obra opaca cubre todo: sin capa de fondo bajo ella
             }
         } else {
             val td = TransitionDrawable(arrayOf(BitmapDrawable(resources, old), newD))
@@ -478,7 +551,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private fun applyTheme() {
         dockBg.setColor(Theme.dockTint())
+        // Scrim: negro uniforme con 10% de mezcla del color oscuro de la paleta (neutro, no café)
+        val d = Theme.dark
+        val tint = android.graphics.Color.rgb((android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt())
+        scrimBg.colors = intArrayOf(Theme.withAlpha(tint, 0), Theme.withAlpha(tint, 0x73), Theme.withAlpha(tint, 0x73))
+        dimView.setBackgroundColor(android.graphics.Color.rgb(
+            (android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt()))
         topBar.setAccent(Theme.accent, Theme.light)
+    }
+
+    private fun lastArtFresh(): Boolean {
+        val path = prefs.sp.getString("last_art_path", null) ?: return false
+        return File(path).exists() && System.currentTimeMillis() - prefs.sp.getLong("last_art_ts", 0L) <= prefs.bgIntervalMin * 60_000L
     }
 
     private fun releaseArt() {
@@ -544,8 +628,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val cols = count.coerceIn(1, GRID_COLS)
         (gridRv.layoutManager as GridLayoutManager).spanCount = cols
         val lp = gridRv.layoutParams as FrameLayout.LayoutParams
-        val w = dp(cols * CELL_DP + 16)
+        val w = dp(cols * cellDp + 16)
         if (lp.width != w) { lp.width = w; gridRv.layoutParams = lp }
+        // El encabezado se alinea con el borde izquierdo de los tiles de la grilla
+        (gridHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = (resources.displayMetrics.widthPixels - w) / 2 + dp(8 + 6)
+        gridHeader.requestLayout()
     }
 
     /** Slot del tile enfocado (favorita o grilla), o null si el foco está fuera (barra superior, Top Shelf). */
@@ -614,22 +701,29 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             v.animate().alpha(a).translationY(ty).setDuration(dur).setInterpolator(Ui.DECEL)
                 .withEndAction { v.visibility = endVis }.start()
         }
-        set(blurView, if (grid) 1f else 0f)
-        // Brillo del fondo: scrim negro; la grilla suma el oscurecimiento fijo bajo el blur
-        val bright = prefs.bgBrightness / 100f
-        set(dimView, if (grid) 1f - bright * 0.45f else 1f - bright)
-        set(gridFade, if (grid) 1f else 0f)
+        if (!(art && artPlayer != null)) set(artView, 1f)
+        // La obra se mantiene nítida en GRID; con desenfoque elegido (y bitmap generado) se funde a la versión blur.
+        // Capas a pantalla completa con alpha 0 pasan a INVISIBLE: la GPU ni las considera
+        val blurOn = grid && prefs.blurLevel > 0 && blurBmp != null
+        set(blurView, if (blurOn) 1f else 0f, 0f, if (blurOn) View.VISIBLE else View.INVISIBLE)
+        // Brillo del fondo: scrim negro uniforme
+        val dimA = 1f - prefs.bgBrightness / 100f
+        set(dimView, dimA, 0f, if (dimA <= 0.001f) View.INVISIBLE else View.VISIBLE)
+        // Scrim en degradado solo detrás de la grilla: 0% en y=220 a 45% en y=520
+        set(gridScrim, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
+        set(gridFade, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         if (!grid) gridName.visibility = View.INVISIBLE
+        set(gridHeader, if (grid) 0.7f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         if (grid) set(gridRv, 1f, 0f) else set(gridRv, 1f, screenH.toFloat(), View.INVISIBLE)
+        // Dock atenuado al 30% con la grilla abierta (sin foco, para no mezclarlo con la grilla)
+        dockBox.descendantFocusability = if (grid) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
         when {
-            grid -> set(dockBox, 0f, dpf(30f), View.INVISIBLE)
+            grid -> set(dockBox, 0.3f)
             art -> set(dockBox, 0f)
             else -> set(dockBox, 1f)
         }
         val chrome = if (art) 0f else 1f
         set(topBar, chrome)
-        set(glowL, chrome)
-        set(glowR, chrome)
         set(shelfView, if (new == HomeState.DOCK) 1f else 0f)
         if (art) main.postDelayed(artVideoRun, ART_VIDEO_DELAY_MS)
         if (grid) {
@@ -671,13 +765,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!adapter.isFav(slot)) {
             gridName.text = e.label
             main.post {
-                val v = (currentFocus as? FocusCell)?.content ?: return@post
-                val loc = IntArray(2)
-                v.getLocationOnScreen(loc)
+                val cell = currentFocus as? FocusCell ?: return@post
+                // Coordenadas por layout (no por pantalla): no dependen de la animación de subida de la grilla
                 val w = gridName.paint.measureText(e.label)
-                // translation en vez de márgenes: sin requestLayout al mover el foco
-                gridName.translationX = loc[0].coerceIn(dp(48), (resources.displayMetrics.widthPixels - w - dp(48)).toInt()).toFloat()
-                gridName.translationY = (loc[1] - dp(46)).coerceAtLeast(dp(40)).toFloat()
+                val cx = gridRv.left + cell.left + cell.content.left + cell.content.width / 2f
+                gridName.translationX = (cx - w / 2f).coerceIn(dp(24).toFloat(), resources.displayMetrics.widthPixels - w - dp(24))
+                gridName.translationY = (gridRv.top + cell.top + cell.content.top + cell.content.height + dp(10)).toFloat()
                 gridName.visibility = View.VISIBLE
             }
             return
@@ -841,7 +934,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         when (key) {
             ShelfPrefs.BG_ONLINE -> { lastArt = System.currentTimeMillis(); loadArt(true) }
             ShelfPrefs.BG_BRIGHTNESS -> applyState(state, animate = false)
-            ShelfPrefs.BLUR_LEVEL -> rebuildBlur()
+            ShelfPrefs.BLUR_LEVEL -> {
+                if (prefs.blurLevel == 0) {
+                    // Ninguno: se suelta el bitmap blur
+                    blurView.setImageDrawable(null); blurBmp?.recycle(); blurBmp = null
+                } else rebuildBlur()
+                applyState(state, animate = false)
+            }
             ShelfPrefs.DYNAMIC_COLORS -> { Theme.dynamic = prefs.dynamicColors; applyPalette(animate = true) }
             ShelfPrefs.ART_ON, ShelfPrefs.ART_WAIT -> scheduleArtMode()
             ShelfPrefs.TOP_SHELF -> { shelfView.clear(); shelfPkg = null; main.post(shelfRun) }
@@ -850,7 +949,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 topBar.setWeatherEnabled(prefs.weatherOn)
                 if (prefs.weatherOn) { lastWeather = System.currentTimeMillis(); refreshWeather() }
             }
-            ShelfPrefs.DOCK_MAX -> rebuild()
+            ShelfPrefs.DOCK_MAX -> if ((prefs.dockMax >= 8) != (tileDp == 98)) recreate() else rebuild()
             ShelfPrefs.ICON_ORIGINAL -> regenerateIcons()
             ShelfPrefs.CITY_NAME -> {
                 today.setCity(prefs.cityName)
@@ -894,6 +993,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         loader.regenerateAll()
         adapter.refreshAll()
     }
+
+    override fun nextArt() { lastArt = System.currentTimeMillis(); loadArt(true) }
 
     override fun pss(): String = "%.1f MB".format(Debug.getPss() / 1024.0)
 
@@ -1151,11 +1252,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun onBackPressed() { /* launcher: ignorar back */ }
 
     private companion object {
-        const val TILE_W = 220
-        const val TILE_H = 132
+        const val TILE_W = 224
+        const val TILE_H = 126
         const val GRID_COLS = 7
-        const val CELL_DP = 114 // 100 dp de tile + 2 x 7 dp (gap de 28 px)
-        val BLUR_RADII = intArrayOf(10, 20, 32)
+        val BLUR_RADII = intArrayOf(0, 10, 20, 32)
         const val ART_VIDEO_DELAY_MS = 45_000L
         const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L

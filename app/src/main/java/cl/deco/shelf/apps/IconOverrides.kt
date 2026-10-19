@@ -16,6 +16,15 @@ object IconOverrides {
         "com.android.tv.settings" to R.drawable.tile_settings,
     )
 
+    /** Logo vectorial oficial de la app y su color de marca, resueltos por nombre en runtime desde la app instalada. */
+    class OfficialLogo(val drawable: String, val color: String, val fallback: Int)
+
+    private val logos = mapOf(
+        "cl.movistarplay" to OfficialLogo("logo_m", "splash_background", 0xFF019DF4.toInt()),
+    )
+
+    fun officialLogo(pkg: String): OfficialLogo? = logos[pkg]
+
     fun forComponent(c: ComponentName): Int? =
         if (c.packageName == SHELF_PKG && c.className == SHELF_SETTINGS_CLASS) R.drawable.tile_shelf_settings
         else byPackage[c.packageName]

@@ -16,8 +16,8 @@ class ShelfPrefs(context: Context) {
     var bgIntervalMin: Int get() = int(BG_INTERVAL, 30); set(v) = put(BG_INTERVAL, v)
     var bgOnline: Boolean get() = bool(BG_ONLINE, false); set(v) = put(BG_ONLINE, v)
     var bgBrightness: Int get() = int(BG_BRIGHT, 100).coerceIn(60, 100); set(v) = put(BG_BRIGHT, v)
-    /** 0 = bajo, 1 = medio, 2 = alto. */
-    var blurLevel: Int get() = int(BLUR_LEVEL, 1).coerceIn(0, 2); set(v) = put(BLUR_LEVEL, v)
+    /** 0 = ninguno (por defecto, sin generar el bitmap), 1 = bajo, 2 = medio, 3 = alto. */
+    var blurLevel: Int get() = int(BLUR_LEVEL, 0).coerceIn(0, 3); set(v) = put(BLUR_LEVEL, v)
     var dynamicColors: Boolean get() = bool(DYN_COLORS, true); set(v) = put(DYN_COLORS, v)
     // Modo arte del home
     var artEnabled: Boolean get() = bool(ART_ON, true); set(v) = put(ART_ON, v)

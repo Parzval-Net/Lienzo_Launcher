@@ -14,7 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 /**
  * Celda con foco estilo tvOS: escala 1.1, sombra precalculada (drawable por estado), brillo especular
- * estático y parallax del contenido según la dirección del D-pad. Solo animaciones de propiedades de View.
+ * estático (horneado en el tile) y parallax del contenido según la dirección del D-pad. Solo animaciones de propiedades de View.
  * Las esquinas redondeadas vienen horneadas en el bitmap, no hay clipping en tiempo de dibujo.
  */
 open class FocusCell(
@@ -30,8 +30,8 @@ open class FocusCell(
 
     val content = FrameLayout(ctx)
     val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY }
-    private val gloss = View(ctx)
     private val halo = View(ctx)
+    private val gloss = View(ctx)
     private val parallax = ctx.dpf(5f)
     private val ring: Drawable = GradientDrawable().apply {
         setColor(0)
@@ -59,9 +59,8 @@ open class FocusCell(
         addView(halo, LayoutParams(-1, -1))
         content.clipChildren = false
         content.addView(image, LayoutParams(-1, -1))
-        gloss.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0x26FFFFFF, 0x00FFFFFF)).apply {
-            cornerRadius = radius
-        }
+        // Brillo especular solo con foco: blanco 0 a 10% (el tile en reposo no lo lleva)
+        gloss.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x1AFFFFFF, 0x00FFFFFF)).apply { cornerRadius = radius }
         gloss.alpha = 0f
         content.addView(gloss, LayoutParams(-1, -1))
         addView(content, LayoutParams(cw, ch, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = padTop })
@@ -70,6 +69,7 @@ open class FocusCell(
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: android.graphics.Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        gloss.animate().alpha(if (gainFocus) 1f else 0f).setDuration(Ui.FOCUS_MS).start()
         if (gainFocus) halo.background?.setTint(Theme.accent)
         halo.animate().alpha(if (gainFocus) 1f else 0f).setDuration(Ui.FOCUS_MS).start()
         val s = if (gainFocus) Ui.FOCUS_SCALE else 1f
@@ -77,7 +77,6 @@ open class FocusCell(
         val p = if (gainFocus) parallax else 0f
         content.animate().translationX(Nav.dx * p).translationY(Nav.dy * p)
             .setDuration(Ui.FOCUS_MS).setInterpolator(Ui.DECEL).start()
-        gloss.animate().alpha(if (gainFocus) 1f else 0f).setDuration(Ui.FOCUS_MS).start()
         label?.animate()?.alpha(if (gainFocus) 1f else 0f)?.setDuration(Ui.FOCUS_MS)?.start()
         onFocus?.invoke(gainFocus)
     }
@@ -90,8 +89,9 @@ open class FocusCell(
     fun resetFx() {
         animate().cancel()
         content.animate().cancel()
-        gloss.animate().cancel()
         halo.animate().cancel()
+        gloss.animate().cancel()
+        gloss.alpha = 0f
         halo.alpha = 0f
         label?.animate()?.cancel()
         label?.alpha = 0f
@@ -99,7 +99,6 @@ open class FocusCell(
         scaleY = 1f
         content.translationX = 0f
         content.translationY = 0f
-        gloss.alpha = 0f
         content.foreground = null
     }
 }

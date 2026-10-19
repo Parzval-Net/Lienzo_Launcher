@@ -15,6 +15,7 @@ interface SettingsHost {
     fun restoreHidden()
     fun resetOrder()
     fun regenerateIcons()
+    fun nextArt()
     fun pss(): String
     fun exportBackup(): String
     fun backups(): List<File>
@@ -38,9 +39,10 @@ class SettingsPages(private val panel: SettingsPanel, private val p: ShelfPrefs,
     fun root(): Page = Page("Ajustes de Shelf", listOf(
         Row.Section("Fondo"),
         choice("Rotación de obra", ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", "Diario"), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
+        Row.Act("Cambiar obra ahora") { host.nextArt() },
         choice("Fuente", ShelfPrefs.BG_ONLINE, listOf("Colección curada", "En línea"), listOf(false, true), { p.bgOnline }, { p.bgOnline = it }),
         choice("Brillo del fondo", ShelfPrefs.BG_BRIGHTNESS, listOf("60%", "70%", "80%", "90%", "100%"), listOf(60, 70, 80, 90, 100), { p.bgBrightness }, { p.bgBrightness = it }),
-        choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Bajo", "Medio", "Alto"), listOf(0, 1, 2), { p.blurLevel }, { p.blurLevel = it }),
+        choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Ninguno", "Bajo", "Medio", "Alto"), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
         toggle("Colores", ShelfPrefs.DYNAMIC_COLORS, "Dinámicos desde la obra", "Neutros", { p.dynamicColors }, { p.dynamicColors = it }),
         Row.Section("Modo arte"),
         toggle("Modo arte", ShelfPrefs.ART_ON, "Activado", "Desactivado", { p.artEnabled }, { p.artEnabled = it }),
