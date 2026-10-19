@@ -3,6 +3,7 @@ package cl.deco.shelf.ui
 import android.os.Handler
 import android.os.Looper
 import cl.deco.shelf.data.weather.Geocoding
+import cl.deco.shelf.clock.NightMode
 import cl.deco.shelf.settings.ShelfPrefs
 import java.io.File
 import java.util.concurrent.Executors
@@ -23,7 +24,9 @@ interface SettingsHost {
 }
 
 /** Construye las páginas del panel de ajustes a partir de ShelfPrefs. */
-class SettingsPages(private val panel: SettingsPanel, private val p: ShelfPrefs, private val host: SettingsHost, private val version: String) {
+class SettingsPages(private val ctx: android.content.Context, private val panel: SettingsPanel, private val p: ShelfPrefs, private val host: SettingsHost, private val version: String) {
+
+    private val halfHours = List(48) { "%02d:%02d".format(it / 2, it % 2 * 30) }
 
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -36,7 +39,7 @@ class SettingsPages(private val panel: SettingsPanel, private val p: ShelfPrefs,
     private fun toggle(label: String, key: String, on: String, off: String, get: () -> Boolean, set: (Boolean) -> Unit) =
         Row.Choice(label, listOf(on, off), { if (get()) 0 else 1 }, { set(it == 0); host.changed(key) })
 
-    fun root(): Page = Page("Ajustes de Shelf", listOf(
+    fun root(): Page = Page("Ajustes de Lienzo", listOf(
         Row.Section("Fondo"),
         choice("Rotación de obra", ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", "Diario"), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
         Row.Act("Cambiar obra ahora") { host.nextArt() },
@@ -57,6 +60,12 @@ class SettingsPages(private val panel: SettingsPanel, private val p: ShelfPrefs,
         choice("Reloj", ShelfPrefs.CLOCK24, listOf("24 h", "12 h"), listOf(true, false), { p.clock24 }, { p.clock24 = it }),
         toggle("Clima", ShelfPrefs.WEATHER_ON, "Activado", "Desactivado", { p.weatherOn }, { p.weatherOn = it }),
         Row.Act("Ubicación y región", { p.cityName }) { panel.push(locationPage()) },
+        Row.Section("Apagado nocturno"),
+        toggle("Apagado por inactividad", ShelfPrefs.NIGHT_ON, "Activado", "Desactivado", { p.nightOn }, { p.nightOn = it }),
+        Row.Choice("Desde", halfHours, { (p.nightFromMin / 30).coerceIn(0, 47) }, { p.nightFromMin = it * 30; host.changed(ShelfPrefs.NIGHT_FROM) }),
+        Row.Choice("Hasta", halfHours, { (p.nightToMin / 30).coerceIn(0, 47) }, { p.nightToMin = it * 30; host.changed(ShelfPrefs.NIGHT_TO) }),
+        choice("Inactividad", ShelfPrefs.NIGHT_IDLE, listOf("30 min", "60 min", "90 min", "120 min"), listOf(30, 60, 90, 120), { p.nightIdleMin }, { p.nightIdleMin = it }),
+        Row.Info("Permiso") { if (NightMode.hasPermission(ctx)) "Concedido" else "Falta: adb shell pm grant cl.deco.shelf android.permission.WRITE_SECURE_SETTINGS" },
         Row.Section("Íconos"),
         choice("Estilo de íconos", ShelfPrefs.ICON_ORIGINAL, listOf("Adaptado", "Original sin procesar"), listOf(false, true), { p.iconOriginal }, { p.iconOriginal = it }),
         Row.Act("Regenerar íconos") { host.regenerateIcons() },

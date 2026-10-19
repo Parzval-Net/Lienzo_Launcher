@@ -17,6 +17,10 @@ import android.os.Debug
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import cl.deco.shelf.settings.ShelfPrefs
+import cl.deco.shelf.clock.AlarmService
+import cl.deco.shelf.clock.ClockScheduler
+import cl.deco.shelf.clock.ClockStore
+import cl.deco.shelf.clock.NightMode
 import cl.deco.shelf.util.Palette
 import org.json.JSONArray
 import org.json.JSONObject
@@ -88,9 +92,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var settingsPages: SettingsPages
     private lateinit var dockBg: GradientDrawable
     private var artPlayer: MediaPlayer? = null
+    private var pendingFree: Runnable? = null
+    private var nightActive = false
+    private val secTick: Runnable = object : Runnable { override fun run() { updateClockStatus() } }
     private var artSurface: SurfaceView? = null
     private val themeListener: () -> Unit = { applyTheme() }
-    private val shelfSettingsEntry = AppEntry("Ajustes de Shelf", android.content.ComponentName(IconOverrides.SHELF_PKG, IconOverrides.SHELF_SETTINGS_CLASS))
+    private val shelfSettingsEntry = AppEntry("Ajustes de Lienzo", android.content.ComponentName(IconOverrides.SHELF_PKG, IconOverrides.SHELF_SETTINGS_CLASS))
 
     private val main = Handler(Looper.getMainLooper())
     private val ioData = newExecutor()
@@ -239,18 +246,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             bottomMargin = dp(39)
         })
 
-        topBar = TopBar(this) { openToday() }
+        topBar = TopBar(this, { openClock() }, { openWeatherPanel() })
         content.addView(topBar, FrameLayout.LayoutParams(-1, dp(64)).apply {
             topMargin = dp(18); leftMargin = dp(34); rightMargin = dp(34)
         })
 
         // Orden de dibujo: el dock atenuado queda debajo de la grilla; la barra superior encima de todo
         gridRv.bringToFront(); gridHeader.bringToFront(); gridName.bringToFront(); gridFade.bringToFront(); topBar.bringToFront()
-        today = TodayPanel(this).apply { onNeedYear = { loadHolidays(it) }; setCity(prefs.cityName) }
+        today = TodayPanel(this).apply { onNeedYear = { loadHolidays(it) }; setCity(prefs.cityName); onClockChanged = { updateClockStatus() } }
         menu = MenuPanel(this)
         settings = SettingsPanel(this)
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
-        settingsPages = SettingsPages(settings, prefs, this, "Shelf $ver")
+        settingsPages = SettingsPages(this, settings, prefs, this, "Lienzo $ver")
         topBar.setWeatherEnabled(prefs.weatherOn)
         Theme.listeners.add(themeListener)
         hint = tv(this, 14f).apply {
@@ -296,6 +303,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         })
         reloadApps()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
+        ClockScheduler.scheduleAll(this) // reprograma temporizadores, alarmas y apagado nocturno
+        nightActive = NightMode.refresh(this)
+        updateClockStatus()
         restoreLastArt()
         val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
         if (rotate) lastArt = System.currentTimeMillis()
@@ -313,6 +323,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (settings.isOpen) closeSettings()
         if (artMode) applyState(stateBeforeArt, animate = false)
         stopArtVideo(animate = false)
+        pendingFree?.run()
         releaseArt()
         loader.trim()
         super.onStop()
@@ -320,6 +331,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (AlarmService.ringing) AlarmService.stop(this) // HOME también detiene alarma o temporizador
         // HOME con el launcher ya visible: cerrar overlays y volver al dock
         if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
@@ -366,6 +378,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 topBar.setDate(Es.fecha(d))
                 updateHoliday(d)
             }
+            updateClockStatus()
             if (now - lastArt >= prefs.bgIntervalMin * 60_000L) { lastArt = now; loadArt(true) }
             if (prefs.weatherOn && now - lastWeather >= WEATHER_MS) { lastWeather = now; refreshWeather() }
             main.postDelayed(this, 60_000L - now % 60_000L + 50L)
@@ -375,7 +388,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun refreshWeather() {
         ioData.execute {
             val w = try { graph.weather.get(false) } catch (_: Throwable) { null }
-            main.post { if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w) } }
+            main.post {
+                if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w) }
+                // Sin datos (red lenta o caída): reintenta en ~1 min en vez de esperar el ciclo completo
+                else if (w == null) lastWeather = System.currentTimeMillis() - WEATHER_MS + 60_000L
+            }
         }
     }
 
@@ -452,6 +469,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return
         // La obra vigente se fija ya (loadArt la reutiliza sin rotar); solo el bitmap se pinta de forma asíncrona
         currentArt = Artwork(prefs.sp.getString("last_art_id", "last") ?: "last", "", "", null, "", f)
+        lastArt = ts // el ciclo de rotación sigue desde el momento en que se eligió esta obra
         ioArt.execute {
             val b = BitmapUtil.loadJpeg565(lastBgFile)
             main.post {
@@ -878,15 +896,19 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     /** Vuelve la obra a alpha 1 (200 ms) y recién entonces detiene, libera y quita el SurfaceView. */
     private fun stopArtVideo(animate: Boolean) {
         main.removeCallbacks(fadeArtOut)
+        pendingFree?.let { main.removeCallbacks(it); it.run() }
         val mp = artPlayer; val sv = artSurface
         artPlayer = null; artSurface = null
         if (mp == null && sv == null) return
         artView.animate().cancel()
-        val free = Runnable {
+        val free = object : Runnable { override fun run() {
+            pendingFree = null
             if (mp != null) { runCatching { mp.stop() }; runCatching { mp.release() } }
             if (sv != null) runCatching { content.removeView(sv) }
-        }
-        if (animate && started) artView.animate().alpha(1f).setDuration(200).withEndAction(free).start()
+        } }
+        // La liberación va por timer (no por withEndAction): applyState cancela las animaciones de artView
+        pendingFree = free
+        if (animate && started) { artView.animate().alpha(1f).setDuration(200).start(); main.postDelayed(free, 260) }
         else { artView.alpha = 1f; free.run() }
     }
 
@@ -905,8 +927,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     // ---------- Ajustes de Shelf ----------
 
-    private fun openSettings() {
-        prevFocus = currentFocus
+    /** [keepPrev]: abierto desde el menú contextual, que ya guardó el foco de la app (el foco actual es una opción del menú). */
+    private fun openSettings(keepPrev: Boolean = false) {
+        if (!keepPrev) prevFocus = currentFocus
         blockContent(true)
         settings.open(settingsPages.root())
     }
@@ -919,7 +942,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     /** Renombrar una app: página de ajustes con EditText (teclado del sistema); el nombre persiste por paquete. */
     private fun openRename(e: AppEntry) {
-        prevFocus = currentFocus
         blockContent(true)
         val pkg = e.component.packageName
         val orig = allApps.firstOrNull { it.component.packageName == pkg }?.label ?: e.label
@@ -949,6 +971,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 topBar.setWeatherEnabled(prefs.weatherOn)
                 if (prefs.weatherOn) { lastWeather = System.currentTimeMillis(); refreshWeather() }
             }
+            ShelfPrefs.NIGHT_ON, ShelfPrefs.NIGHT_FROM, ShelfPrefs.NIGHT_TO, ShelfPrefs.NIGHT_IDLE -> {
+                nightActive = NightMode.refresh(this); updateClockStatus()
+            }
             ShelfPrefs.DOCK_MAX -> if ((prefs.dockMax >= 8) != (tileDp == 98)) recreate() else rebuild()
             ShelfPrefs.ICON_ORIGINAL -> regenerateIcons()
             ShelfPrefs.CITY_NAME -> {
@@ -969,6 +994,23 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 today.refresh()
             }
         }
+    }
+
+    /**
+     * Indicadores junto al reloj. Se refresca por minuto (tick) y en cada cambio; en el último minuto de un temporizador
+     * pasa a cada segundo, solo con Shelf visible. Sin temporizadores activos no queda ningún Handler periódico.
+     */
+    private fun updateClockStatus() {
+        main.removeCallbacks(secTick)
+        val now = System.currentTimeMillis()
+        val store = ClockStore(this)
+        val soonest = store.timers().filter { it.running && it.endAt > now }.minOfOrNull { it.endAt - now }
+        val timerTxt = soonest?.let { if (it > 60_000) "${(it + 59_999) / 60_000} min" else "0:%02d".format((it + 999) / 1000) }
+        if (soonest != null && soonest <= 60_000 && started) main.postDelayed(secTick, 1000)
+        val nextAlarm = store.alarms().filter { it.enabled }.mapNotNull { ClockScheduler.nextTime(it, now) }.minOrNull()
+            ?.takeIf { it - now < 12 * 3600_000L }
+        val alarmTxt = nextAlarm?.let { java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(it)) }
+        topBar.setStatus(timerTxt, alarmTxt, nightActive)
     }
 
     private fun applyLocalePrefs() {
@@ -1053,10 +1095,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         content.descendantFocusability = if (b) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
     }
 
-    private fun openToday() {
+    /** OK sobre el reloj: panel Reloj (Calendario, Temporizador, Alarma). */
+    private fun openClock() {
         prevFocus = currentFocus
         blockContent(true)
-        today.open(weather, LocalDate.now())
+        today.openClock(weather, LocalDate.now())
+    }
+
+    /** OK sobre el clima: panel Clima, solo pronóstico de 7 días. */
+    private fun openWeatherPanel() {
+        prevFocus = currentFocus
+        blockContent(true)
+        today.openWeather(weather, LocalDate.now())
     }
 
     private fun closeToday() {
@@ -1076,7 +1126,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onHide = { closeMenu(restore = false); hideApp(e, slot) },
             onHidden = { closeMenu(restore = false); openHiddenList() },
             onRename = { closeMenu(restore = false); openRename(e) },
-            onSettings = { closeMenu(restore = false); openSettings() },
+            onSettings = { closeMenu(restore = false); openSettings(keepPrev = true) },
             onInfo = {
                 closeMenu()
                 try {
@@ -1118,7 +1168,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun openHiddenList() {
-        prevFocus = currentFocus
         blockContent(true)
         val hid = allApps.filter { it.key in store.hidden() }
         val opts: List<Pair<String, () -> Unit>> = if (hid.isEmpty()) {
@@ -1196,11 +1245,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (today.visibility == View.VISIBLE) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down) closeToday(); return true }
             if (k == KeyEvent.KEYCODE_HOME || k == KeyEvent.KEYCODE_POWER) return super.dispatchKeyEvent(e)
-            if (down) when (k) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> today.shift(-1)
-                KeyEvent.KEYCODE_DPAD_RIGHT -> today.shift(1)
-            }
-            return true
+            // Panel Reloj: navegación normal por foco; panel Clima: solo lectura
+            return if (today.clockMode) super.dispatchKeyEvent(e) else true
         }
         if (moving) {
             when (k) {

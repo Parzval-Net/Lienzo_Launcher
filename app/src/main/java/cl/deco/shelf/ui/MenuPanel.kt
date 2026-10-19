@@ -57,7 +57,7 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
             option("Info de la app", onInfo),
             option("Ocultar app", onHide),
             option("Ver apps ocultas", onHidden),
-            option("Ajustes de Shelf", onSettings),
+            option("Ajustes de Lienzo", onSettings),
         )
         for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(40)))
         visibility = VISIBLE

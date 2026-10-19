@@ -1,6 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Banner e ícono de Lienzo (16:9): bastidor con esquina doblada sobre degradado de óleo, de ocre a terracota oscuro. Solo símbolo. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="320dp" android:height="180dp"
     android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#0033A0" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M110,70h100v12h-100z M110,98h100v12h-100z" />
+    <path android:pathData="M0,0h320v180h-320z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="320" android:endY="180"
+                android:startColor="#FFD9A441" android:endColor="#FF5E2618" />
+        </aapt:attr>
+    </path>
+    <!-- sombra suave del lienzo -->
+    <path android:fillColor="#40000000" android:pathData="M108,46H190L218,74V150H108Z" />
+    <!-- lienzo con esquina doblada -->
+    <path android:fillColor="#FFF3E9D2" android:pathData="M104,38H190L216,64V142H104Z" />
+    <path android:fillColor="#FFCDB88F" android:pathData="M190,38L216,64H190Z" />
+    <!-- marco fino interior -->
+    <path android:strokeColor="#FFB08A4A" android:strokeWidth="1.6" android:fillColor="#00000000"
+        android:pathData="M113,47H186L207,68V133H113Z" />
+    <!-- pincelada -->
+    <path android:strokeColor="#FFA5472A" android:strokeWidth="5" android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M126,112C140,90 156,126 172,104S192,96 198,102" />
+    <path android:strokeColor="#FFD9A441" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M126,96C138,84 150,98 164,88" />
 </vector>

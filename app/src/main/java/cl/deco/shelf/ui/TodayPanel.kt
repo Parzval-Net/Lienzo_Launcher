@@ -3,6 +3,7 @@ package cl.deco.shelf.ui
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -24,6 +25,18 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
     private var weather: Weather? = null
 
     private var city = ""
+    var onClockChanged: (() -> Unit)? = null
+    private lateinit var leftCard: View
+    private lateinit var rightCard: View
+    private lateinit var timerCard: View
+    private lateinit var alarmCard: View
+    private lateinit var timerPage: TimerPage
+    private lateinit var alarmPage: AlarmPage
+    private val tabs = LinearLayout(ctx)
+    private val tabViews = ArrayList<TextView>()
+    /** true = panel Reloj (pestañas); false = panel Clima (solo pronóstico). */
+    var clockMode = true; private set
+    private var tab = 0
     private val nextTitle = tv(ctx, 15f, Ui.TEXT, "sans-serif-medium")
     private val weekdays = ArrayList<TextView>()
     private val fcTitle = tv(ctx, 20f, Ui.TEXT, "sans-serif-medium")
@@ -49,6 +62,13 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
         head.addView(tv(ctx, 24f, Ui.TEXT2).apply { text = "‹" }, LinearLayout.LayoutParams(ctx.dp(32), -2))
         head.addView(title.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(tv(ctx, 24f, Ui.TEXT2).apply { text = "›"; gravity = Gravity.END }, LinearLayout.LayoutParams(ctx.dp(32), -2))
+        // Encabezado enfocable: IZQUIERDA/DERECHA cambian de mes
+        head.isFocusable = true
+        head.background = PageUi.focusBg(ctx)
+        head.setOnKeyListener { _, k, e ->
+            if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (k) { KeyEvent.KEYCODE_DPAD_LEFT -> { shift(-1); true }; KeyEvent.KEYCODE_DPAD_RIGHT -> { shift(1); true }; else -> false }
+        }
         left.addView(head, LinearLayout.LayoutParams(-1, -2))
 
         val wd = LinearLayout(ctx)
@@ -69,11 +89,28 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
         right.addView(fcTitle)
         right.addView(fcBox, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8) })
 
-        val row = LinearLayout(ctx).apply { gravity = Gravity.TOP }
-        row.addView(left)
-        row.addView(View(ctx), LinearLayout.LayoutParams(ctx.dp(24), 1))
-        row.addView(right)
-        addView(row, LayoutParams(-2, -2, Gravity.CENTER))
+        leftCard = left; rightCard = right
+        timerPage = TimerPage(ctx) { onClockChanged?.invoke() }
+        alarmPage = AlarmPage(ctx) { onClockChanged?.invoke() }
+        fun pageCard(v: View) = card(640).apply { addView(v, LinearLayout.LayoutParams(-1, ctx.dp(380))) }
+        timerCard = pageCard(timerPage.view); alarmCard = pageCard(alarmPage.view)
+
+        // Pestañas del panel Reloj (foco en la pestaña = muestra su página)
+        val names = listOf("Calendario", "Temporizador", "Alarma")
+        for (i in 0 until 3) {
+            val t = PageUi.chip(ctx, names[i], 150) { setTab(i) }
+            t.setOnFocusChangeListener { _, f -> if (f) setTab(i) }
+            tabViews.add(t); tabs.addView(t)
+        }
+        val content = FrameLayout(ctx)
+        content.addView(left, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(timerCard, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(alarmCard, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(right, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        col.addView(tabs, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ctx.dp(12) })
+        col.addView(content, LinearLayout.LayoutParams(-2, -2))
+        addView(col, LayoutParams(-2, -2, Gravity.CENTER))
         Theme.listeners.add { if (visibility == VISIBLE) { bindMonth(); bindForecast() } }
     }
 
@@ -96,6 +133,34 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
         for (i in 0 until 7) weekdays[i].text = h[i]
     }
 
+    private fun setTab(i: Int) {
+        tab = i
+        leftCard.visibility = if (clockMode && i == 0) VISIBLE else GONE
+        timerCard.visibility = if (clockMode && i == 1) VISIBLE else GONE
+        alarmCard.visibility = if (clockMode && i == 2) VISIBLE else GONE
+        rightCard.visibility = if (clockMode) GONE else VISIBLE
+        tabViews.forEachIndexed { k, v -> v.isSelected = k == i }
+        if (clockMode && i == 1) timerPage.show() else timerPage.hide()
+        if (clockMode && i == 2) alarmPage.show()
+    }
+
+    /** Panel Reloj: Calendario con feriados, Temporizador y Alarma. */
+    fun openClock(w: Weather?, now: LocalDate) {
+        clockMode = true
+        tabs.visibility = VISIBLE
+        open(w, now)
+        setTab(0)
+        post { tabViews[0].requestFocus() }
+    }
+
+    /** Panel Clima: solo el pronóstico de 7 días con la ciudad configurada. */
+    fun openWeather(w: Weather?, now: LocalDate) {
+        clockMode = false
+        tabs.visibility = GONE
+        open(w, now)
+        setTab(0)
+    }
+
     fun open(w: Weather?, now: LocalDate) {
         bindTitles()
         weather = w
@@ -112,6 +177,7 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
     }
 
     fun close() {
+        timerPage.hide()
         animate().cancel()
         visibility = GONE
     }

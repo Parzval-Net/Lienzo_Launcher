@@ -33,6 +33,11 @@ class ShelfPrefs(context: Context) {
     var dockMax: Int get() = int(DOCK_MAX, 7).coerceIn(5, 8); set(v) = put(DOCK_MAX, v)
     /** true = íconos originales sin procesar; false = adaptados (por defecto). */
     var iconOriginal: Boolean get() = bool(ICON_ORIGINAL, false); set(v) = put(ICON_ORIGINAL, v)
+    // Apagado nocturno (minutos desde las 00:00)
+    var nightOn: Boolean get() = bool(NIGHT_ON, true); set(v) = put(NIGHT_ON, v)
+    var nightFromMin: Int get() = int(NIGHT_FROM, 21 * 60); set(v) = put(NIGHT_FROM, v)
+    var nightToMin: Int get() = int(NIGHT_TO, 7 * 60); set(v) = put(NIGHT_TO, v)
+    var nightIdleMin: Int get() = int(NIGHT_IDLE, 60); set(v) = put(NIGHT_IDLE, v)
     // Ubicación y región
     var cityName: String get() = str(CITY_NAME, "Santiago"); set(v) = put(CITY_NAME, v)
     var cityLat: Double get() = java.lang.Double.longBitsToDouble(sp.getLong(CITY_LAT, java.lang.Double.doubleToLongBits(-33.4489))); set(v) { sp.edit().putLong(CITY_LAT, java.lang.Double.doubleToLongBits(v)).apply() }
@@ -74,13 +79,14 @@ class ShelfPrefs(context: Context) {
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
         const val TOP_SHELF = "top_shelf"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"
         const val DOCK_MAX = "dock_max"; const val ICON_ORIGINAL = "icon_original"
+        const val NIGHT_ON = "night_on"; const val NIGHT_FROM = "night_from"; const val NIGHT_TO = "night_to"; const val NIGHT_IDLE = "night_idle"
         const val CITY_NAME = "city_name"; const val CITY_LAT = "city_lat"; const val CITY_LON = "city_lon"; const val CITY_TZ = "city_tz"
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
             BG_INTERVAL, BG_ONLINE, BG_BRIGHT, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
-            FAHRENHEIT, ENGLISH, SUNDAY_FIRST,
+            FAHRENHEIT, ENGLISH, SUNDAY_FIRST, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )
     }
 }

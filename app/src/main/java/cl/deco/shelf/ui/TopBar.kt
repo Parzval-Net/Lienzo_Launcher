@@ -12,7 +12,7 @@ import android.widget.LinearLayout
 import cl.deco.shelf.data.weather.Weather
 
 /** Reloj + fecha (+ feriado) a la izquierda y clima actual a la derecha. Ambos bloques son enfocables. */
-class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
+class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit) : FrameLayout(ctx) {
 
     private val clock = tv(ctx, 44f, Ui.TEXT, "sans-serif-light").apply {
         setShadowLayer(8f, 0f, 2f, 0x80000000.toInt())
@@ -21,6 +21,22 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
     private val holiday = tv(ctx, 13f, Ui.ACCENT, "sans-serif-medium").apply { visibility = GONE }
     private val icon = ImageView(ctx)
     private val right = LinearLayout(ctx)
+    private fun chip(ctx: Context, res: Int) = tv(ctx, 15f, Ui.TEXT, "sans-serif-medium").apply {
+        visibility = GONE
+        compoundDrawablePadding = ctx.dp(4)
+        setShadowLayer(8f, 0f, 2f, 0x80000000.toInt())
+        val d = ctx.getDrawable(res)!!.mutate().also { it.setBounds(0, 0, ctx.dp(16), ctx.dp(16)) }
+        setCompoundDrawablesRelative(d, null, null, null)
+    }
+    private val timerChip = chip(ctx, cl.deco.shelf.R.drawable.ic_timer)
+    private val alarmChip = chip(ctx, cl.deco.shelf.R.drawable.ic_alarm)
+    private val moonChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
+    private val status = LinearLayout(ctx).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        addView(timerChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = ctx.dp(10) })
+        addView(alarmChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = ctx.dp(10) })
+        addView(moonChip)
+    }
     private val rain = tv(ctx, 16f, Ui.TEXT).apply { alpha = 0.7f; visibility = GONE; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()); compoundDrawablePadding = ctx.dp(3) }
     private val temp = tv(ctx, 30f, Ui.TEXT, "sans-serif-light").apply { text = "--"; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()) }
 
@@ -48,9 +64,10 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
             background = focusBg(ctx)
             isFocusable = true
             isClickable = true
-            setOnClickListener { onToday() }
+            setOnClickListener { onClock() }
             addView(clock)
             addView(dateCol)
+            addView(status, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(16) })
         }
         right.apply {
             orientation = LinearLayout.HORIZONTAL
@@ -59,7 +76,7 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
             background = focusBg(ctx)
             isFocusable = true
             isClickable = true
-            setOnClickListener { onToday() }
+            setOnClickListener { onWeather() }
             addView(icon, LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(40)))
             addView(temp, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(6) })
             addView(rain, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
@@ -75,6 +92,13 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
     fun setAccent(accent: Int, light: Int) {
         holiday.setTextColor(accent)
         rain.compoundDrawableTintList = android.content.res.ColorStateList.valueOf(light)
+    }
+
+    /** Indicadores junto al reloj: temporizador activo, próxima alarma (< 12 h) y ventana de apagado nocturno. */
+    fun setStatus(timer: String?, alarm: String?, night: Boolean) {
+        timerChip.text = timer.orEmpty(); timerChip.visibility = if (timer == null) GONE else VISIBLE
+        alarmChip.text = alarm.orEmpty(); alarmChip.visibility = if (alarm == null) GONE else VISIBLE
+        moonChip.visibility = if (night) VISIBLE else GONE
     }
 
     fun setTime(text: String) { if (clock.text != text) clock.text = text }

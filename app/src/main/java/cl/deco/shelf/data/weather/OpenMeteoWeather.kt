@@ -195,7 +195,7 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
     private companion object {
         const val TAG = "OpenMeteoWeather"
         const val UA = "Shelf-TV-Launcher/0.1"
-        const val TIMEOUT_MS = 8_000
+        const val TIMEOUT_MS = 15_000
         const val TTL_MS = 30L * 60 * 1000
         const val URL_PARAMS = "&forecast_days=7" +
             "&current=temperature_2m,weather_code,is_day" +
