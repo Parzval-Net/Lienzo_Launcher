@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.Context
 import cl.deco.shelf.data.art.ArtSource
 import cl.deco.shelf.data.art.MuseumArt
-import cl.deco.shelf.data.holidays.ChileHolidays
+import cl.deco.shelf.data.holidays.HolidaysRepository
 import cl.deco.shelf.data.holidays.HolidaySource
 import cl.deco.shelf.data.weather.OpenMeteoWeather
 import cl.deco.shelf.data.weather.WeatherSource
@@ -19,7 +19,7 @@ class App : Application() {
 class Graph(ctx: Context) {
     private val app = ctx.applicationContext
     val weather: WeatherSource by lazy { OpenMeteoWeather(app) }
-    val holidays: HolidaySource by lazy { ChileHolidays(app) }
+    val holidays: HolidaySource by lazy { HolidaysRepository(app) }
     val art: ArtSource by lazy { MuseumArt(app) }
     val shelf: TvProviderShelf by lazy { TvProviderShelf(app) }
 

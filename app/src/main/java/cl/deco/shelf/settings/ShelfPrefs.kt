@@ -1,0 +1,80 @@
+package cl.deco.shelf.settings
+
+import android.content.Context
+import android.content.SharedPreferences
+
+/** Ajustes de Shelf en SharedPreferences "shelf" (misma que favoritas). Lecturas baratas, sin cache propia. */
+class ShelfPrefs(context: Context) {
+
+    val sp: SharedPreferences = context.applicationContext.getSharedPreferences("shelf", Context.MODE_PRIVATE)
+
+    private fun int(k: String, d: Int) = sp.getInt(k, d)
+    private fun bool(k: String, d: Boolean) = sp.getBoolean(k, d)
+    private fun str(k: String, d: String) = sp.getString(k, d) ?: d
+
+    // Fondo
+    var bgIntervalMin: Int get() = int(BG_INTERVAL, 30); set(v) = put(BG_INTERVAL, v)
+    var bgOnline: Boolean get() = bool(BG_ONLINE, false); set(v) = put(BG_ONLINE, v)
+    // Modo arte del home
+    var artEnabled: Boolean get() = bool(ART_ON, true); set(v) = put(ART_ON, v)
+    var artWaitSec: Int get() = int(ART_WAIT, 45); set(v) = put(ART_WAIT, v)
+    var artVideo: Boolean get() = bool(ART_VIDEO, true); set(v) = put(ART_VIDEO, v)
+    // Protector
+    var dreamVideo: Boolean get() = bool(DREAM_VIDEO, true); set(v) = put(DREAM_VIDEO, v)
+    var dreamIntervalMin: Int get() = int(DREAM_INTERVAL, 3); set(v) = put(DREAM_INTERVAL, v)
+    // Top Shelf, reloj, clima, dock
+    var topShelf: Boolean get() = bool(TOP_SHELF, true); set(v) = put(TOP_SHELF, v)
+    var clock24: Boolean get() = bool(CLOCK24, true); set(v) = put(CLOCK24, v)
+    var weatherOn: Boolean get() = bool(WEATHER_ON, true); set(v) = put(WEATHER_ON, v)
+    var dockMax: Int get() = int(DOCK_MAX, 7).coerceIn(5, 8); set(v) = put(DOCK_MAX, v)
+    /** true = íconos originales sin procesar; false = adaptados (por defecto). */
+    var iconOriginal: Boolean get() = bool(ICON_ORIGINAL, false); set(v) = put(ICON_ORIGINAL, v)
+    // Ubicación y región
+    var cityName: String get() = str(CITY_NAME, "Santiago"); set(v) = put(CITY_NAME, v)
+    var cityLat: Double get() = java.lang.Double.longBitsToDouble(sp.getLong(CITY_LAT, java.lang.Double.doubleToLongBits(-33.4489))); set(v) { sp.edit().putLong(CITY_LAT, java.lang.Double.doubleToLongBits(v)).apply() }
+    var cityLon: Double get() = java.lang.Double.longBitsToDouble(sp.getLong(CITY_LON, java.lang.Double.doubleToLongBits(-70.6693))); set(v) { sp.edit().putLong(CITY_LON, java.lang.Double.doubleToLongBits(v)).apply() }
+    var cityTz: String get() = str(CITY_TZ, "America/Santiago"); set(v) = put(CITY_TZ, v)
+    var holidaysCountry: String get() = str(HOL_CC, "CL"); set(v) = put(HOL_CC, v.uppercase())
+    /** Código de región ISO (p. ej. CL-AP); vacío = solo feriados nacionales. */
+    var holidaysRegion: String get() = str(HOL_REGION, ""); set(v) = put(HOL_REGION, v)
+    var fahrenheit: Boolean get() = bool(FAHRENHEIT, false); set(v) = put(FAHRENHEIT, v)
+    var english: Boolean get() = bool(ENGLISH, false); set(v) = put(ENGLISH, v)
+    var sundayFirst: Boolean get() = bool(SUNDAY_FIRST, false); set(v) = put(SUNDAY_FIRST, v)
+
+    fun setCity(name: String, lat: Double, lon: Double, tz: String) {
+        sp.edit().putString(CITY_NAME, name)
+            .putLong(CITY_LAT, java.lang.Double.doubleToLongBits(lat))
+            .putLong(CITY_LON, java.lang.Double.doubleToLongBits(lon))
+            .putString(CITY_TZ, tz).apply()
+    }
+
+    /** Clave estable de ubicación, para invalidar la cache del clima. */
+    fun cityKey() = "%.3f,%.3f,%s".format(java.util.Locale.US, cityLat, cityLon, cityTz)
+
+    /** Borra solo los ajustes de Shelf, no favoritas ni orden. */
+    fun resetSettings() {
+        val e = sp.edit()
+        for (k in ALL) e.remove(k)
+        e.apply()
+    }
+
+    private fun put(k: String, v: Int) { sp.edit().putInt(k, v).apply() }
+    private fun put(k: String, v: Boolean) { sp.edit().putBoolean(k, v).apply() }
+    private fun put(k: String, v: String) { sp.edit().putString(k, v).apply() }
+
+    companion object {
+        const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
+        const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
+        const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
+        const val TOP_SHELF = "top_shelf"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"
+        const val DOCK_MAX = "dock_max"; const val ICON_ORIGINAL = "icon_original"
+        const val CITY_NAME = "city_name"; const val CITY_LAT = "city_lat"; const val CITY_LON = "city_lon"; const val CITY_TZ = "city_tz"
+        const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
+        const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
+        private val ALL = listOf(
+            BG_INTERVAL, BG_ONLINE, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
+            WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
+            FAHRENHEIT, ENGLISH, SUNDAY_FIRST,
+        )
+    }
+}

@@ -2,6 +2,7 @@ package cl.deco.shelf.data.weather
 
 import android.content.Context
 import android.util.Log
+import cl.deco.shelf.settings.ShelfPrefs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -56,15 +57,21 @@ object WeatherCodes {
     }
 }
 
-/** Clima de Santiago vía Open-Meteo. Cache en filesDir con TTL 60 min; sin red devuelve la cache vencida. */
+/**
+ * Clima vía Open-Meteo para la ciudad guardada en ajustes (Santiago por defecto). Cache en filesDir con TTL 30 min,
+ * ligada a la ubicación: si cambia la ciudad la cache no sirve. Sin red devuelve la cache vencida de la misma ciudad.
+ */
 class OpenMeteoWeather(private val context: Context) : WeatherSource {
 
+    private val prefs = ShelfPrefs(context)
+
     override fun get(forceRefresh: Boolean): Weather? {
-        val cached = readCache()
+        val locKey = prefs.cityKey()
+        val cached = readCache(locKey)
         val now = System.currentTimeMillis()
         if (!forceRefresh && cached != null && now - cached.fetchedAt < TTL_MS) return cached
         return try {
-            parse(download(), now).also { writeCache(it) }
+            parse(download(), now).also { writeCache(it, locKey) }
         } catch (e: Exception) {
             Log.w(TAG, "Open-Meteo falló: ${e.message}")
             cached
@@ -72,7 +79,7 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
     }
 
     private fun download(): String {
-        val conn = URL(URL_FORECAST).openConnection() as HttpURLConnection
+        val conn = URL(forecastUrl()).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = TIMEOUT_MS
@@ -84,6 +91,11 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
             conn.disconnect()
         }
     }
+
+    private fun forecastUrl(): String =
+        "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&timezone=%s".format(
+            java.util.Locale.US, prefs.cityLat, prefs.cityLon, java.net.URLEncoder.encode(prefs.cityTz, "UTF-8"),
+        ) + URL_PARAMS
 
     private fun parse(body: String, fetchedAt: Long): Weather {
         val root = JSONObject(body)
@@ -127,8 +139,9 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
 
     private fun cacheFile() = File(context.filesDir, "weather.json")
 
-    private fun readCache(): Weather? = try {
+    private fun readCache(locKey: String): Weather? = try {
         val o = JSONObject(cacheFile().readText())
+        if (o.optString("loc") != locKey) throw IOException("otra ubicación")
         val arr: JSONArray = o.getJSONArray("days")
         val days = (0 until arr.length()).map { i ->
             val d = arr.getJSONObject(i)
@@ -149,7 +162,7 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
         null
     }
 
-    private fun writeCache(w: Weather) {
+    private fun writeCache(w: Weather, locKey: String) {
         try {
             val arr = JSONArray()
             w.days.forEach { d ->
@@ -165,6 +178,7 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
             val o = JSONObject()
                 .put("currentTemp", w.currentTemp)
                 .put("currentCode", w.currentCode)
+                .put("loc", locKey)
                 .put("fetchedAt", w.fetchedAt)
                 .put("isDay", w.isDay)
                 .put("rainSoon", w.rainSoonProb ?: JSONObject.NULL)
@@ -183,11 +197,9 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
         const val UA = "Shelf-TV-Launcher/0.1"
         const val TIMEOUT_MS = 8_000
         const val TTL_MS = 30L * 60 * 1000
-        const val URL_FORECAST =
-            "https://api.open-meteo.com/v1/forecast?latitude=-33.4489&longitude=-70.6693" +
-                "&timezone=America%2FSantiago&forecast_days=7" +
-                "&current=temperature_2m,weather_code,is_day" +
-                "&hourly=precipitation_probability&forecast_hours=4" +
-                "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+        const val URL_PARAMS = "&forecast_days=7" +
+            "&current=temperature_2m,weather_code,is_day" +
+            "&hourly=precipitation_probability&forecast_hours=4" +
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
     }
 }
