@@ -18,6 +18,10 @@ interface ArtSource {
      * [forHome] true (fondo del launcher): solo obras a sangre; false (protector de pantalla): todas.
      */
     fun next(forHome: Boolean = true): Artwork?
-    /** Descarga hasta [max] obras nuevas respetando el límite de cache. */
+    /** Si la colección curada no está completa en disco, dispara (o continúa) su descarga. [max] se ignora. */
     fun prefetch(max: Int)
+    /** (obras listas, total) de la colección curada. (0, 0) si no aplica. */
+    fun downloadProgress(): Pair<Int, Int> = 0 to 0
+    /** Inicia en background la descarga de la colección curada completa. No bloquea; idempotente. */
+    fun startFullDownload() {}
 }

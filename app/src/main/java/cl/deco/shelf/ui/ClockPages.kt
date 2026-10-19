@@ -80,8 +80,10 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
     private val hours = PageUi.Spinner(ctx, 23, "h")
     private val mins = PageUi.Spinner(ctx, 59, "min", 10)
     private var shown = false
+    private val rowTexts = HashMap<Int, TextView>()
     private val ticker = object : Runnable {
-        override fun run() { if (shown) { bindList(); main.postDelayed(this, 1000) } }
+        // Solo actualiza los textos (reconstruir las filas cada segundo haría perder el foco)
+        override fun run() { if (shown) { tickTexts(); main.postDelayed(this, 1000) } }
     }
 
     val view: View
@@ -122,15 +124,25 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
         return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60) else "%02d:%02d".format(s / 60, s % 60)
     }
 
+    private fun label(t: TimerItem, now: Long) = "${if (t.running) "▶" else "❚❚"}  ${fmt(t.left(now))}  ·  ${t.totalMs / 60_000} min"
+
+    private fun tickTexts() {
+        val now = System.currentTimeMillis()
+        val all = store.timers()
+        if (all.any { it.running && it.endAt <= now } || all.map { it.id }.toSet() != rowTexts.keys) { bindList(); return }
+        for (t in all) rowTexts[t.id]?.text = label(t, now)
+    }
+
     private fun bindList() {
         val now = System.currentTimeMillis()
         val timers = store.timers().filter { !it.running || it.endAt > now }
         val focusedId = (list.findFocus()?.tag as? Int)
-        list.removeAllViews()
+        list.removeAllViews(); rowTexts.clear()
         if (timers.isEmpty()) { list.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = "Sin temporizadores activos" }); return }
         for (t in timers) {
             val row = PageUi.row(ctx)
-            val main = PageUi.chip(ctx, "${if (t.running) "▶" else "❚❚"}  ${fmt(t.left(now))}  ·  ${t.totalMs / 60_000} min", 0) { toggle(t) }
+            val main = PageUi.chip(ctx, label(t, now), 0) { toggle(t) }
+            rowTexts[t.id] = main
             main.layoutParams = LinearLayout.LayoutParams(ctx.dp(300), ctx.dp(40)).apply { rightMargin = ctx.dp(8) }
             main.gravity = Gravity.CENTER_VERTICAL; main.tag = t.id
             val cancel = PageUi.chip(ctx, "Cancelar", 110) { cancel(t) }
@@ -152,6 +164,7 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
         ClockScheduler.cancelTimer(ctx, t.id)
         store.saveTimers(store.timers().filter { it.id != t.id })
         bindList(); onChanged()
+        if (view.findFocus() == null) view.requestFocus() // la fila enfocada desapareció: foco a la página
     }
 }
 
@@ -239,5 +252,6 @@ class AlarmPage(private val ctx: Context, private val onChanged: () -> Unit) {
         ClockScheduler.cancelAlarm(ctx, a.id)
         store.saveAlarms(store.alarms().filter { it.id != a.id })
         bindList(); onChanged()
+        if (view.findFocus() == null) view.requestFocus()
     }
 }

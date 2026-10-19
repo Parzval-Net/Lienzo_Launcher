@@ -108,6 +108,8 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
             TvContract.WatchNextPrograms.COLUMN_POSTER_ART_URI,
             TvContract.WatchNextPrograms.COLUMN_THUMBNAIL_URI,
             TvContract.WatchNextPrograms.COLUMN_INTENT_URI,
+            TvContract.WatchNextPrograms.COLUMN_LAST_PLAYBACK_POSITION_MILLIS,
+            TvContract.WatchNextPrograms.COLUMN_DURATION_MILLIS,
         )
         resolver.query(
             TvContract.WatchNextPrograms.CONTENT_URI, cols, null, null,
@@ -115,7 +117,10 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
         )?.use { c ->
             while (c.moveToNext()) {
                 val pkg = c.str(0) ?: continue
-                val item = c.toItem(1, 2, 3, 4, 5, 6) ?: continue
+                var item = c.toItem(1, 2, 3, 4, 5, 6) ?: continue
+                val pos = if (c.isNull(7)) 0L else c.getLong(7)
+                val dur = if (c.isNull(8)) 0L else c.getLong(8)
+                if (pos > 0 && dur > 0) item = item.copy(progress = (pos.toFloat() / dur).coerceIn(0f, 1f))
                 out.getOrPut(pkg) { ArrayList() }.add(item)
                 order += pkg to item
             }

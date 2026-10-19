@@ -100,18 +100,29 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
         for (i in 0 until 3) {
             val t = PageUi.chip(ctx, names[i], 150) { setTab(i) }
             t.setOnFocusChangeListener { _, f -> if (f) setTab(i) }
+            // ABAJO baja siempre al primer control de la página activa (no a la vecina geométrica)
+            t.setOnKeyListener { _, k, e ->
+                if (e.action == KeyEvent.ACTION_DOWN && k == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    when (tab) { 0 -> leftCard; 1 -> timerCard; else -> alarmCard }.let { (it as? android.view.ViewGroup)?.requestFocus() }
+                    true
+                } else false
+            }
             tabViews.add(t); tabs.addView(t)
         }
         val content = FrameLayout(ctx)
-        content.addView(left, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
-        content.addView(timerCard, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
-        content.addView(alarmCard, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
-        content.addView(right, LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(left, LayoutParams(ctx.dp(430), -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(timerCard, LayoutParams(ctx.dp(640), -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(alarmCard, LayoutParams(ctx.dp(640), -2, Gravity.CENTER_HORIZONTAL))
+        content.addView(right, LayoutParams(ctx.dp(380), -2, Gravity.CENTER_HORIZONTAL))
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         col.addView(tabs, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ctx.dp(12) })
         col.addView(content, LinearLayout.LayoutParams(-2, -2))
-        addView(col, LayoutParams(-2, -2, Gravity.CENTER))
+        addView(col, LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = ctx.dp(24) })
         Theme.listeners.add { if (visibility == VISIBLE) { bindMonth(); bindForecast() } }
+        // ARRIBA desde una página vuelve a la pestaña ACTIVA (sin saltar a otra pestaña ni cambiar de página)
+        viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
+            if (clockMode && new != null && new in tabViews && (old == null || old !in tabViews) && new !== tabViews[tab]) tabViews[tab].requestFocus()
+        }
     }
 
     fun setCity(name: String) { city = name; bindTitles() }

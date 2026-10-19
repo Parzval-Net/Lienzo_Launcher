@@ -199,17 +199,17 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         content.addView(gridRv, FrameLayout.LayoutParams(dp(GRID_COLS * cellDp + 16), screenH, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         // Fila "Continuar viendo" (Watch Next de todas las apps), sobre "Todas las apps"
         contRv = ContinueRow(this, loader, { pkg -> allApps.firstOrNull { it.component.packageName == pkg } }) { launchItem(it) }
-        content.addView(contRv, FrameLayout.LayoutParams(-1, dp(110), Gravity.TOP).apply { topMargin = dp(103) })
+        content.addView(contRv, FrameLayout.LayoutParams(-1, dp(146), Gravity.TOP).apply { topMargin = dp(126) })
         contHeader = tv(this, 20f, Ui.TEXT, "sans-serif-medium").apply {
             text = "Continuar viendo"
             setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
             alpha = 0f; visibility = View.INVISIBLE
         }
-        content.addView(contHeader, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = dp(75) })
-        // Scrim solo detrás de la grilla (y=220 px: 0%, y=520 px: 45%, constante hacia abajo); arriba la obra queda limpia
-        scrimBg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x73000000, 0x73000000))
+        content.addView(contHeader, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = dp(100) })
+        // Scrim detrás de "Continuar viendo" y la grilla: 0% en y=150 px a 40%, constante hacia abajo
+        scrimBg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x66000000, 0x66000000))
         gridScrim = View(this).apply { background = scrimBg; alpha = 0f; visibility = View.INVISIBLE }
-        content.addView(gridScrim, FrameLayout.LayoutParams(-1, screenH - 220).apply { topMargin = 220 })
+        content.addView(gridScrim, FrameLayout.LayoutParams(-1, screenH - 150).apply { topMargin = 150 })
         // Nombre de la app enfocada, bajo su tile (como tvOS)
         gridName = tv(this, 18f, Ui.TEXT, "sans-serif-medium").apply {
             maxLines = 1
@@ -286,6 +286,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // El foco decide el estado visual: barra superior vs dock
         root.viewTreeObserver.addOnGlobalFocusChangeListener { _, n ->
             if (n == null) return@addOnGlobalFocusChangeListener
+            if (n.isIn(contRv)) gridName.visibility = View.INVISIBLE // el nombre de app solo acompaña a la grilla
             if (state == HomeState.DOCK && n.isIn(topBar)) applyState(HomeState.TOPBAR)
             else if (state == HomeState.TOPBAR && (n.isIn(dockBox) || n.isIn(shelfView))) applyState(HomeState.DOCK)
         }
@@ -585,7 +586,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Scrim: negro uniforme con 10% de mezcla del color oscuro de la paleta (neutro, no café)
         val d = Theme.dark
         val tint = android.graphics.Color.rgb((android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt())
-        scrimBg.colors = intArrayOf(Theme.withAlpha(tint, 0), Theme.withAlpha(tint, 0x73), Theme.withAlpha(tint, 0x73))
+        scrimBg.colors = intArrayOf(Theme.withAlpha(tint, 0), Theme.withAlpha(tint, 0x66), Theme.withAlpha(tint, 0x66))
         dimView.setBackgroundColor(android.graphics.Color.rgb(
             (android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt()))
         topBar.setAccent(Theme.accent, Theme.light)
@@ -759,15 +760,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         set(gridScrim, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         set(gridFade, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         if (!grid) gridName.visibility = View.INVISIBLE
-        set(gridHeader, if (grid) 0.7f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
+        set(gridHeader, if (grid) 0.85f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         val showCont = grid && contHas
-        set(contHeader, if (showCont) 0.7f else 0f, 0f, if (showCont) View.VISIBLE else View.INVISIBLE)
+        set(contHeader, if (showCont) 0.85f else 0f, 0f, if (showCont) View.VISIBLE else View.INVISIBLE)
         set(contRv, if (showCont) 1f else 0f, 0f, if (showCont) View.VISIBLE else View.INVISIBLE)
         if (grid) set(gridRv, 1f, 0f) else set(gridRv, 1f, screenH.toFloat(), View.INVISIBLE)
         // Dock atenuado al 30% con la grilla abierta (sin foco, para no mezclarlo con la grilla)
         dockBox.descendantFocusability = if (grid) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
         when {
-            grid -> set(dockBox, 0.3f)
+            grid -> set(dockBox, 0f, dpf(40f), View.INVISIBLE) // oculto por completo con la grilla
             art -> set(dockBox, 0f)
             else -> set(dockBox, 1f)
         }
@@ -788,7 +789,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val list = try { graph.shelf.continueWatching(12) } catch (_: Throwable) { emptyList() }
         contHas = list.isNotEmpty()
         contRv.setItems(list)
-        val shift = if (contHas) 80 else 0
+        val shift = if (contHas) 144 else 0
         gridRv.setPadding(dp(8), dp(160 + shift), dp(8), dp(24))
         (gridHeader.layoutParams as FrameLayout.LayoutParams).topMargin = dp(138 + shift)
         gridHeader.requestLayout()

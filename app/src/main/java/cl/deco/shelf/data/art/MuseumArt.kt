@@ -3,67 +3,54 @@ package cl.deco.shelf.data.art
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
+import android.graphics.BlurMaskFilter
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.RectF
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
-import kotlin.math.max
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 /**
- * Obras de dominio público (CC0) para el modo arte.
- * Colección curada local: si `getExternalFilesDir("art")` trae index.json con obras (se carga por adb push,
- * ya recortadas a 16:9), se usa solo esa y no se descarga nada. Si está vacía, modo online:
- * Primaria: Art Institute of Chicago (api.artic.edu, IIIF). Respaldo: The Met Collection API (v1.1 search).
- * Bloqueante: llamar desde executor.
+ * Obras de dominio público (Wikimedia Commons) para el modo arte.
+ *
+ * Colección curada de 60 obras en `getExternalFilesDir("art")` (index.json + JPEG 1920x1080), cargada por adb push
+ * o descargada por la propia app. Si la carpeta está vacía o incompleta, [startFullDownload] baja desde Commons,
+ * según assets/art_index.json, las obras faltantes: una a la vez, con reintentos y backoff, solo con red sin
+ * medición de datos. Cada obra se recorta con BitmapRegionDecoder, se escala a 1920x1080 (con passe-partout
+ * si corresponde) y se guarda como JPEG q82. Tras la primera descarga todo funciona offline.
+ * Bloqueante: llamar desde executor (la descarga corre en su propio hilo).
  */
 class MuseumArt(private val context: Context) : ArtSource {
 
-    private val artDir by lazy { File(context.cacheDir, "art").apply { mkdirs() } }
-    private val indexFile by lazy { File(artDir, "index.json") }
-    private val prefs by lazy { context.getSharedPreferences("museum_art", Context.MODE_PRIVATE) }
+    private val app = context.applicationContext
+    private val prefs by lazy { app.getSharedPreferences("museum_art", Context.MODE_PRIVATE) }
     private val indexLock = Any()
-    private val settings by lazy { cl.deco.shelf.settings.ShelfPrefs(context) }
-
-    private data class Entry(
-        val id: String,
-        val title: String,
-        val artist: String,
-        val year: String?,
-        val museum: String,
-        val fileName: String,
-        val bytes: Long,
-        val addedAt: Long,
-    )
-
-    private data class Candidate(
-        val id: String,
-        val title: String,
-        val artist: String,
-        val year: String?,
-        val museum: String,
-        val imageUrl: String,
-        val maxBytes: Int,
-    )
-
-    private enum class Source { AIC, MET }
-
-    /** Obra de la colección curada local (index.json generado en el Mac). [home] false = excluida del fondo. */
-    private data class LocalEntry(val art: Artwork, val home: Boolean)
-
-    private val localDir: File? by lazy { context.getExternalFilesDir("art") }
+    private val localDir: File? by lazy { app.getExternalFilesDir("art") }
     private var localCache: List<LocalEntry> = emptyList()
     private var localStamp = -1L
+
+    /** Obra de la colección curada local. [home] false = excluida del fondo. */
+    private data class LocalEntry(val art: Artwork, val home: Boolean)
+
+    private fun indexFile(dir: File) = File(dir, "index.json")
 
     /** Lee index.json local (cacheado según lastModified). Lista vacía si no hay colección. */
     private fun loadLocal(): List<LocalEntry> = synchronized(indexLock) {
         val dir = localDir ?: return emptyList()
-        val f = File(dir, "index.json")
+        val f = indexFile(dir)
         val stamp = if (f.exists()) f.lastModified() else 0L
         if (stamp == localStamp) return localCache
         localStamp = stamp
@@ -95,183 +82,199 @@ class MuseumArt(private val context: Context) : ArtSource {
         localCache
     }
 
-    private fun nextLocal(forHome: Boolean): Artwork? {
+    override fun next(forHome: Boolean): Artwork? = synchronized(indexLock) {
         val list = loadLocal().filter { !forHome || it.home }
         if (list.isEmpty()) return null
         val key = if (forHome) KEY_LAST_LOCAL_HOME else KEY_LAST_LOCAL_ALL
         val idx = (prefs.getInt(key, -1) + 1).mod(list.size)
         prefs.edit().putInt(key, idx).apply()
-        return list[idx].art
+        list[idx].art
     }
 
-    override fun next(forHome: Boolean): Artwork? = synchronized(indexLock) {
-        if (loadLocal().isNotEmpty() && !(forHome && settings.bgOnline)) return nextLocal(forHome)
-        val entries = loadIndex()
-        if (entries.isEmpty()) return null
-        val last = prefs.getInt(KEY_LAST, -1)
-        val idx = (last + 1).mod(entries.size)
-        prefs.edit().putInt(KEY_LAST, idx).apply()
-        val e = entries[idx]
-        Artwork(e.id, e.title, e.artist, e.year, e.museum, File(artDir, e.fileName))
-    }
-
+    /** La colección se completa sola: si falta algo, sigue la descarga. */
     override fun prefetch(max: Int) {
-        if (max <= 0) return
-        if (loadLocal().isNotEmpty() && !settings.bgOnline) return // colección curada local: no se descarga nada
-        val have = synchronized(indexLock) { loadIndex().map { it.id }.toMutableSet() }
-        var added = 0
-        val artists = CURATED.shuffled(Random(System.nanoTime()))
-        for (source in Source.values()) {
-            var attempts = 0
-            val maxAttempts = max * 4 + 8
-            for (artist in artists) {
-                if (added >= max || attempts >= maxAttempts) break
-                val candidates = try {
-                    when (source) {
-                        Source.AIC -> aicCandidates(artist)
-                        Source.MET -> metCandidates(artist)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Búsqueda $source falló para ${artist.name}: ${e.message}")
-                    emptyList()
-                }
-                for (c in candidates.shuffled()) {
-                    if (added >= max || attempts >= maxAttempts) break
-                    if (c.id in have) continue
-                    attempts++
-                    if (store(c)) {
-                        added++
-                        have += c.id
-                    }
-                }
-            }
-            if (added >= max) break
-        }
-        Log.i(TAG, "prefetch: $added obras nuevas (pedidas $max)")
+        if (max > 0) startFullDownload()
     }
 
-    // ---- Fuentes ----
+    // ---- Progreso ----
 
-    private fun aicCandidates(artist: Artist): List<Candidate> {
-        val url = "https://api.artic.edu/api/v1/artworks/search" +
-            "?q=${enc(artist.name)}&query[term][is_public_domain]=true" +
-            "&fields=id,title,artist_title,date_display,image_id,thumbnail,is_public_domain&limit=40"
-        val data = JSONObject(getText(url)).optJSONArray("data") ?: return emptyList()
-        val out = ArrayList<Candidate>()
-        for (i in 0 until data.length()) {
-            val o = data.getJSONObject(i)
-            val imageId = o.optString("image_id").takeIf { it.isNotBlank() && it != "null" } ?: continue
-            if (!o.optBoolean("is_public_domain", false)) continue
-            if (!o.optString("artist_title").contains(artist.surname, ignoreCase = true)) continue
-            val thumb = o.optJSONObject("thumbnail") ?: continue
-            val w = thumb.optInt("width")
-            val h = thumb.optInt("height")
-            if (h <= 0 || w.toFloat() / h < MIN_RATIO) continue
-            out += Candidate(
-                id = "aic-${o.getInt("id")}",
-                title = o.optString("title"),
-                artist = o.optString("artist_title").ifBlank { artist.name },
-                year = o.optString("date_display").takeIf { it.isNotBlank() },
-                museum = "Art Institute of Chicago",
-                imageUrl = "https://www.artic.edu/iiif/2/$imageId/full/1686,/0/default.jpg",
-                maxBytes = MAX_DOWNLOAD_AIC,
-            )
-        }
-        return out
+    override fun downloadProgress(): Pair<Int, Int> {
+        val cat = catalog()
+        if (cat.isEmpty()) return 0 to 0
+        val have = presentIds()
+        return cat.count { it.id in have } to cat.size
     }
 
-    private fun metCandidates(artist: Artist): List<Candidate> {
-        val url = "https://collectionapi.metmuseum.org/public/collection/v1.1/search" +
-            "?isPublicDomain=true&hasImages=true&q=${enc(artist.name)}"
-        val ids = JSONObject(getText(url)).optJSONArray("objectIDs") ?: return emptyList()
-        val out = ArrayList<Candidate>()
-        for (i in 0 until minOf(ids.length(), MET_OBJECTS_PER_ARTIST)) {
-            val id = ids.getInt(i)
-            try {
-                val o = JSONObject(getText("https://collectionapi.metmuseum.org/public/collection/v1/objects/$id"))
-                val img = o.optString("primaryImage")
-                if (!o.optBoolean("isPublicDomain") || img.isBlank()) continue
-                if (!o.optString("artistDisplayName").contains(artist.surname, ignoreCase = true)) continue
-                out += Candidate(
-                    id = "met-$id",
-                    title = o.optString("title"),
-                    artist = o.optString("artistDisplayName").ifBlank { artist.name },
-                    year = o.optString("objectDate").takeIf { it.isNotBlank() },
-                    museum = "The Met",
-                    imageUrl = img,
-                    maxBytes = MAX_DOWNLOAD_MET,
-                )
-            } catch (e: Exception) {
-                Log.w(TAG, "Met objeto $id: ${e.message}")
-            }
-        }
-        return out
-    }
-
-    // ---- Descarga, transcodificación y cache ----
-
-    /** Descarga la imagen, la reduce a [MAX_SIDE] y la guarda como JPEG. Devuelve false si no sirve (ratio, error). */
-    private fun store(c: Candidate): Boolean {
-        val bytes = try {
-            download(c.imageUrl, c.maxBytes)
+    private fun catalog(): List<CatalogItem> = synchronized(Companion) {
+        catalogCache ?: try {
+            app.assets.open(ASSET_INDEX).bufferedReader().use { ArtCatalog.parse(it.readText()) }
         } catch (e: Exception) {
-            Log.w(TAG, "Descarga ${c.id} falló: ${e.message}")
-            return false
-        }
-        val fileName = "${c.id}.jpg"
-        val dest = File(artDir, fileName)
-        if (!transcode(bytes, dest)) {
-            dest.delete()
-            return false
-        }
-        synchronized(indexLock) {
-            val entries = loadIndex().filter { it.id != c.id }.toMutableList()
-            entries += Entry(
-                id = c.id,
-                title = c.title,
-                artist = c.artist,
-                year = c.year,
-                museum = c.museum,
-                fileName = fileName,
-                bytes = dest.length(),
-                addedAt = System.currentTimeMillis(),
-            )
-            enforceBudget(entries)
-            saveIndex(entries)
-        }
-        return true
+            Log.w(TAG, "art_index.json inválido: ${e.message}")
+            emptyList()
+        }.also { catalogCache = it }
     }
 
-    /** Borra las obras más antiguas hasta quedar bajo [CACHE_LIMIT_BYTES]. Modifica [entries]. */
-    private fun enforceBudget(entries: MutableList<Entry>) {
-        var total = entries.sumOf { it.bytes }
-        if (total <= CACHE_LIMIT_BYTES) return
-        entries.sortBy { it.addedAt }
-        while (total > CACHE_LIMIT_BYTES && entries.isNotEmpty()) {
-            val old = entries.removeAt(0)
-            File(artDir, old.fileName).delete()
-            total -= old.bytes
+    /** ids (sin prefijo) presentes en index.json con su JPEG en disco. */
+    private fun presentIds(): Set<String> = synchronized(indexLock) {
+        val dir = localDir ?: return emptySet()
+        try {
+            val f = indexFile(dir)
+            if (!f.exists()) return emptySet()
+            val arr = JSONArray(f.readText())
+            (0 until arr.length()).map { arr.getJSONObject(it) }
+                .filter { File(dir, it.getString("file")).length() > 0 }
+                .map { it.getString("id") }.toSet()
+        } catch (e: Exception) {
+            emptySet()
         }
     }
 
-    private fun transcode(bytes: ByteArray, dest: File): Boolean {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0 || w.toFloat() / h < MIN_RATIO) return false
-        var sample = 1
-        while (max(w, h) / (sample * 2) >= MAX_SIDE) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bmp: Bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return false
-        return try {
-            dest.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+    // ---- Descarga ----
+
+    override fun startFullDownload() {
+        val dir = localDir ?: return
+        val cat = catalog()
+        if (cat.isEmpty()) return
+        val flag = File(dir, ONLINE_FLAG)
+        val present = presentIds()
+        // Carpeta con una colección ajena (adb push) y sin marca de descarga propia: no se toca.
+        if (present.isNotEmpty() && !flag.exists() && cat.none { it.id !in present }) return
+        if (cat.all { it.id in present }) return
+        if (!running.compareAndSet(false, true)) return
+        Thread({
+            try {
+                runDownload(dir, cat)
+            } catch (t: Throwable) {
+                Log.w(TAG, "descarga abortada: $t")
+            } finally {
+                running.set(false)
+            }
+        }, "lienzo-art-download").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+    }
+
+    private fun runDownload(dir: File, cat: List<CatalogItem>) {
+        File(dir, ONLINE_FLAG).apply { if (!exists()) writeText("1") }
+        val t0 = System.currentTimeMillis()
+        var done = 0
+        for (item in cat) {
+            if (item.id in presentIds()) continue
+            var ok = false
+            var attempt = 0
+            while (attempt < MAX_ATTEMPTS && !ok) {
+                if (!networkAllowed()) {
+                    Log.i(TAG, "sin red (o con medición): descarga en pausa; se reanuda en el próximo arranque")
+                    return
+                }
+                if (attempt > 0) Thread.sleep(BACKOFF_MS shl (attempt - 1))
+                ok = try {
+                    process(item, dir)
+                } catch (e: Exception) {
+                    Log.w(TAG, "${item.id} intento ${attempt + 1}: ${e.message}")
+                    false
+                } catch (e: OutOfMemoryError) {
+                    Log.w(TAG, "${item.id}: sin memoria")
+                    false
+                }
+                attempt++
+            }
+            if (ok) done++ else Log.w(TAG, "${item.id}: se omite tras $MAX_ATTEMPTS intentos")
+            Thread.sleep(PACE_MS)
+        }
+        Log.i(TAG, "descarga: $done obras nuevas en ${(System.currentTimeMillis() - t0) / 1000}s, progreso ${downloadProgress()}")
+    }
+
+    private fun networkAllowed(): Boolean {
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+            !cm.isActiveNetworkMetered
+    }
+
+    /** Descarga, recorta, compone y guarda una obra. Devuelve false si falla (para reintento). */
+    private fun process(item: CatalogItem, dir: File): Boolean {
+        val tmp = File(app.cacheDir, "art-dl.tmp")
+        try {
+            download(item.url, tmp)
+            val bmp = render(item, tmp) ?: return false
+            val dest = File(dir, item.file)
+            val part = File(dir, item.file + ".part")
+            try {
+                part.outputStream().use { if (!bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it)) return false }
+            } finally {
+                bmp.recycle()
+            }
+            if (!part.renameTo(dest)) return false
+            addToIndex(item, dest.length(), dir)
+            return true
         } finally {
-            bmp.recycle()
+            tmp.delete()
         }
     }
 
-    private fun download(url: String, maxBytes: Int): ByteArray {
+    /** Región recortada con BitmapRegionDecoder, escalada a 1920x1080 (o compuesta en passe-partout). */
+    private fun render(item: CatalogItem, src: File): Bitmap? {
+        val decoder = BitmapRegionDecoder.newInstance(src.absolutePath, false) ?: return null
+        try {
+            val r = ArtCatalog.cropRect(item.crop, decoder.width, decoder.height)
+            val rect = Rect(r.left, r.top, r.right, r.bottom)
+            if (!item.mat) {
+                val sample = ArtCatalog.sampleSize(r.width, ArtCatalog.OUT_W)
+                val region = decoder.decodeRegion(rect, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+                return scaleTo(region, ArtCatalog.OUT_W, ArtCatalog.OUT_H)
+            }
+            val (aw, ah) = ArtCatalog.matArtSize(r.width, r.height)
+            val sample = ArtCatalog.sampleSize(r.width, aw)
+            val region = decoder.decodeRegion(rect, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+            return composeMat(scaleTo(region, aw, ah))
+        } finally {
+            decoder.recycle()
+        }
+    }
+
+    private fun scaleTo(b: Bitmap, w: Int, h: Int): Bitmap {
+        if (b.width == w && b.height == h) return b
+        val out = Bitmap.createScaledBitmap(b, w, h, true)
+        if (out !== b) b.recycle()
+        return out
+    }
+
+    /** Passe-partout en CPU: papel, sombra del bisel y sombra interior (equivale a mat169 de art/tools/process.py). */
+    private fun composeMat(art: Bitmap): Bitmap {
+        val W = ArtCatalog.OUT_W
+        val H = ArtCatalog.OUT_H
+        val out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        c.drawColor(Color.rgb(0xED, 0xE8, 0xE0))
+        val x = (W - art.width) / 2
+        val y = (H - art.height) / 2
+        // sombra del bisel: caída suave bajo la obra
+        val sh = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(120, 60, 52, 44)
+            maskFilter = BlurMaskFilter(14.7f, BlurMaskFilter.Blur.NORMAL)
+        }
+        c.drawRect(x.toFloat(), (y + 3).toFloat(), (x + art.width).toFloat(), (y + art.height + 3).toFloat(), sh)
+        // sombra interior sobre la obra: anillo difuminado dentro de sus bordes
+        val a = art.copy(Bitmap.Config.ARGB_8888, true)
+        art.recycle()
+        val ac = Canvas(a)
+        val ring = Path().apply {
+            fillType = Path.FillType.EVEN_ODD
+            addRect(RectF(-30f, -30f, a.width + 30f, a.height + 30f), Path.Direction.CW)
+            addRect(RectF(8f, 10f, a.width - 8f, a.height - 6f), Path.Direction.CW)
+        }
+        val inner = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(77, 20, 16, 12)
+            maskFilter = BlurMaskFilter(11.3f, BlurMaskFilter.Blur.NORMAL)
+        }
+        ac.drawPath(ring, inner)
+        c.drawBitmap(a, x.toFloat(), y.toFloat(), null)
+        a.recycle()
+        return out
+    }
+
+    private fun download(url: String, dest: File) {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = TIMEOUT_MS
@@ -279,115 +282,74 @@ class MuseumArt(private val context: Context) : ArtSource {
             conn.setRequestProperty("User-Agent", UA)
             conn.setRequestProperty("Accept", "image/jpeg,image/*;q=0.8")
             if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
-            val out = ByteArrayOutputStream()
+            var total = 0L
             conn.inputStream.use { input ->
-                val buf = ByteArray(16 * 1024)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                    if (out.size() > maxBytes) throw IOException("imagen > $maxBytes bytes")
+                dest.outputStream().use { out ->
+                    val buf = ByteArray(32 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        total += n
+                        if (total > MAX_DOWNLOAD) throw IOException("imagen > $MAX_DOWNLOAD bytes")
+                    }
                 }
             }
-            return out.toByteArray()
         } finally {
             conn.disconnect()
         }
     }
 
-    private fun getText(url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
-            conn.setRequestProperty("Accept", "application/json")
-            conn.setRequestProperty("User-Agent", UA)
-            if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun loadIndex(): List<Entry> = try {
-        val arr = JSONArray(indexFile.readText())
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            Entry(
-                id = o.getString("id"),
-                title = o.getString("title"),
-                artist = o.getString("artist"),
-                year = o.optString("year").takeIf { it.isNotBlank() },
-                museum = o.getString("museum"),
-                fileName = o.getString("file"),
-                bytes = o.getLong("bytes"),
-                addedAt = o.getLong("addedAt"),
-            )
-        }.filter { File(artDir, it.fileName).exists() }.sortedBy { it.addedAt }
-    } catch (e: Exception) {
-        emptyList()
-    }
-
-    private fun saveIndex(entries: List<Entry>) {
-        try {
-            val arr = JSONArray()
-            entries.forEach { e ->
-                arr.put(
-                    JSONObject()
-                        .put("id", e.id)
-                        .put("title", e.title)
-                        .put("artist", e.artist)
-                        .put("year", e.year ?: "")
-                        .put("museum", e.museum)
-                        .put("file", e.fileName)
-                        .put("bytes", e.bytes)
-                        .put("addedAt", e.addedAt),
-                )
-            }
-            val tmp = File(artDir, "index.json.tmp")
-            tmp.writeText(arr.toString())
-            tmp.renameTo(indexFile)
+    /** Agrega/reemplaza la obra en index.json (mismo formato que el generado en el Mac) con escritura atómica. */
+    private fun addToIndex(item: CatalogItem, bytes: Long, dir: File) = synchronized(indexLock) {
+        val f = indexFile(dir)
+        val existing = try {
+            if (f.exists()) JSONArray(f.readText()) else JSONArray()
         } catch (e: Exception) {
-            Log.w(TAG, "No se pudo guardar index.json: ${e.message}")
+            JSONArray()
         }
+        val byId = LinkedHashMap<String, JSONObject>()
+        for (i in 0 until existing.length()) existing.getJSONObject(i).let { byId[it.getString("id")] = it }
+        val o = JSONObject()
+            .put("id", item.id)
+            .put("title", item.title)
+            .put("year", item.year)
+            .put("museum", item.museum)
+            .put("source_url", item.sourceUrl)
+            .put("license", item.license)
+            .put("artist", item.artist)
+            .put("file", item.file)
+            .put("mode", item.mode)
+            .put("bytes", bytes)
+        if (!item.home) o.put("home", false)
+        byId[item.id] = o
+        val ordered = JSONArray()
+        // orden del catálogo, luego cualquier obra ajena
+        val cat = catalog()
+        cat.forEach { c -> byId.remove(c.id)?.let { ordered.put(it) } }
+        byId.values.forEach { ordered.put(it) }
+        val tmp = File(dir, "index.json.tmp")
+        tmp.writeText(ordered.toString(1))
+        if (!tmp.renameTo(f)) Log.w(TAG, "no se pudo reemplazar index.json")
     }
 
-    private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
+    companion object {
+        private const val TAG = "MuseumArt"
+        private const val UA = "Lienzo-TV-Launcher/1.0 (personal use)"
+        private const val ASSET_INDEX = "art_index.json"
+        private const val ONLINE_FLAG = ".online"
+        private const val KEY_LAST_LOCAL_HOME = "last_local_home"
+        private const val KEY_LAST_LOCAL_ALL = "last_local_all"
+        private const val LOCAL_SEED = 585
+        private const val TIMEOUT_MS = 10_000
+        private const val IMG_TIMEOUT_MS = 30_000
+        private const val JPEG_QUALITY = 82
+        private const val MAX_DOWNLOAD = 25L * 1024 * 1024
+        private const val MAX_ATTEMPTS = 5
+        private const val BACKOFF_MS = 2_000L
+        private const val PACE_MS = 600L
 
-    private data class Artist(val name: String, val surname: String)
-
-    private companion object {
-        const val TAG = "MuseumArt"
-        const val UA = "Shelf-TV-Launcher/0.1"
-        const val KEY_LAST = "last_index"
-        const val KEY_LAST_LOCAL_HOME = "last_local_home"
-        const val KEY_LAST_LOCAL_ALL = "last_local_all"
-        const val LOCAL_SEED = 585
-        const val TIMEOUT_MS = 8_000
-        const val IMG_TIMEOUT_MS = 15_000
-        const val MIN_RATIO = 1.2f
-        const val MAX_SIDE = 1920
-        const val JPEG_QUALITY = 88
-        const val CACHE_LIMIT_BYTES = 40L * 1024 * 1024
-        const val MAX_DOWNLOAD_AIC = 6 * 1024 * 1024
-        const val MAX_DOWNLOAD_MET = 15 * 1024 * 1024
-        const val MET_OBJECTS_PER_ARTIST = 6
-
-        /** Pintores curados (impresionistas, postimpresionistas y paisajistas clásicos de dominio público). */
-        private val CURATED = listOf(
-            Artist("Claude Monet", "Monet"),
-            Artist("Pierre-Auguste Renoir", "Renoir"),
-            Artist("Edgar Degas", "Degas"),
-            Artist("Camille Pissarro", "Pissarro"),
-            Artist("Alfred Sisley", "Sisley"),
-            Artist("Berthe Morisot", "Morisot"),
-            Artist("Paul Cézanne", "Cézanne"),
-            Artist("Vincent van Gogh", "Gogh"),
-            Artist("Gustave Caillebotte", "Caillebotte"),
-            Artist("Georges Seurat", "Seurat"),
-            Artist("J. M. W. Turner", "Turner"),
-            Artist("Katsushika Hokusai", "Hokusai"),
-            Artist("Utagawa Hiroshige", "Hiroshige"),
-        )
+        private val running = AtomicBoolean(false)
+        @Volatile private var catalogCache: List<CatalogItem>? = null
     }
 }

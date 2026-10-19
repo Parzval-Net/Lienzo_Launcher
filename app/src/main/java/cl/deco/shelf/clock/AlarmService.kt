@@ -87,6 +87,23 @@ class AlarmService : Service() {
             }
             if (ringtone == null) Log.w(TAG, "sin tono de alarma ni de notificación")
         } catch (e: Exception) { Log.w(TAG, "sonido: $e") }
+        // Este deco no trae tonos del sistema: si el Ringtone no suena, se usa un pitido propio (ToneGenerator, stream de alarma)
+        main.postDelayed({ if (overlay != null || wl != null) if (ringtone?.isPlaying != true) startBeeps() }, 400)
+    }
+
+    private var tone: android.media.ToneGenerator? = null
+    private val beep = object : Runnable {
+        override fun run() {
+            tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 450)
+            main.postDelayed(this, 1000)
+        }
+    }
+
+    private fun startBeeps() {
+        try {
+            if (tone == null) tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_ALARM, 60)
+            main.removeCallbacks(beep); main.post(beep)
+        } catch (e: Exception) { Log.w(TAG, "pitido: $e") }
     }
 
     private fun showOverlay() {
@@ -113,6 +130,9 @@ class AlarmService : Service() {
         overlay = null
         runCatching { ringtone?.stop() }
         ringtone = null
+        main.removeCallbacks(beep)
+        runCatching { tone?.release() }
+        tone = null
         runCatching { if (wl?.isHeld == true) wl?.release() }
         if (volReg) { runCatching { unregisterReceiver(volReceiver) }; volReg = false }
         sendBroadcast(Intent(ACTION_STOPPED).setPackage(packageName))
