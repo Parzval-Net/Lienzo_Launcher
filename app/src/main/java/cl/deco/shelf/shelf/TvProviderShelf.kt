@@ -87,7 +87,10 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
             TvContract.WatchNextPrograms.COLUMN_THUMBNAIL_URI,
             TvContract.WatchNextPrograms.COLUMN_INTENT_URI,
         )
-        resolver.query(TvContract.WatchNextPrograms.CONTENT_URI, cols, null, null, null)?.use { c ->
+        resolver.query(
+            TvContract.WatchNextPrograms.CONTENT_URI, cols, null, null,
+            "${TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS} DESC",
+        )?.use { c ->
             while (c.moveToNext()) {
                 val pkg = c.str(0) ?: continue
                 val item = c.toItem(1, 2, 3, 4, 5, 6) ?: continue
@@ -126,7 +129,7 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
         val out = ArrayList<TopShelfItem>()
         for (ch in ordered) {
             val uri: Uri = TvContract.buildPreviewProgramsUriForChannel(ch.id)
-            resolver.query(uri, pCols, null, null, null)?.use { c ->
+            resolver.query(uri, pCols, null, null, "${TvContract.PreviewPrograms.COLUMN_WEIGHT} DESC, ${TvContract.PreviewPrograms._ID} DESC")?.use { c ->
                 while (c.moveToNext() && out.size < MAX_ITEMS) {
                     c.toItem(0, 1, 2, 3, 4, 5)?.let { out += it }
                 }
