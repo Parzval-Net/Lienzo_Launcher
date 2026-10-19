@@ -20,27 +20,38 @@ class FavoritesStore(context: Context) {
         }.apply()
     }
 
-    /** Favoritas por defecto: servicios de streaming conocidos si están instalados, por label. */
-    fun defaults(all: List<AppEntry>): List<String> {
-        val matchers: List<(String) -> Boolean> = listOf(
-            { l -> "netflix" in l },
-            { l -> l.startsWith("youtube") && "music" !in l && "kids" !in l },
-            { l -> "disney" in l },
-            { l -> l == "max" || "hbo max" in l },
-            { l -> "prime video" in l },
-            { l -> "movistar" in l },
-        )
-        val out = ArrayList<String>()
-        for (m in matchers) {
-            all.firstOrNull { m(it.label.lowercase()) && it.key !in out }?.let { out.add(it.key) }
-        }
-        return out
+    fun hidden(): Set<String> = prefs.getStringSet(HIDDEN, emptySet()).orEmpty().toSet()
+
+    fun setHidden(h: Set<String>) { prefs.edit().putStringSet(HIDDEN, h).apply() }
+
+    /** Dock por defecto (primer arranque): paquetes en este orden, solo los instalados. */
+    fun defaultFavorites(all: List<AppEntry>): List<String> = DEFAULT_FAVS.mapNotNull { pkg ->
+        all.firstOrNull { it.component.packageName == pkg }?.key
+    }
+
+    /** Orden por defecto de la grilla: entretenimiento, utilidades, ajustes al final. */
+    fun defaultOrder(all: List<AppEntry>): List<String> {
+        val util = UTILS.mapNotNull { pkg -> all.firstOrNull { it.component.packageName == pkg } }
+        val settings = all.filter { it.component.packageName == SETTINGS }
+        val rest = all.filter { e -> e !in util && e !in settings }.sortedBy { it.label.lowercase() }
+        return (rest + util + settings).map { it.key }
     }
 
     private fun split(s: String?) = if (s.isNullOrEmpty()) emptyList() else s.split("|")
 
-    private companion object {
+    companion object {
         const val FAVS = "favs"
         const val ORDER = "order"
+        const val HIDDEN = "hidden"
+        const val SETTINGS = "com.android.tv.settings"
+        val DEFAULT_FAVS = listOf(
+            "cl.movistarplay", "com.netflix.ninja", "com.google.android.youtube.tv", "com.disney.disneyplus",
+            "com.wbd.stream", "com.amazon.amazonvideo.livingroom", "com.arkiv.player.light",
+        )
+        val UTILS = listOf("com.android.vending", "com.esaba.downloader", "com.instantbits.cast.receiver")
+        /** Nunca se muestran (ni se pueden restaurar). */
+        val ALWAYS_HIDDEN = setOf(
+            "cl.deco.shelf", "com.spocky.projengmenu", "dev.projectivy.blueprint.app", "com.overdevs.at4k",
+        )
     }
 }

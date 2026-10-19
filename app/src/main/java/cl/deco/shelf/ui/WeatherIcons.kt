@@ -4,6 +4,9 @@ import cl.deco.shelf.R
 
 /** Código WMO (Open-Meteo) a ícono vectorial simple. */
 object WeatherIcons {
+    /** De noche, cielo despejado o poco nuboso se muestra luna. */
+    fun iconFor(code: Int, isDay: Boolean = true): Int = if (!isDay && code in 0..2) R.drawable.ic_wx_moon else iconFor(code)
+
     fun iconFor(code: Int): Int = when (code) {
         0 -> R.drawable.ic_wx_sun
         1, 2 -> R.drawable.ic_wx_partly

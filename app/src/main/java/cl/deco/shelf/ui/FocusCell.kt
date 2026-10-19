@@ -22,8 +22,10 @@ open class FocusCell(
     private val cw: Int,
     private val ch: Int,
     private val padX: Int,
-    private val padY: Int,
+    private val padTop: Int,
+    private val padBottom: Int,
     private val radius: Float,
+    withLabel: Boolean = false,
 ) : FrameLayout(ctx) {
 
     val content = FrameLayout(ctx)
@@ -35,6 +37,13 @@ open class FocusCell(
         setStroke(ctx.dp(3), 0xFFFFFFFF.toInt())
         cornerRadius = radius
     }
+    val label: android.widget.TextView? = if (withLabel) tv(ctx, 12f, Ui.TEXT, "sans-serif-medium").apply {
+        gravity = Gravity.CENTER
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        setShadowLayer(ctx.dpf(3f), 0f, ctx.dpf(1f), 0xCC000000.toInt())
+        alpha = 0f
+    } else null
     var onFocus: ((Boolean) -> Unit)? = null
 
     init {
@@ -42,7 +51,7 @@ open class FocusCell(
         clipToPadding = false
         isFocusable = true
         isClickable = true
-        layoutParams = RecyclerView.LayoutParams(cw + 2 * padX, ch + 2 * padY)
+        layoutParams = RecyclerView.LayoutParams(cw + 2 * padX, ch + padTop + padBottom)
         background = shadow(ctx)
         content.clipChildren = false
         content.addView(image, LayoutParams(-1, -1))
@@ -51,7 +60,8 @@ open class FocusCell(
         }
         gloss.alpha = 0f
         content.addView(gloss, LayoutParams(-1, -1))
-        addView(content, LayoutParams(cw, ch, Gravity.CENTER))
+        addView(content, LayoutParams(cw, ch, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = padTop })
+        label?.let { addView(it, LayoutParams(cw + padX, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = padTop + ch + ctx.dp(6) }) }
     }
 
     private fun shadow(ctx: Context): Drawable {
@@ -68,9 +78,9 @@ open class FocusCell(
             ld.setLayerInset(
                 k,
                 (padX - e).coerceAtLeast(0),
-                (padY - e + shift).coerceAtLeast(0),
+                (padTop - e + shift).coerceAtLeast(0),
                 (padX - e).coerceAtLeast(0),
-                (padY - e - shift).coerceAtLeast(0),
+                (padBottom - e - shift).coerceAtLeast(0),
             )
         }
         return StateListDrawable().apply {
@@ -87,6 +97,7 @@ open class FocusCell(
         content.animate().translationX(Nav.dx * p).translationY(Nav.dy * p)
             .setDuration(Ui.FOCUS_MS).setInterpolator(Ui.DECEL).start()
         gloss.animate().alpha(if (gainFocus) 1f else 0f).setDuration(Ui.FOCUS_MS).start()
+        label?.animate()?.alpha(if (gainFocus) 1f else 0f)?.setDuration(Ui.FOCUS_MS)?.start()
         onFocus?.invoke(gainFocus)
     }
 
@@ -99,6 +110,8 @@ open class FocusCell(
         animate().cancel()
         content.animate().cancel()
         gloss.animate().cancel()
+        label?.animate()?.cancel()
+        label?.alpha = 0f
         scaleX = 1f
         scaleY = 1f
         content.translationX = 0f

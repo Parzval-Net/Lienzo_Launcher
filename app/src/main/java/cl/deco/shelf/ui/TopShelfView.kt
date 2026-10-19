@@ -1,7 +1,6 @@
 package cl.deco.shelf.ui
 
 import android.content.Context
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
@@ -11,12 +10,11 @@ import android.widget.LinearLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import cl.deco.shelf.apps.ImageLoader
-import cl.deco.shelf.data.art.Artwork
 import cl.deco.shelf.shelf.TopShelfItem
 
 /**
- * Zona superior: carrusel de tarjetas 16:9 si la app enfocada publica contenido; si no, pie de obra
- * (estilo Frame) sobre el arte de fondo. Crossfade de 200 ms. Se colapsa al bajar a la grilla.
+ * Zona sobre el dock. Con contenido de TvProvider: carrusel de tarjetas 16:9. Sin contenido: solo el nombre
+ * de la app enfocada sobre su tile, dejando la obra limpia. Crossfade de 200 ms.
  */
 class TopShelfView(
     ctx: Context,
@@ -24,10 +22,10 @@ class TopShelfView(
     private val onItem: (TopShelfItem) -> Unit,
 ) : FrameLayout(ctx) {
 
-    private val cardW = ctx.dp(256)
-    private val cardH = ctx.dp(144)
-    private val padX = ctx.dp(12)
-    private val padY = ctx.dp(12)
+    private val cardW = ctx.dp(180)
+    private val cardH = ctx.dp(101)
+    private val padX = ctx.dp(8)
+    private val padY = ctx.dp(8)
     private val radius = ctx.dpf(12f)
 
     private val items = ArrayList<TopShelfItem>()
@@ -38,72 +36,55 @@ class TopShelfView(
         itemAnimator = null
         clipToPadding = false
         clipChildren = false
-        setPadding(ctx.dp(48) - padX, 0, ctx.dp(48), 0)
+        setPadding(ctx.dp(65) - padX, 0, ctx.dp(48), 0)
         visibility = INVISIBLE
         alpha = 0f
         isFocusable = false
     }
 
-    private val capTitle = tv(ctx, 20f, Ui.TEXT, "sans-serif-medium")
-    private val capArtist = tv(ctx, 14f, Ui.TEXT)
-    private val capMuseum = tv(ctx, 12f, Ui.TEXT2)
-    private val caption = LinearLayout(ctx).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(ctx.dp(48), 0, 0, ctx.dp(12))
-        for (t in listOf(capTitle, capArtist, capMuseum)) {
-            t.setShadowLayer(ctx.dpf(4f), 0f, ctx.dpf(1f), 0xCC000000.toInt())
-            t.maxLines = 1
-            t.ellipsize = android.text.TextUtils.TruncateAt.END
-            addView(t, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(2) })
-        }
+    // Nombre de la app enfocada (sin contenido de TvProvider), sobre su tile
+    private val name = tv(ctx, 34f, Ui.TEXT, "sans-serif-medium").apply {
+        maxLines = 1
+        setShadowLayer(ctx.dpf(5f), 0f, ctx.dpf(1f), 0xB3000000.toInt())
         visibility = INVISIBLE
         alpha = 0f
     }
-    private var hasCaption = false
     private var showingItems = false
-    private var collapsed = false
 
     init {
         clipChildren = false
         carousel.adapter = CardAdapter()
-        addView(carousel, LayoutParams(-1, ctx.dp(168), Gravity.TOP))
-        addView(caption, LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.START))
+        addView(carousel, LayoutParams(-1, -2, Gravity.TOP))
+        addView(name, LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply { bottomMargin = ctx.dp(6) })
     }
 
-    fun setArt(a: Artwork?) {
-        hasCaption = a != null
-        if (a != null) {
-            capTitle.text = a.title
-            capArtist.text = listOfNotNull(a.artist, a.year).joinToString(", ")
-            capMuseum.text = a.museum
-        }
-        fade(caption, hasCaption && !showingItems)
-    }
-
+    /** Con contenido de TvProvider: carrusel sobre el dock. */
     fun show(list: List<TopShelfItem>) {
-        val on = list.isNotEmpty()
-        if (on) {
-            items.clear(); items.addAll(list)
-            carousel.adapter?.notifyDataSetChanged()
-            carousel.scrollToPosition(0)
-        }
-        showingItems = on
-        fade(carousel, on)
-        fade(caption, !on && hasCaption)
+        items.clear(); items.addAll(list)
+        carousel.adapter?.notifyDataSetChanged()
+        carousel.scrollToPosition(0)
+        showingItems = true
+        fade(name, false)
+        fade(carousel, true)
     }
 
-    /** Colapsa (desvanece y sube) al enfocar la grilla; devuelve al estado normal al volver al dock. */
-    fun collapse(on: Boolean) {
-        if (on == collapsed) return
-        collapsed = on
-        animate().cancel()
-        if (on) {
-            animate().alpha(0f).translationY(-context.dpf(16f)).setDuration(200).setInterpolator(Ui.DECEL)
-                .withEndAction { visibility = INVISIBLE }.start()
-        } else {
-            visibility = VISIBLE
-            animate().alpha(1f).translationY(0f).setDuration(200).setInterpolator(Ui.DECEL).start()
-        }
+    /** Sin contenido: solo el nombre de la app, alineado sobre su tile ([x] en px, coordenada de pantalla). */
+    fun showName(label: String, x: Int) {
+        showingItems = false
+        name.text = label
+        val w = name.paint.measureText(label)
+        val maxX = resources.displayMetrics.widthPixels - w - context.dp(48)
+        (name.layoutParams as LayoutParams).leftMargin = x.toFloat().coerceAtMost(maxX).toInt().coerceAtLeast(context.dp(48))
+        name.requestLayout()
+        fade(carousel, false)
+        fade(name, true)
+    }
+
+    /** Oculta ambos (mientras se espera el debounce o con la grilla abierta). */
+    fun clear() {
+        showingItems = false
+        fade(carousel, false)
+        fade(name, false)
     }
 
     private fun fade(v: View, on: Boolean) {
@@ -124,7 +105,7 @@ class TopShelfView(
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CardVH {
             val ctx = parent.context
-            val cell = FocusCell(ctx, cardW, cardH, padX, padY, radius)
+            val cell = FocusCell(ctx, cardW, cardH, padX, padY, padY, radius)
             val t = tv(ctx, 14f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
             val s = tv(ctx, 11f, Ui.TEXT2).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
             val box = LinearLayout(ctx).apply {

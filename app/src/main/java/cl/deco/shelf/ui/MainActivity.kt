@@ -1,11 +1,13 @@
 package cl.deco.shelf.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
@@ -15,6 +17,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -23,6 +26,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import cl.deco.shelf.Graph
 import cl.deco.shelf.apps.AppEntry
@@ -38,7 +42,10 @@ import cl.deco.shelf.util.Blur
 import java.time.LocalDate
 import java.time.LocalTime
 
-/** Home estilo tvOS: arte de fondo, barra superior, Top Shelf, dock de favoritas y grilla de apps. */
+/**
+ * Home estilo tvOS: la obra de arte es la protagonista. En reposo solo se ven reloj, clima y un dock compacto
+ * con las favoritas; con DPAD_DOWN sube la grilla con todas las apps sobre el fondo difuminado.
+ */
 class MainActivity : Activity(), AppAdapter.Callbacks {
 
     private lateinit var graph: Graph
@@ -46,13 +53,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     private lateinit var store: FavoritesStore
     private lateinit var loader: ImageLoader
     private lateinit var adapter: AppAdapter
-    private lateinit var rv: ShelfRecycler
+    private lateinit var gridRv: ShelfRecycler
+    private lateinit var dockRv: ShelfRecycler
+    private lateinit var dockBox: FrameLayout
 
     private lateinit var content: FrameLayout
     private lateinit var artView: ImageView
     private lateinit var blurView: ImageView
+    private lateinit var dimView: View
+    private lateinit var gridFade: View
+    private lateinit var glowL: View
+    private lateinit var glowR: View
     private lateinit var topBar: TopBar
-    private lateinit var topFade: View
     private lateinit var shelfView: TopShelfView
     private lateinit var today: TodayPanel
     private lateinit var menu: MenuPanel
@@ -76,11 +88,22 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     private var artBmp: Bitmap? = null
     private var blurBmp: Bitmap? = null
     private var artId: String? = null
-    private var collapsed = false
+    private enum class HomeState { DOCK, GRID, TOPBAR, ART_MODE }
+    private var state = HomeState.DOCK
+    private var stateBeforeArt = HomeState.DOCK
+    private val gridOpen get() = state == HomeState.GRID
+    private val artMode get() = state == HomeState.ART_MODE
+    private var currentArt: Artwork? = null
+    private var stopAt = 0L
+    private var lastDockSlot = 0
     private var pendingPkg: String? = null
+    private var pendingEntry: AppEntry? = null
+    private var shelfPkg: String? = null
     private var prevFocus: View? = null
     private var moving = false
     private var focusedOnce = false
+    private var warned = false
+    private var screenH = 0
 
     // ---------- Ciclo de vida ----------
 
@@ -89,65 +112,99 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         graph = Graph.from(this)
         repo = AppRepository(this)
         store = FavoritesStore(this)
+        screenH = resources.displayMetrics.heightPixels
 
         val sw = resources.displayMetrics.widthPixels
         val marginX = dp(48)
         val cellW = (sw - 2 * marginX) / 5
-        val padX = dp(10)
-        val padY = dp(12)
-        val tileW = cellW - 2 * padX
-        val tileH = tileW * 3 / 5
+        val gPadX = dp(10)
+        val gridTileW = cellW - 2 * gPadX
+        val gridTileH = gridTileW * 3 / 5
         val radius = dpf(12f)
 
-        loader = ImageLoader(this, tileW, tileH, radius)
-        adapter = AppAdapter(loader, tileW, tileH, padX, padY, dp(12), radius, this)
+        val dockGeo = CellGeo(dp(110), dp(66), dp(5), dp(10), dp(10), false)
+        val gridGeo = CellGeo(gridTileW, gridTileH, gPadX, dp(8), dp(20), true)
+        loader = ImageLoader(this, gridTileW, gridTileH, radius)
+        adapter = AppAdapter(loader, dockGeo, gridGeo, radius, this)
 
         val root = FrameLayout(this)
         root.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF181B26.toInt(), 0xFF0A0A10.toInt()),
         )
         window.setBackgroundDrawable(null)
-
         content = FrameLayout(this)
         root.addView(content, ViewGroup.LayoutParams(-1, -1))
 
+        // Fondo: obra nítida a sangre; versión blur + oscurecido solo con la grilla abierta
         artView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         blurView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+        dimView = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f }
         val scrim = View(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x99000000.toInt(), 0x00000000, 0x00000000, 0xB0000000.toInt(), 0xE6000000.toInt())).apply {
-                setColors(intArrayOf(0x99000000.toInt(), 0x00000000, 0x00000000, 0xB0000000.toInt(), 0xE6000000.toInt()), floatArrayOf(0f, 0.2f, 0.45f, 0.8f, 1f))
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0, 0)).apply {
+                setColors(intArrayOf(0x00000000, 0x00000000, 0x99000000.toInt()), floatArrayOf(0f, 0.55f, 1f))
             }
         }
+        fun glow() = View(this).apply {
+            background = GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = dpf(190f)
+                setColors(intArrayOf(0x4D000000, 0x00000000))
+            }
+        }
+        glowL = glow()
+        glowR = glow()
         content.addView(artView, ViewGroup.LayoutParams(-1, -1))
         content.addView(blurView, ViewGroup.LayoutParams(-1, -1))
+        content.addView(dimView, ViewGroup.LayoutParams(-1, -1))
         content.addView(scrim, ViewGroup.LayoutParams(-1, -1))
+        content.addView(glowL, FrameLayout.LayoutParams(dp(380), dp(380)).apply { leftMargin = dp(-40); topMargin = dp(-150) })
+        content.addView(glowR, FrameLayout.LayoutParams(dp(380), dp(380), Gravity.END).apply { rightMargin = dp(-100); topMargin = dp(-150) })
 
-        val topY = dp(84)
-        rv = ShelfRecycler(this).apply {
-            layoutManager = GridLayoutManager(this@MainActivity, 5).apply {
-                spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
-                    override fun getSpanSize(position: Int) = if (this@MainActivity.adapter.isGap(position)) 5 else 1
-                }
-            }
-            this.adapter = this@MainActivity.adapter
+        // Grilla de todas las apps: oculta abajo, sube con DPAD_DOWN
+        gridRv = ShelfRecycler(this).apply {
+            layoutManager = GridLayoutManager(this@MainActivity, 5)
+            adapter = this@MainActivity.adapter.grid
             setHasFixedSize(true)
             itemAnimator = null
             clipToPadding = false
             clipChildren = false
-            setPadding(marginX, dp(200), marginX, dp(24))
-            addItemDecoration(DockPanelDecoration(this@MainActivity) { this@MainActivity.adapter.favCount })
+            setPadding(marginX, dp(12), marginX, dp(24))
             isFocusable = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            visibility = View.INVISIBLE
+            translationY = screenH.toFloat()
         }
-        content.addView(rv, FrameLayout.LayoutParams(-1, resources.displayMetrics.heightPixels - topY).apply { topMargin = topY })
-
-        topFade = View(this).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xF0000000.toInt(), 0x00000000))
+        content.addView(gridRv, FrameLayout.LayoutParams(-1, screenH - dp(84)).apply { topMargin = dp(84) })
+        gridFade = View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xAA000000.toInt(), 0x00000000))
             alpha = 0f
         }
-        content.addView(topFade, FrameLayout.LayoutParams(-1, dp(56)).apply { topMargin = topY })
+        content.addView(gridFade, FrameLayout.LayoutParams(-1, dp(28)).apply { topMargin = dp(84) })
+
+        // Top Shelf (carrusel o nombre) justo encima del dock
         shelfView = TopShelfView(this, loader) { launchItem(it) }
-        content.addView(shelfView, FrameLayout.LayoutParams(-1, dp(176)).apply { topMargin = dp(96) })
+        content.addView(shelfView, FrameLayout.LayoutParams(-1, dp(120)).apply { topMargin = dp(293) })
+
+        // Dock compacto abajo, una sola fila centrada, sobre panel translúcido
+        dockRv = ShelfRecycler(this).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity, LinearLayoutManager.HORIZONTAL, false)
+            adapter = this@MainActivity.adapter.dock
+            setHasFixedSize(false)
+            itemAnimator = null
+            clipToPadding = false
+            clipChildren = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isFocusable = false
+        }
+        dockBox = FrameLayout(this).apply {
+            clipChildren = false
+            setPadding(dp(8), 0, dp(8), 0)
+            background = GradientDrawable().apply { setColor(0x47000000); cornerRadius = dpf(14f) }
+            addView(dockRv, FrameLayout.LayoutParams(-2, dp(86)))
+        }
+        content.addView(dockBox, FrameLayout.LayoutParams(-2, dp(86), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = dp(39)
+        })
 
         topBar = TopBar(this) { openToday() }
         content.addView(topBar, FrameLayout.LayoutParams(-1, dp(64)).apply {
@@ -166,27 +223,52 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         root.addView(menu, ViewGroup.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(16) })
         setContentView(root)
+        // El foco decide el estado visual: barra superior vs dock
+        root.viewTreeObserver.addOnGlobalFocusChangeListener { _, n ->
+            if (n == null) return@addOnGlobalFocusChangeListener
+            if (state == HomeState.DOCK && n.isIn(topBar)) applyState(HomeState.TOPBAR)
+            else if (state == HomeState.TOPBAR && (n.isIn(dockBox) || n.isIn(shelfView))) applyState(HomeState.DOCK)
+        }
+
+        // Permiso de Watch Next / TvProvider: se pide una sola vez
+        val prefs = getSharedPreferences("shelf", MODE_PRIVATE)
+        if (checkSelfPermission(PERM_TV) != PackageManager.PERMISSION_GRANTED && !prefs.getBoolean("perm_asked", false)) {
+            prefs.edit().putBoolean("perm_asked", true).apply()
+            requestPermissions(arrayOf(PERM_TV), 1)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) reloadApps()
     }
 
     override fun onStart() {
         super.onStart()
         started = true
-        lastArt = 0L
+        if (state == HomeState.ART_MODE) applyState(stateBeforeArt, animate = false)
         registerReceiver(pkgReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
         })
-        reloadApps(initial = true)
+        reloadApps()
+        // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
+        val rotate = currentArt == null || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
+        if (rotate) lastArt = System.currentTimeMillis()
+        loadArt(rotate)
         main.post(tick)
+        scheduleArtMode()
     }
 
     override fun onStop() {
         started = false
+        stopAt = System.currentTimeMillis()
         main.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(pkgReceiver) }
         if (today.visibility == View.VISIBLE) closeToday()
+        if (artMode) applyState(stateBeforeArt, animate = false)
         releaseArt()
         loader.trim()
         super.onStop()
@@ -194,12 +276,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        // HOME con el launcher ya visible: cerrar overlays y volver al inicio
-        if (menu.visibility == View.VISIBLE) closeMenu()
+        // HOME con el launcher ya visible: cerrar overlays y volver al dock
+        if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
         endMove()
-        if (adapter.itemCount > 0) focusAt(0)
-        lastArt = 0L
+        if (state != HomeState.DOCK) applyState(HomeState.DOCK)
+        focusFirst()
+        scheduleArtMode()
     }
 
     override fun onTrimMemory(level: Int) {
@@ -215,6 +298,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         super.onDestroy()
     }
 
+    private fun warnOnce(what: String, e: Throwable) {
+        if (!warned) { warned = true; Log.w("Shelf", "$what: $e") }
+    }
+
     // ---------- Reloj, clima, arte (un solo Handler, tick por minuto) ----------
 
     private val tick = object : Runnable {
@@ -228,7 +315,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
                 topBar.setDate(Es.fecha(d))
                 updateHoliday(d)
             }
-            if (now - lastArt >= ART_MS) { lastArt = now; rotateArt() }
+            if (now - lastArt >= ART_MS) { lastArt = now; loadArt(true) }
             if (now - lastWeather >= WEATHER_MS) { lastWeather = now; refreshWeather() }
             main.postDelayed(this, 60_000L - now % 60_000L + 50L)
         }
@@ -261,9 +348,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         }
     }
 
-    private fun rotateArt() {
+    private fun loadArt(rotate: Boolean) {
         ioArt.execute {
-            var a = try { graph.art.next() } catch (_: Throwable) { null }
+            var a = if (!rotate) currentArt else null
+            if (a == null) a = try { graph.art.next() } catch (_: Throwable) { null }
             if (a == null) {
                 // cache vacía: descarga unas pocas obras y reintenta
                 try { graph.art.prefetch(3) } catch (_: Throwable) {}
@@ -291,6 +379,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     }
 
     private fun applyArt(a: Artwork, bmp: Bitmap, blur: Bitmap?) {
+        currentArt = a
         val old = artBmp
         val newD = BitmapDrawable(resources, bmp)
         artBmp = bmp
@@ -312,7 +401,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         blurBmp = blur
         blurView.setImageBitmap(blur)
         if (oldBlur != null && oldBlur !== blur) main.postDelayed({ oldBlur.recycle() }, 400)
-        shelfView.setArt(a)
     }
 
     private fun releaseArt() {
@@ -328,57 +416,137 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     private val pkgReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) {
             loader.trim()
-            reloadApps(initial = false)
+            reloadApps()
         }
     }
 
-    private fun reloadApps(initial: Boolean) {
+    private fun reloadApps() {
         ioData.execute {
             val apps = repo.load()
-            run {
-                // Watch Next: una sola pasada al iniciar y al cambiar paquetes
-                try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (_: Throwable) {}
-            }
+            // Watch Next: una sola pasada al iniciar y al cambiar paquetes
+            try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
             main.post { if (started) { allApps = apps; rebuild() } }
         }
     }
 
-    private fun rebuild(focusPos: Int = -1) {
+    private fun rebuild(focusSlot: Int = -1) {
+        val hidden = store.hidden()
+        val visible = allApps.filter { it.component.packageName !in FavoritesStore.ALWAYS_HIDDEN && it.key !in hidden }
         var favKeys = store.favorites()
         if (favKeys == null && allApps.isNotEmpty()) {
-            favKeys = store.defaults(allApps)
-            store.save(favKeys, null)
+            // primer arranque: dock y orden por defecto
+            favKeys = store.defaultFavorites(visible)
+            store.save(favKeys, store.defaultOrder(visible))
         }
         val idx = HashMap<String, Int>()
         store.order().forEachIndexed { i, k -> idx[k] = i }
-        val ordered = allApps.sortedBy { idx[it.key] ?: Int.MAX_VALUE }
-        val byKey = allApps.associateBy { it.key }
+        val byKey = visible.associateBy { it.key }
         val favs = favKeys.orEmpty().mapNotNull { byKey[it] }.distinctBy { it.key }
-        val prev = focusedPos()
-        adapter.submit(favs, ordered)
-        val target = when {
-            focusPos >= 0 -> focusPos
-            prev >= 0 -> prev.coerceAtMost(adapter.itemCount - 1)
-            else -> 0
+        val favSet = favs.map { it.key }.toSet()
+        val grid = visible.filter { it.key !in favSet }.sortedBy { idx[it.key] ?: Int.MAX_VALUE }
+        val prev = focusedSlot()
+        if (!adapter.submit(favs, grid)) return
+        if (!adapter.hasItems()) return
+        when {
+            focusSlot >= 0 -> focusAt(focusSlot)
+            prev != null -> focusAt(prev)
+            !focusedOnce -> { focusedOnce = true; focusFirst() }
         }
-        if (adapter.itemCount > 0 && (focusPos >= 0 || !focusedOnce || prev >= 0)) { focusedOnce = true; focusAt(target) }
     }
 
-    /** Posición del tile enfocado en el RecyclerView, o -1 si el foco está fuera (barra superior, Top Shelf). */
-    private fun focusedPos(): Int {
-        val v = currentFocus ?: return -1
-        return if (v.parent === rv) rv.getChildAdapterPosition(v) else -1
+    /** Slot del tile enfocado (favorita o grilla), o null si el foco está fuera (barra superior, Top Shelf). */
+    private fun focusedSlot(): Int? {
+        val v = currentFocus ?: return null
+        val p = v.parent as? RecyclerView ?: return null
+        val i = p.getChildAdapterPosition(v)
+        if (i < 0) return null
+        return when {
+            p === gridRv -> AppAdapter.GRID + i
+            p === dockRv -> i
+            else -> null
+        }
     }
 
-    private fun focusAt(pos: Int) {
-        if (pos < 0 || pos >= adapter.itemCount) return
-        var p = pos
-        if (adapter.isGap(p)) p++
-        val target = p
-        rv.scrollToPosition(target)
-        rv.postOnAnimation {
-            rv.post { rv.findViewHolderForAdapterPosition(target)?.itemView?.requestFocus() }
+    private fun focusFirst() {
+        if (adapter.favCount > 0) focusAt(0) else if (adapter.gridCount > 0) focusAt(AppAdapter.GRID)
+    }
+
+    private fun focusAt(slot: Int, tries: Int = 10) {
+        if (tries == 10) { Nav.dx = 0; Nav.dy = 0 } // foco programático: sin parallax direccional
+        val fav = adapter.isFav(slot)
+        val idx = if (fav) slot else slot - AppAdapter.GRID
+        if (fav && idx >= adapter.favCount) return
+        if (!fav && idx >= adapter.gridCount) return
+        if (!fav && !gridOpen) { openGrid(slot); return }
+        if (fav && gridOpen) closeGrid(refocus = false)
+        val rv = if (fav) dockRv else gridRv
+        if (tries == 10) rv.scrollToPosition(idx)
+        main.postDelayed({
+            val v = rv.findViewHolderForAdapterPosition(idx)?.itemView
+            if (v != null) v.requestFocus() else if (tries > 0) focusAt(slot, tries - 1)
+        }, 30)
+    }
+
+    // ---------- Estado visual (única fuente de verdad) ----------
+
+    private fun View.isIn(group: View): Boolean {
+        var v: View? = this
+        while (v != null) { if (v === group) return true; v = v.parent as? View }
+        return false
+    }
+
+    /** Fija TODAS las propiedades visuales del home para el estado pedido, cancelando animaciones previas. */
+    private fun applyState(new: HomeState, animate: Boolean = true) {
+        val prev = state
+        state = new
+        val grid = new == HomeState.GRID
+        val art = new == HomeState.ART_MODE
+        val dur = when {
+            grid || prev == HomeState.GRID -> 250L
+            art -> 600L
+            else -> 200L
         }
+        fun set(v: View, a: Float, ty: Float = 0f, endVis: Int = View.VISIBLE) {
+            v.animate().cancel()
+            if (endVis == View.VISIBLE) v.visibility = View.VISIBLE
+            if (!animate) {
+                v.alpha = a; v.translationY = ty; v.visibility = endVis
+                return
+            }
+            v.animate().alpha(a).translationY(ty).setDuration(dur).setInterpolator(Ui.DECEL)
+                .withEndAction { v.visibility = endVis }.start()
+        }
+        set(blurView, if (grid) 1f else 0f)
+        set(dimView, if (grid) 0.55f else 0f)
+        set(gridFade, if (grid) 1f else 0f)
+        if (grid) set(gridRv, 1f, 0f) else set(gridRv, 1f, screenH.toFloat(), View.INVISIBLE)
+        when {
+            grid -> set(dockBox, 0f, dpf(30f), View.INVISIBLE)
+            art -> set(dockBox, 0f)
+            else -> set(dockBox, 1f)
+        }
+        val chrome = if (art) 0f else 1f
+        set(topBar, chrome)
+        set(glowL, chrome)
+        set(glowR, chrome)
+        set(shelfView, if (new == HomeState.DOCK) 1f else 0f)
+        if (grid) {
+            main.removeCallbacks(shelfRun)
+            shelfView.clear()
+            shelfPkg = null
+        }
+    }
+
+    private fun openGrid(focusSlot: Int = AppAdapter.GRID) {
+        if (gridOpen) return
+        applyState(HomeState.GRID)
+        focusAt(focusSlot)
+    }
+
+    private fun closeGrid(refocus: Boolean = true) {
+        if (!gridOpen) return
+        applyState(HomeState.DOCK)
+        if (refocus) focusAt(lastDockSlot.coerceIn(0, (adapter.favCount - 1).coerceAtLeast(0)))
     }
 
     // ---------- Callbacks de tiles ----------
@@ -390,37 +558,45 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         }
     }
 
-    override fun onLongClick(e: AppEntry, pos: Int) {
+    override fun onLongClick(e: AppEntry, slot: Int) {
         if (moving) return
-        openMenu(e, pos)
+        openMenu(e, slot)
     }
 
-    override fun onFocus(e: AppEntry, pos: Int) {
-        val grid = adapter.isGridPos(pos)
-        setCollapsed(grid)
-        if (!grid) {
-            pendingPkg = e.component.packageName
-            main.removeCallbacks(shelfRun)
-            main.postDelayed(shelfRun, 300)
-        }
-    }
-
-    private fun setCollapsed(c: Boolean) {
-        if (c == collapsed) return
-        collapsed = c
-        shelfView.collapse(c)
-        topFade.animate().cancel()
-        topFade.animate().alpha(if (c) 1f else 0f).setDuration(250).start()
-        blurView.animate().cancel()
-        blurView.animate().alpha(if (c) 1f else 0f).setDuration(250).start()
+    override fun onFocus(e: AppEntry, slot: Int) {
+        if (!adapter.isFav(slot)) return
+        lastDockSlot = slot
+        val pkg = e.component.packageName
+        if (pkg != shelfPkg) { shelfView.clear(); shelfPkg = null }
+        pendingPkg = pkg
+        pendingEntry = e
+        main.removeCallbacks(shelfRun)
+        main.postDelayed(shelfRun, 300)
     }
 
     private val shelfRun = Runnable {
         val pkg = pendingPkg ?: return@Runnable
         ioShelf.execute {
-            val items = try { graph.shelf.itemsFor(pkg) } catch (_: Throwable) { emptyList() }
-            main.post { if (started && pendingPkg == pkg && !collapsed) shelfView.show(items) }
+            val items = try { graph.shelf.itemsFor(pkg) } catch (e: Throwable) { warnOnce("itemsFor", e); emptyList() }
+            main.post {
+                if (!started || pendingPkg != pkg || gridOpen) return@post
+                shelfPkg = pkg
+                if (items.isNotEmpty()) shelfView.show(items) else showAppName()
+            }
         }
+    }
+
+    /** Nombre de la app sobre su tile enfocado. */
+    private fun showAppName() {
+        val e = pendingEntry ?: return
+        val v = currentFocus as? FocusCell
+        var x = dp(65)
+        if (v != null && v.parent === dockRv) {
+            val loc = IntArray(2)
+            v.content.getLocationOnScreen(loc)
+            x = loc[0]
+        }
+        shelfView.showName(e.label, x)
     }
 
     private fun launchItem(it: TopShelfItem) {
@@ -430,6 +606,26 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         } catch (_: Exception) {
             Toast.makeText(this, "No se pudo abrir el contenido", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ---------- Modo arte (sin teclas por 45 s) ----------
+
+    private val artModeRun = Runnable { enterArtMode() }
+
+    private fun scheduleArtMode() {
+        main.removeCallbacks(artModeRun)
+        main.postDelayed(artModeRun, ART_MODE_MS)
+    }
+
+    private fun enterArtMode() {
+        if (!started || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE) return
+        if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
+        stateBeforeArt = state
+        applyState(HomeState.ART_MODE)
+    }
+
+    private fun exitArtMode() {
+        if (state == HomeState.ART_MODE) applyState(stateBeforeArt)
     }
 
     // ---------- Overlays ----------
@@ -450,14 +646,16 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         prevFocus?.requestFocus()
     }
 
-    private fun openMenu(e: AppEntry, pos: Int) {
+    private fun openMenu(e: AppEntry, slot: Int) {
         prevFocus = currentFocus
         blockContent(true)
-        val fav = adapter.isFavPos(pos) || e.key in adapter.favKeys()
+        val fav = adapter.isFav(slot)
         menu.show(
             e.label, fav,
-            onFav = { closeMenu(restore = false); toggleFav(e, pos, fav) },
-            onMove = { closeMenu(); startMove(pos) },
+            onFav = { closeMenu(restore = false); toggleFav(e, slot, fav) },
+            onMove = { closeMenu(); startMove(slot) },
+            onHide = { closeMenu(restore = false); hideApp(e, slot) },
+            onHidden = { closeMenu(restore = false); openHiddenList() },
             onInfo = {
                 closeMenu()
                 try {
@@ -474,37 +672,53 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         if (restore) prevFocus?.requestFocus()
     }
 
-    private fun toggleFav(e: AppEntry, pos: Int, isFav: Boolean) {
+    private fun toggleFav(e: AppEntry, slot: Int, isFav: Boolean) {
         val favs = adapter.favKeys().toMutableList()
         if (isFav) favs.remove(e.key) else favs.add(e.key)
         store.save(favs, adapter.appKeys())
-        val wasFavPos = adapter.isFavPos(pos)
-        // reconstruye y deja el foco en un lugar coherente
-        val newFavCount = favs.size
+        val n = favs.size
         rebuildThen {
             when {
-                !wasFavPos -> adapter.posOf(e.key, false)
-                newFavCount > 0 -> pos.coerceAtMost(newFavCount - 1)
-                else -> adapter.posOf(e.key, false)
+                !isFav -> n - 1
+                n > 0 -> slot.coerceAtMost(n - 1)
+                else -> adapter.slotOf(e.key, false)
             }
         }
     }
 
+    private fun hideApp(e: AppEntry, slot: Int) {
+        store.setHidden(store.hidden() + e.key)
+        store.save(adapter.favKeys().filter { it != e.key }, adapter.appKeys())
+        rebuildThen { if (adapter.isFav(slot)) slot.coerceAtMost(adapter.favCount - 1) else slot.coerceAtMost(AppAdapter.GRID + adapter.gridCount - 1) }
+    }
+
+    private fun openHiddenList() {
+        prevFocus = currentFocus
+        blockContent(true)
+        val hid = allApps.filter { it.key in store.hidden() }
+        val opts: List<Pair<String, () -> Unit>> = if (hid.isEmpty()) {
+            listOf("No hay apps ocultas" to { closeMenu() })
+        } else {
+            hid.map { a -> "Mostrar ${a.label}" to { closeMenu(restore = false); store.setHidden(store.hidden() - a.key); rebuildThen { if (adapter.favCount > 0) 0 else AppAdapter.GRID } } }
+        }
+        menu.showList("Apps ocultas", opts)
+    }
+
     private fun rebuildThen(pos: () -> Int) {
-        rebuild(focusPos = -1)
+        rebuild(focusSlot = -1)
         main.post { focusAt(pos().coerceAtLeast(0)) }
     }
 
     // ---------- Modo mover ----------
 
-    private fun startMove(pos: Int) {
-        val e = adapter.entryAt(pos) ?: return
+    private fun startMove(slot: Int) {
+        val e = adapter.entryAt(slot) ?: return
         moving = true
         adapter.movingKey = e.key
-        adapter.movingFav = adapter.isFavPos(pos)
-        adapter.notifyItemChanged(pos)
+        adapter.movingFav = adapter.isFav(slot)
+        adapter.refreshSlot(slot)
         hint.visibility = View.VISIBLE
-        rv.post { rv.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus() }
+        focusAt(slot)
     }
 
     private fun endMove() {
@@ -516,19 +730,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
         hint.visibility = View.GONE
         store.save(adapter.favKeys(), adapter.appKeys())
         if (key != null) {
-            val p = adapter.posOf(key, fav)
-            if (p >= 0) adapter.notifyItemChanged(p)
+            adapter.refreshSlot(adapter.slotOf(key, fav))
         }
     }
 
     private fun moveStep(dx: Int, dy: Int) {
-        val from = focusedPos()
-        if (from < 0) return
-        val to = from + dx + dy * 5
-        if (adapter.move(from, to)) {
-            rv.scrollToPosition(to)
-            rv.post { rv.findViewHolderForAdapterPosition(to)?.itemView?.requestFocus() }
-        }
+        val from = focusedSlot() ?: return
+        val to = if (adapter.isFav(from)) from + dx else from + dx + dy * 5
+        if (adapter.move(from, to)) focusAt(to)
     }
 
     // ---------- Teclas ----------
@@ -536,6 +745,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         val down = e.action == KeyEvent.ACTION_DOWN
         val k = e.keyCode
+        scheduleArtMode()
+        if (state == HomeState.ART_MODE) {
+            // cualquier tecla solo despierta la interfaz; no se ejecuta
+            if (down) exitArtMode()
+            return true
+        }
         if (down) {
             when (k) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { Nav.dx = -1; Nav.dy = 0 }
@@ -570,14 +785,35 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
             }
         }
         if (k == KeyEvent.KEYCODE_MENU && down) {
-            val pos = focusedPos()
-            val en = if (pos >= 0) adapter.entryAt(pos) else null
-            if (en != null) openMenu(en, pos)
+            val slot = focusedSlot()
+            val en = if (slot != null) adapter.entryAt(slot) else null
+            if (en != null) openMenu(en, slot!!)
             return true
         }
         if (k == KeyEvent.KEYCODE_BACK) {
-            if (e.action == KeyEvent.ACTION_UP && adapter.itemCount > 0) focusAt(0)
+            if (down) when (state) {
+                HomeState.GRID -> closeGrid()
+                HomeState.TOPBAR -> focusAt(lastDockSlot)
+                else -> focusFirst()
+            }
             return true
+        }
+        if (down) {
+            val slot = focusedSlot()
+            // DOWN desde la barra superior vuelve al último tile del dock
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN && state == HomeState.TOPBAR && adapter.favCount > 0) {
+                focusAt(lastDockSlot.coerceIn(0, adapter.favCount - 1))
+                return true
+            }
+            // DOWN desde el dock sube la grilla; UP desde la primera fila la baja
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN && !gridOpen && slot != null && adapter.isFav(slot) && adapter.gridCount > 0) {
+                openGrid()
+                return true
+            }
+            if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && slot != null && slot - AppAdapter.GRID < 5 && adapter.favCount > 0) {
+                closeGrid()
+                return true
+            }
         }
         return super.dispatchKeyEvent(e)
     }
@@ -587,6 +823,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks {
 
     private companion object {
         const val ART_MS = 30L * 60_000L
+        const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L
+        const val ART_MODE_MS = 45_000L
+        const val PERM_TV = "android.permission.READ_TV_LISTINGS"
     }
 }

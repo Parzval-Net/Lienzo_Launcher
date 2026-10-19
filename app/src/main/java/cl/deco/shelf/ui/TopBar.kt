@@ -16,12 +16,13 @@ import kotlin.math.roundToInt
 class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
 
     private val clock = tv(ctx, 44f, Ui.TEXT, "sans-serif-light").apply {
-        setShadowLayer(ctx.dpf(4f), 0f, ctx.dpf(1f), 0x99000000.toInt())
+        setShadowLayer(8f, 0f, 2f, 0x80000000.toInt())
     }
     private val date = tv(ctx, 16f, Ui.TEXT, "sans-serif-medium")
     private val holiday = tv(ctx, 13f, Ui.ACCENT, "sans-serif-medium").apply { visibility = GONE }
     private val icon = ImageView(ctx)
-    private val temp = tv(ctx, 30f, Ui.TEXT, "sans-serif-light").apply { text = "--" }
+    private val rain = tv(ctx, 16f, Ui.TEXT).apply { alpha = 0.7f; visibility = GONE; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()); compoundDrawablePadding = ctx.dp(3) }
+    private val temp = tv(ctx, 30f, Ui.TEXT, "sans-serif-light").apply { text = "--"; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()) }
 
     private fun focusBg(ctx: Context) = StateListDrawable().apply {
         addState(
@@ -36,7 +37,7 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
             orientation = LinearLayout.VERTICAL
             setPadding(ctx.dp(12), 0, 0, 0)
             for (t in listOf(date, holiday)) {
-                t.setShadowLayer(ctx.dpf(3f), 0f, ctx.dpf(1f), 0x99000000.toInt())
+                t.setShadowLayer(8f, 0f, 2f, 0x80000000.toInt())
                 addView(t, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(1) })
             }
         }
@@ -61,6 +62,7 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
             setOnClickListener { onToday() }
             addView(icon, LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(40)))
             addView(temp, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(6) })
+            addView(rain, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
         }
         icon.visibility = GONE
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
@@ -79,10 +81,17 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
         if (w == null) {
             icon.visibility = GONE
             temp.text = "--"
+            rain.visibility = GONE
         } else {
-            icon.setImageResource(WeatherIcons.iconFor(w.currentCode))
+            icon.setImageResource(WeatherIcons.iconFor(w.displayCode, w.isDay))
             icon.visibility = VISIBLE
             temp.text = "${w.currentTemp.roundToInt()}°"
+            val p = w.rainSoonProb ?: 0
+            if (p >= 50) {
+                rain.text = "$p%"
+                rain.setCompoundDrawablesRelativeWithIntrinsicBounds(cl.deco.shelf.R.drawable.ic_wx_drop, 0, 0, 0)
+                rain.visibility = VISIBLE
+            } else rain.visibility = GONE
         }
     }
 }

@@ -1,138 +1,144 @@
 package cl.deco.shelf.ui
 
-import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import cl.deco.shelf.apps.AppEntry
 import cl.deco.shelf.apps.ImageLoader
 
+/** Geometría de un tipo de celda (dock o grilla), en px. */
+class CellGeo(val tileW: Int, val tileH: Int, val padX: Int, val padTop: Int, val padBottom: Int, val label: Boolean)
+
 /**
- * Una sola lista para el dock y la grilla: [favoritas][separador][todas las apps].
- * Las favoritas aparecen también en la grilla (grilla = todas las apps).
+ * Datos del dock (favoritas, una fila) y de la grilla (resto de apps), con dos adapters.
+ * Cada app se identifica con un "slot": índice de favorita (0..) o GRID + índice en la grilla.
  */
 class AppAdapter(
     private val loader: ImageLoader,
-    private val tileW: Int,
-    private val tileH: Int,
-    private val padX: Int,
-    private val padY: Int,
-    private val gapH: Int,
+    private val dockGeo: CellGeo,
+    private val gridGeo: CellGeo,
     private val radius: Float,
     private val cb: Callbacks,
-) : RecyclerView.Adapter<AppAdapter.VH>() {
+) {
 
     interface Callbacks {
         fun onClick(e: AppEntry)
-        fun onLongClick(e: AppEntry, pos: Int)
-        fun onFocus(e: AppEntry, pos: Int)
+        fun onLongClick(e: AppEntry, slot: Int)
+        fun onFocus(e: AppEntry, slot: Int)
+    }
+
+    companion object {
+        const val GRID = 10000
     }
 
     private val favs = ArrayList<AppEntry>()
     private val apps = ArrayList<AppEntry>()
+    val dock = TileAdapter(true)
+    val grid = TileAdapter(false)
 
     /** Tile en modo mover (clave + sección). */
     var movingKey: String? = null
     var movingFav = false
 
-    init { setHasStableIds(true) }
-
     val favCount get() = favs.size
-    val gridStart get() = if (favs.isEmpty()) 0 else favs.size + 1
+    val gridCount get() = apps.size
 
-    class VH(v: View, val cell: FocusCell?) : RecyclerView.ViewHolder(v)
+    fun isFav(slot: Int) = slot < GRID
+    fun hasItems() = favs.isNotEmpty() || apps.isNotEmpty()
 
-    fun submit(f: List<AppEntry>, all: List<AppEntry>) {
+    /** Devuelve false (sin tocar nada) si la lista no cambió, para no perder el foco. */
+    fun submit(f: List<AppEntry>, all: List<AppEntry>): Boolean {
+        if (f.map { it.key } == favKeys() && all.map { it.key } == appKeys()) return false
         favs.clear(); favs.addAll(f)
         apps.clear(); apps.addAll(all)
-        notifyDataSetChanged()
+        dock.notifyDataSetChanged()
+        grid.notifyDataSetChanged()
+        return true
     }
 
-    fun entryAt(pos: Int): AppEntry? = when {
-        pos < favs.size -> favs[pos]
-        favs.isEmpty() -> apps.getOrNull(pos)
-        pos == favs.size -> null
-        else -> apps.getOrNull(pos - favs.size - 1)
-    }
+    fun entryAt(slot: Int): AppEntry? =
+        if (slot < GRID) favs.getOrNull(slot) else apps.getOrNull(slot - GRID)
 
-    fun isFavPos(pos: Int) = pos < favs.size
-    fun isGridPos(pos: Int) = pos >= gridStart
-    fun isGap(pos: Int) = favs.isNotEmpty() && pos == favs.size
-
-    fun posOf(key: String, fav: Boolean): Int {
+    /** Slot de la app con esa clave en la sección pedida, o -1. */
+    fun slotOf(key: String, fav: Boolean): Int {
         if (fav) return favs.indexOfFirst { it.key == key }
         val i = apps.indexOfFirst { it.key == key }
-        return if (i < 0) -1 else gridStart + i
+        return if (i < 0) -1 else GRID + i
     }
 
     fun favKeys() = favs.map { it.key }
     fun appKeys() = apps.map { it.key }
 
-    /** Mueve un elemento dentro de su sección. Devuelve false si el destino cae fuera. */
+    /** Mueve dentro de la sección. Devuelve false si el destino cae fuera. */
     fun move(from: Int, to: Int): Boolean {
         if (from == to) return false
-        if (isFavPos(from)) {
+        if (from < GRID) {
             if (to !in 0 until favs.size) return false
             favs.add(to, favs.removeAt(from))
+            dock.notifyItemMoved(from, to)
         } else {
-            val a = from - gridStart
-            val b = to - gridStart
+            val a = from - GRID
+            val b = to - GRID
             if (a !in 0 until apps.size || b !in 0 until apps.size) return false
             apps.add(b, apps.removeAt(a))
+            grid.notifyItemMoved(a, b)
         }
-        notifyItemMoved(from, to)
         return true
     }
 
-    override fun getItemCount() = favs.size + (if (favs.isEmpty()) 0 else 1) + apps.size
-
-    override fun getItemViewType(position: Int) = if (isGap(position)) 1 else 0
-
-    override fun getItemId(position: Int): Long {
-        val e = entryAt(position) ?: return -1L
-        return e.key.hashCode().toLong() * 2 + (if (isFavPos(position)) 1 else 0)
+    fun refreshSlot(slot: Int) {
+        if (slot < 0) return
+        if (slot < GRID) dock.notifyItemChanged(slot) else grid.notifyItemChanged(slot - GRID)
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        if (viewType == 1) {
-            val v = View(parent.context)
-            v.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gapH)
-            return VH(v, null)
+    class TileVH(val cell: FocusCell) : RecyclerView.ViewHolder(cell)
+
+    inner class TileAdapter(private val isDock: Boolean) : RecyclerView.Adapter<TileVH>() {
+        private val geo get() = if (isDock) dockGeo else gridGeo
+        private val list get() = if (isDock) favs else apps
+        private fun slotFor(pos: Int) = if (isDock) pos else GRID + pos
+
+        init { setHasStableIds(true) }
+
+        override fun getItemCount() = list.size
+        override fun getItemId(position: Int) = list[position].key.hashCode().toLong()
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TileVH {
+            val g = geo
+            val cell = FocusCell(parent.context, g.tileW, g.tileH, g.padX, g.padTop, g.padBottom, radius, withLabel = g.label)
+            val vh = TileVH(cell)
+            cell.setOnClickListener { entryAt(slotFor(vh.bindingAdapterPosition))?.let(cb::onClick) }
+            cell.setOnLongClickListener {
+                val s = slotFor(vh.bindingAdapterPosition)
+                entryAt(s)?.let { e -> cb.onLongClick(e, s); true } ?: false
+            }
+            cell.onFocus = { f ->
+                if (f) {
+                    val s = slotFor(vh.bindingAdapterPosition)
+                    entryAt(s)?.let { e -> cb.onFocus(e, s) }
+                }
+            }
+            return vh
         }
-        val cell = FocusCell(parent.context, tileW, tileH, padX, padY, radius)
-        val vh = VH(cell, cell)
-        cell.setOnClickListener { entryAt(vh.bindingAdapterPosition)?.let(cb::onClick) }
-        cell.setOnLongClickListener {
-            val p = vh.bindingAdapterPosition
-            entryAt(p)?.let { e -> cb.onLongClick(e, p); true } ?: false
-        }
-        cell.onFocus = { f ->
-            if (f) {
-                val p = vh.bindingAdapterPosition
-                entryAt(p)?.let { e -> cb.onFocus(e, p) }
+
+        override fun onBindViewHolder(h: TileVH, position: Int) {
+            val e = list[position]
+            val cell = h.cell
+            cell.tag = e.key
+            cell.label?.text = e.label
+            cell.setMoving(movingKey == e.key && movingFav == isDock)
+            val hit = loader.cached(e)
+            if (hit != null) {
+                cell.image.setImageBitmap(hit)
+            } else {
+                cell.image.setImageDrawable(null)
+                loader.load(e) { bmp -> if (cell.tag == e.key) cell.image.setImageBitmap(bmp) }
             }
         }
-        return vh
-    }
 
-    override fun onBindViewHolder(h: VH, position: Int) {
-        val cell = h.cell ?: return
-        val e = entryAt(position) ?: return
-        cell.tag = e.key
-        cell.setMoving(movingKey == e.key && movingFav == isFavPos(position))
-        val hit = loader.cached(e)
-        if (hit != null) {
-            cell.image.setImageBitmap(hit)
-        } else {
-            cell.image.setImageDrawable(null)
-            loader.load(e) { bmp -> if (cell.tag == e.key) cell.image.setImageBitmap(bmp) }
-        }
-    }
-
-    override fun onViewRecycled(h: VH) {
-        h.cell?.let {
-            it.resetFx()
-            it.image.setImageDrawable(null)
-            it.tag = null
+        override fun onViewRecycled(h: TileVH) {
+            h.cell.resetFx()
+            h.cell.image.setImageDrawable(null)
+            h.cell.tag = null
         }
     }
 }

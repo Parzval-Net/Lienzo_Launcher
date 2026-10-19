@@ -134,15 +134,48 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
         return Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
     }
 
-    private fun render(entry: AppEntry): Bitmap? = try {
+    private fun mix(c: Int, other: Int, t: Float): Int = Color.rgb(
+        (Color.red(c) + (Color.red(other) - Color.red(c)) * t).toInt(),
+        (Color.green(c) + (Color.green(other) - Color.green(c)) * t).toInt(),
+        (Color.blue(c) + (Color.blue(other) - Color.blue(c)) * t).toInt(),
+    )
+
+    private fun render(entry: AppEntry): Bitmap? = render(entry, w, h, radius)
+
+    private fun render(entry: AppEntry, w: Int, h: Int, radius: Float): Bitmap? = try {
+        if (entry.component.className == HIDDEN_CLASS) renderHiddenTile(w, h, radius) else renderApp(entry, w, h, radius)
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Tile sintético "Apps ocultas". */
+    private fun renderHiddenTile(w: Int, h: Int, radius: Float): Bitmap {
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.clipPath(Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), radius, radius, Path.Direction.CW) })
+        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply {
+            shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), 0xFF3A3F4D.toInt(), 0xFF1A1D26.toInt(), Shader.TileMode.CLAMP)
+        })
+        val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 14f * density
+            textAlign = Paint.Align.CENTER
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        }
+        c.drawText("Apps ocultas", w / 2f, h / 2f + 5f * density, tp)
+        return bmp
+    }
+
+    private fun renderApp(entry: AppEntry, w: Int, h: Int, radius: Float): Bitmap? = try {
         val info: ActivityInfo = pm.getActivityInfo(entry.component, 0)
-        val banner: Drawable? = info.loadBanner(pm)
+        val override = IconOverrides.forPackage(entry.component.packageName)?.let { context.getDrawable(it) }
+        val banner: Drawable? = override ?: info.loadBanner(pm)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val path = Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), radius, radius, Path.Direction.CW) }
         c.clipPath(path)
         if (banner != null) {
-            // Banner 16:9 contenido en tile 5:3 sobre el color promedio del propio banner
+            // Banner contenido en tile 5:3 sobre el color promedio del propio banner
             c.drawColor(averageColor(banner))
             val iw = banner.intrinsicWidth.takeIf { it > 0 } ?: w
             val ih = banner.intrinsicHeight.takeIf { it > 0 } ?: h
@@ -154,25 +187,23 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
             banner.setBounds(l, t, l + dw, t + dh)
             banner.draw(c)
         } else {
+            // Solo ícono: degradado diagonal de su color dominante (claro a oscuro), ícono al 55% del alto
+            val icon = info.loadIcon(pm)
+            val adaptive = icon as? android.graphics.drawable.AdaptiveIconDrawable
+            val base = adaptive?.background?.let { averageColor(it) } ?: averageColor(icon)
             val bg = Paint().apply {
-                shader = LinearGradient(0f, 0f, 0f, h.toFloat(), 0xFF2E3340.toInt(), 0xFF1A1D26.toInt(), Shader.TileMode.CLAMP)
+                shader = LinearGradient(
+                    0f, 0f, w.toFloat(), h.toFloat(),
+                    mix(base, Color.WHITE, 0.22f), mix(base, Color.BLACK, 0.40f), Shader.TileMode.CLAMP,
+                )
             }
             c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), bg)
-            val icon = info.loadIcon(pm)
-            val side = (h * 0.5f).toInt()
+            val side = if (adaptive != null) (h * 0.55f * 108f / 72f).toInt() else (h * 0.55f).toInt()
             val l = (w - side) / 2
-            val t = (h * 0.12f).toInt()
-            icon.setBounds(l, t, l + side, t + side)
-            icon.draw(c)
-            val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                textSize = 12f * density
-                textAlign = Paint.Align.CENTER
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            }
-            val maxW = w - 16f * density
-            val text = TextUtils.ellipsize(entry.label, tp, maxW, TextUtils.TruncateAt.END).toString()
-            c.drawText(text, w / 2f, h - 14f * density, tp)
+            val t = (h - side) / 2
+            val layer: Drawable = adaptive?.foreground ?: icon
+            layer.setBounds(l, t, l + side, t + side)
+            layer.draw(c)
         }
         bmp
     } catch (e: Exception) {
@@ -180,6 +211,7 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
     }
 
     private companion object {
+        const val HIDDEN_CLASS = "hidden"
         const val CACHE_BYTES = 8 * 1024 * 1024
         const val MAX_DOWNLOAD = 4 * 1024 * 1024
     }

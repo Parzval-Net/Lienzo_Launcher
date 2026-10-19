@@ -45,7 +45,7 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
 
     private fun ctx() = context
 
-    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit) {
+    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit, onHide: () -> Unit, onHidden: () -> Unit) {
         box.removeAllViews()
         title.text = label
         title.maxLines = 1
@@ -54,10 +54,23 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
             option(if (isFav) "Quitar de favoritas" else "Agregar a favoritas", onFav),
             option("Mover", onMove),
             option("Info de la app", onInfo),
+            option("Ocultar app", onHide),
+            option("Ver apps ocultas", onHidden),
         )
         for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(44)))
         visibility = VISIBLE
         opts[0].requestFocus()
+    }
+
+    /** Lista simple de opciones (p. ej. apps ocultas a restaurar). */
+    fun showList(label: String, options: List<Pair<String, () -> Unit>>) {
+        box.removeAllViews()
+        title.text = label
+        box.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = context.dp(10); leftMargin = context.dp(14) })
+        val views = options.map { (t, a) -> option(t, a) }
+        for (o in views) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(44)))
+        visibility = VISIBLE
+        views.firstOrNull()?.requestFocus()
     }
 
     fun hide() { visibility = GONE }
