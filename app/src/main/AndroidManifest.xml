@@ -17,6 +17,7 @@
     </queries>
 
     <application
+        android:name=".App"
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:icon="@drawable/banner"
