@@ -108,7 +108,21 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
             currentCode = cur.getInt("weather_code"),
             days = days,
             fetchedAt = fetchedAt,
+            isDay = cur.optInt("is_day", 1) == 1,
+            rainSoonProb = rainSoon(root.optJSONObject("hourly"), cur.getString("time")),
         )
+    }
+
+    // Máximo de precipitation_probability desde la hora actual y las 2 siguientes.
+    private fun rainSoon(hourly: JSONObject?, nowIso: String): Int? {
+        hourly ?: return null
+        val times = hourly.getJSONArray("time")
+        val probs = hourly.getJSONArray("precipitation_probability")
+        val hour = nowIso.take(13)
+        val start = (0 until times.length()).firstOrNull { times.getString(it).startsWith(hour) } ?: return null
+        return (start until minOf(start + 3, times.length()))
+            .filterNot { probs.isNull(it) }
+            .maxOfOrNull { probs.getInt(it) }
     }
 
     private fun cacheFile() = File(context.filesDir, "weather.json")
@@ -126,7 +140,11 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
                 precipProb = if (d.isNull("precip")) null else d.getInt("precip"),
             )
         }
-        Weather(o.getDouble("currentTemp"), o.getInt("currentCode"), days, o.getLong("fetchedAt"))
+        Weather(
+            o.getDouble("currentTemp"), o.getInt("currentCode"), days, o.getLong("fetchedAt"),
+            isDay = o.optBoolean("isDay", true),
+            rainSoonProb = if (o.isNull("rainSoon")) null else o.optInt("rainSoon"),
+        )
     } catch (e: Exception) {
         null
     }
@@ -148,6 +166,8 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
                 .put("currentTemp", w.currentTemp)
                 .put("currentCode", w.currentCode)
                 .put("fetchedAt", w.fetchedAt)
+                .put("isDay", w.isDay)
+                .put("rainSoon", w.rainSoonProb ?: JSONObject.NULL)
                 .put("days", arr)
             val target = cacheFile()
             val tmp = File(target.parentFile, "${target.name}.tmp")
@@ -162,11 +182,12 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
         const val TAG = "OpenMeteoWeather"
         const val UA = "Shelf-TV-Launcher/0.1"
         const val TIMEOUT_MS = 8_000
-        const val TTL_MS = 60L * 60 * 1000
+        const val TTL_MS = 30L * 60 * 1000
         const val URL_FORECAST =
             "https://api.open-meteo.com/v1/forecast?latitude=-33.4489&longitude=-70.6693" +
                 "&timezone=America%2FSantiago&forecast_days=7" +
-                "&current=temperature_2m,weather_code" +
+                "&current=temperature_2m,weather_code,is_day" +
+                "&hourly=precipitation_probability&forecast_hours=4" +
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
     }
 }
