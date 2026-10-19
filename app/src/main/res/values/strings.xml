@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">Lienzo</string>
+    <string name="home_service_desc">Abre Lienzo al pulsar el botón Home. Solo lee esa tecla; no lee el contenido de la pantalla.</string>
     <string name="dream_name">Lienzo Arte</string>
 </resources>

@@ -302,11 +302,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) reloadApps()
+        if (settings.isOpen) settings.rebuild()
     }
 
     override fun onStart() {
         super.onStart()
         started = true
+        lienzoVisible = true
         if (state == HomeState.ART_MODE) applyState(stateBeforeArt, animate = false)
         registerReceiver(pkgReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -317,6 +319,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         reloadApps()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
         checkLowSpace()
+        // Asistente de primer inicio: una sola vez; después, desde Ajustes
+        if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
         ClockScheduler.scheduleAll(this) // reprograma temporizadores, alarmas y apagado nocturno
         nightActive = NightMode.refresh(this)
         updateClockStatus()
@@ -330,6 +334,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun onStop() {
         started = false
+        lienzoVisible = false
         stopAt = System.currentTimeMillis()
         main.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(pkgReceiver) }
@@ -981,6 +986,16 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         settings.open(settingsPages.root())
     }
 
+    private fun openWizard() {
+        prevFocus = currentFocus
+        blockContent(true)
+        settings.open(settingsPages.wizard())
+    }
+
+    override fun finishSettings() { closeSettings() }
+
+    override fun requestTvPermission() { requestPermissions(arrayOf(PERM_TV), 1) }
+
     private fun closeSettings() {
         settings.close()
         blockContent(false)
@@ -1360,7 +1375,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     @Deprecated("Home ya es la raíz")
     override fun onBackPressed() { /* launcher: ignorar back */ }
 
-    private companion object {
+    companion object {
+        /** Lienzo visible (lo consulta el servicio de accesibilidad de Home, sin estado propio). */
+        @Volatile @JvmStatic var lienzoVisible = false
+
         const val TILE_W = 224
         const val TILE_H = 126
         const val GRID_COLS = 7

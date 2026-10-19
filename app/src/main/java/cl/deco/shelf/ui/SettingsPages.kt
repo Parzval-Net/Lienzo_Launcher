@@ -3,6 +3,9 @@ package cl.deco.shelf.ui
 import android.os.Handler
 import android.os.Looper
 import cl.deco.shelf.data.weather.Geocoding
+import android.content.Intent
+import android.provider.Settings
+import cl.deco.shelf.Graph
 import cl.deco.shelf.clock.NightMode
 import cl.deco.shelf.settings.ShelfPrefs
 import java.io.File
@@ -21,6 +24,8 @@ interface SettingsHost {
     fun exportBackup(): String
     fun backups(): List<File>
     fun restoreBackup(f: File)
+    fun requestTvPermission()
+    fun finishSettings()
 }
 
 /** Construye las páginas del panel de ajustes a partir de ShelfPrefs. */
@@ -84,6 +89,93 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Act("Exportar configuración") { lastBackup = host.exportBackup(); panel.rebuild() },
         Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
         Row.Act("Restaurar configuración") { panel.push(restorePage()) },
+        Row.Act("Asistente de configuración") { panel.push(wizard()) },
+        Row.Section("Avanzado"),
+        Row.Info("Botón Home con accesibilidad") { if (homeServiceOn()) "Activo" else "Apagado (opcional, para decos donde no se puede cambiar el launcher por defecto)" },
+        Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+    ))
+
+    // ---- Asistente de configuración ----
+
+    private fun isHome(): Boolean {
+        val ri = ctx.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+        return ri?.activityInfo?.packageName == ctx.packageName
+    }
+
+    private fun homeServiceOn(): Boolean =
+        Settings.Secure.getString(ctx.contentResolver, "enabled_accessibility_services").orEmpty().contains("${ctx.packageName}/")
+
+    private fun openActivity(i: Intent): Boolean = try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (_: Exception) { false }
+
+    private fun artState(): Pair<Boolean, String> {
+        val (d, t) = try { Graph.from(ctx).art.downloadProgress() } catch (_: Throwable) { 0 to 0 }
+        return when {
+            t == 0 -> true to "Listo"
+            d >= t -> true to "Listo: $d obras"
+            else -> false to "$d de $t obras"
+        }
+    }
+
+    fun wizard(): Page = Page("Bienvenido a Lienzo", listOf(
+        Row.Info("") { "Lienzo es tu pantalla de inicio: una obra de arte de fondo, tus apps favoritas en el dock y lo que estabas viendo." },
+        Row.Info("") { "Este asistente tarda un minuto. Puedes repetirlo desde Ajustes, en Info." },
+        Row.Act("Comenzar") { panel.push(wizardTopShelf()) },
+    ))
+
+    private fun wizardTopShelf(): Page = Page("Contenido de tus apps", listOf(
+        Row.Info("Permiso de lectura de Top Shelf") { if (ctx.checkSelfPermission("android.permission.READ_TV_LISTINGS") == android.content.pm.PackageManager.PERMISSION_GRANTED) "Concedido" else "Pendiente" },
+        Row.Info("") { "Con este permiso Lienzo muestra lo que sigues viendo (Watch Next) de Netflix, YouTube, Disney+ y otras." },
+        Row.Act("Conceder permiso") { host.requestTvPermission() },
+        Row.Act("Siguiente") { panel.push(wizardArt()) },
+    ))
+
+    private fun wizardArt(): Page {
+        val title = "Colección de arte"
+        val (ready, _) = artState()
+        fun tick() {
+            main.postDelayed({
+                // refresco de 1 s solo mientras esta pantalla está visible y la descarga no termina
+                if (panel.isOpen && panel.currentTitle() == title) { panel.rebuild(); if (!artState().first) tick() }
+            }, 1000)
+        }
+        val rows = ArrayList<Row>()
+        rows += Row.Info("Estado") { artState().second }
+        rows += Row.Bar("Descarga", { artState().second }, { Graph.from(ctx).art.downloadProgress().let { (d, t) -> if (t > 0) d.toFloat() / t else 1f } })
+        if (!ready) rows += Row.Act("Descargar 60 obras (~23 MB)") {
+            try { Graph.from(ctx).art.startFullDownload() } catch (_: Throwable) {}
+            tick()
+        }
+        rows += Row.Info("") { "La descarga sigue en segundo plano aunque salgas de esta pantalla." }
+        rows += Row.Act("Siguiente") { panel.push(wizardHome()) }
+        return Page(title, rows, onShow = { if (!ready && artState().second != "Listo" && Graph.from(ctx).art.downloadProgress().first > 0) tick() })
+    }
+
+    private fun wizardHome(): Page {
+        val rows = ArrayList<Row>()
+        rows += Row.Info("Lienzo como pantalla de inicio") { if (isHome()) "Sí, Lienzo ya es tu Home" else "No" }
+        if (!isHome()) {
+            rows += Row.Act("Abrir ajustes de Home") {
+                if (!openActivity(Intent(Settings.ACTION_HOME_SETTINGS))) panel.push(Page("Elegir Lienzo como Home", listOf(
+                    Row.Info("") { "Pulsa el botón Home del control y, cuando Android pregunte, elige Lienzo y marca \"Siempre\"." },
+                )))
+            }
+            rows += Row.Info("") { "Si tu deco no deja cambiar el launcher, activa \"Botón Home con accesibilidad\": Lienzo se abrirá al pulsar Home." }
+            rows += Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
+        rows += Row.Act("Siguiente") { panel.push(wizardAdb()) }
+        return Page("Pantalla de inicio", rows)
+    }
+
+    private fun wizardAdb(): Page = Page("Funciones avanzadas", listOf(
+        Row.Info("Apagado nocturno") { if (NightMode.hasPermission(ctx)) "Concedido" else "Falta: adb shell pm grant cl.deco.shelf android.permission.WRITE_SECURE_SETTINGS" },
+        Row.Info("Alarma sobre otras apps") { if (Settings.canDrawOverlays(ctx)) "Concedido" else "Falta: adb shell appops set cl.deco.shelf SYSTEM_ALERT_WINDOW allow" },
+        Row.Info("") { "Sin ADB todo lo demás funciona; la alarma y el temporizador abren Lienzo a pantalla completa en lugar de aparecer sobre otras apps." },
+        Row.Act("Siguiente") { panel.push(wizardEnd()) },
+    ))
+
+    private fun wizardEnd(): Page = Page("Todo listo", listOf(
+        Row.Info("") { "Pulsa MENU sobre una app para fijarla, renombrarla u ocultarla, y abre Ajustes de Lienzo desde la grilla cuando quieras." },
+        Row.Act("Terminar") { host.finishSettings() },
     ))
 
     private fun storage(): Pair<Long, Long> {

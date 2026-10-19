@@ -38,6 +38,8 @@ class ShelfPrefs(context: Context) {
     var nightFromMin: Int get() = int(NIGHT_FROM, 21 * 60); set(v) = put(NIGHT_FROM, v)
     var nightToMin: Int get() = int(NIGHT_TO, 7 * 60); set(v) = put(NIGHT_TO, v)
     var nightIdleMin: Int get() = int(NIGHT_IDLE, 60); set(v) = put(NIGHT_IDLE, v)
+    /** El asistente de primer inicio ya se mostró. */
+    var setupDone: Boolean get() = bool(SETUP_DONE, false); set(v) = put(SETUP_DONE, v)
     // Ubicación y región
     var cityName: String get() = str(CITY_NAME, "Santiago"); set(v) = put(CITY_NAME, v)
     var cityLat: Double get() = java.lang.Double.longBitsToDouble(sp.getLong(CITY_LAT, java.lang.Double.doubleToLongBits(-33.4489))); set(v) { sp.edit().putLong(CITY_LAT, java.lang.Double.doubleToLongBits(v)).apply() }
@@ -79,6 +81,7 @@ class ShelfPrefs(context: Context) {
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
         const val TOP_SHELF = "top_shelf"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"
         const val DOCK_MAX = "dock_max"; const val ICON_ORIGINAL = "icon_original"
+        const val SETUP_DONE = "setup_done"
         const val NIGHT_ON = "night_on"; const val NIGHT_FROM = "night_from"; const val NIGHT_TO = "night_to"; const val NIGHT_IDLE = "night_idle"
         const val CITY_NAME = "city_name"; const val CITY_LAT = "city_lat"; const val CITY_LON = "city_lon"; const val CITY_TZ = "city_tz"
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
