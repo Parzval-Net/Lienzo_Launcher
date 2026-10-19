@@ -137,11 +137,14 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    private fun firstFocusable(g: ViewGroup): View? {
+    /** Primer control accionable (los textos informativos son enfocables solo para poder hacer scroll). */
+    private fun firstFocusable(g: ViewGroup): View? = firstFocusable(g, true) ?: firstFocusable(g, false)
+
+    private fun firstFocusable(g: ViewGroup, actionable: Boolean): View? {
         for (i in 0 until g.childCount) {
             val c = g.getChildAt(i)
-            if (c.isFocusable) return c
-            if (c is ViewGroup) firstFocusable(c)?.let { return it }
+            if (c.isFocusable && (!actionable || c.isClickable)) return c
+            if (c is ViewGroup) firstFocusable(c, actionable)?.let { return it }
         }
         return null
     }

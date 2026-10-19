@@ -12,7 +12,7 @@ import android.widget.LinearLayout
 import cl.deco.shelf.data.weather.Weather
 
 /** Reloj + fecha (+ feriado) a la izquierda y clima actual a la derecha. Ambos bloques son enfocables. */
-class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit) : FrameLayout(ctx) {
+class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: () -> Unit = {}, onSettings: () -> Unit = {}) : FrameLayout(ctx) {
 
     private val clock = tv(ctx, 44f, Ui.TEXT, "sans-serif-light").apply {
         setShadowLayer(8f, 0f, 2f, 0x80000000.toInt())
@@ -95,7 +95,22 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit) : FrameLa
         icon.visibility = GONE
         addView(lowChip, LayoutParams(-2, -2, Gravity.CENTER))
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        addView(right, LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
+        // Accesos directos junto al clima (como en AT4K y Monet): Wi-Fi y Ajustes
+        fun action(res: Int, desc: String, f: () -> Unit) = android.widget.ImageView(ctx).apply {
+            setImageResource(res); setColorFilter(Ui.TEXT)
+            contentDescription = desc
+            setPadding(ctx.dp(8), ctx.dp(8), ctx.dp(8), ctx.dp(8))
+            isFocusable = true; isClickable = true
+            background = focusBg(ctx)
+            setOnClickListener { f() }
+        }
+        val rightRow = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(action(cl.deco.shelf.R.drawable.ic_q_wifi, "Wi-Fi", onWifi), LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(40)))
+            addView(action(cl.deco.shelf.R.drawable.ic_q_android, "Ajustes", onSettings), LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(40)).apply { leftMargin = ctx.dp(4); rightMargin = ctx.dp(10) })
+            addView(this@TopBar.right)
+        }
+        addView(rightRow, LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
     }
 
     /** Reloj, clima y acento se actualizan por separado; el clima se oculta con el ajuste "Clima". */

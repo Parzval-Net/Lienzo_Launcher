@@ -258,7 +258,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             bottomMargin = dp(39)
         })
 
-        topBar = TopBar(this, { openClock() }, { openWeatherPanel() })
+        topBar = TopBar(this, { openClock() }, { openWeatherPanel() }, { QuickAccess.launch(this, QuickAccess.items[0]) }, { openSettings() })
         content.addView(topBar, FrameLayout.LayoutParams(-1, dp(64)).apply {
             topMargin = dp(18); leftMargin = dp(34); rightMargin = dp(34)
         })
