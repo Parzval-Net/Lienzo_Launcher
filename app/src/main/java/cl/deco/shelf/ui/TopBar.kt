@@ -31,6 +31,17 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit) : FrameLa
     private val timerChip = chip(ctx, cl.deco.shelf.R.drawable.ic_timer)
     private val alarmChip = chip(ctx, cl.deco.shelf.R.drawable.ic_alarm)
     private val moonChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
+    /** Aviso discreto "Poco espacio": enfocable, abre Almacenamiento. */
+    private val lowChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
+        text = "Poco espacio"
+        isFocusable = true; isClickable = true
+        setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6))
+        background = focusBg(ctx)
+    }
+    fun setLowSpace(on: Boolean, onClick: () -> Unit) {
+        lowChip.visibility = if (on) VISIBLE else GONE
+        lowChip.setOnClickListener { onClick() }
+    }
     private val status = LinearLayout(ctx).apply {
         gravity = Gravity.CENTER_VERTICAL
         addView(timerChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = ctx.dp(10) })
@@ -82,6 +93,7 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit) : FrameLa
             addView(rain, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
         }
         icon.visibility = GONE
+        addView(lowChip, LayoutParams(-2, -2, Gravity.CENTER))
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         addView(right, LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
     }

@@ -79,6 +79,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var gridName: android.widget.TextView
     private lateinit var gridHeader: android.widget.TextView
     private lateinit var gridScrim: View
+    private lateinit var contRv: ContinueRow
+    private lateinit var contHeader: android.widget.TextView
+    private var contHas = false
     private lateinit var scrimBg: GradientDrawable
     private var tileDp = 112
     private var cellDp = 124
@@ -194,6 +197,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         // Ancho = columnas reales (se ajusta en rebuild) para centrar la grilla con el mismo eje que el dock
         content.addView(gridRv, FrameLayout.LayoutParams(dp(GRID_COLS * cellDp + 16), screenH, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        // Fila "Continuar viendo" (Watch Next de todas las apps), sobre "Todas las apps"
+        contRv = ContinueRow(this, loader, { pkg -> allApps.firstOrNull { it.component.packageName == pkg } }) { launchItem(it) }
+        content.addView(contRv, FrameLayout.LayoutParams(-1, dp(110), Gravity.TOP).apply { topMargin = dp(103) })
+        contHeader = tv(this, 20f, Ui.TEXT, "sans-serif-medium").apply {
+            text = "Continuar viendo"
+            setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
+            alpha = 0f; visibility = View.INVISIBLE
+        }
+        content.addView(contHeader, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = dp(75) })
         // Scrim solo detrás de la grilla (y=220 px: 0%, y=520 px: 45%, constante hacia abajo); arriba la obra queda limpia
         scrimBg = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x00000000, 0x73000000, 0x73000000))
         gridScrim = View(this).apply { background = scrimBg; alpha = 0f; visibility = View.INVISIBLE }
@@ -252,7 +264,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         })
 
         // Orden de dibujo: el dock atenuado queda debajo de la grilla; la barra superior encima de todo
-        gridRv.bringToFront(); gridHeader.bringToFront(); gridName.bringToFront(); gridFade.bringToFront(); topBar.bringToFront()
+        gridRv.bringToFront(); contRv.bringToFront(); contHeader.bringToFront(); gridHeader.bringToFront(); gridName.bringToFront(); gridFade.bringToFront(); topBar.bringToFront()
         today = TodayPanel(this).apply { onNeedYear = { loadHolidays(it) }; setCity(prefs.cityName); onClockChanged = { updateClockStatus() } }
         menu = MenuPanel(this)
         settings = SettingsPanel(this)
@@ -303,6 +315,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         })
         reloadApps()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
+        checkLowSpace()
         ClockScheduler.scheduleAll(this) // reprograma temporizadores, alarmas y apagado nocturno
         nightActive = NightMode.refresh(this)
         updateClockStatus()
@@ -623,13 +636,24 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             favKeys = store.defaultFavorites(visible)
             store.save(favKeys, store.defaultOrder(visible))
         }
+        // Apps nuevas: instaladas tras el primer arranque con esta función; etiqueta "Nuevo" hasta abrirlas
+        val pkgs = visible.map { it.component.packageName }.toSet()
+        val known = store.known()
+        var newSet = store.newApps()
+        if (known == null) { if (pkgs.isNotEmpty()) store.setKnown(pkgs) }
+        else {
+            val fresh = visible.filter { it.component.packageName !in known }
+            if (fresh.isNotEmpty()) { newSet = newSet + fresh.map { it.key }; store.setNewApps(newSet); store.setKnown(known + pkgs) }
+        }
+        newSet = newSet.filter { k -> visible.any { it.key == k } }.toSet()
+        adapter.newKeys = newSet
         val idx = HashMap<String, Int>()
         store.order().forEachIndexed { i, k -> idx[k] = i }
         val byKey = visible.associateBy { it.key }
         // Máximo de favoritas del ajuste: las que sobran se muestran en la grilla
         val favs = favKeys.orEmpty().mapNotNull { byKey[it] }.distinctBy { it.key }.take(prefs.dockMax)
         val favSet = favs.map { it.key }.toSet()
-        val grid = visible.filter { it.key !in favSet }.sortedBy { idx[it.key] ?: Int.MAX_VALUE } + shelfSettingsEntry
+        val grid = visible.filter { it.key !in favSet }.sortedWith(compareBy({ it.key in newSet }, { idx[it.key] ?: Int.MAX_VALUE })) + shelfSettingsEntry
         layoutGrid(grid.size)
         val prev = focusedSlot()
         if (!adapter.submit(favs, grid)) return
@@ -651,6 +675,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // El encabezado se alinea con el borde izquierdo de los tiles de la grilla
         (gridHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = (resources.displayMetrics.widthPixels - w) / 2 + dp(8 + 6)
         gridHeader.requestLayout()
+        val left = (resources.displayMetrics.widthPixels - w) / 2 + dp(8 + 6)
+        (contHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = left
+        (contRv.layoutParams as FrameLayout.LayoutParams).leftMargin = left - dp(6)
+        contHeader.requestLayout(); contRv.requestLayout()
     }
 
     /** Slot del tile enfocado (favorita o grilla), o null si el foco está fuera (barra superior, Top Shelf). */
@@ -732,6 +760,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         set(gridFade, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         if (!grid) gridName.visibility = View.INVISIBLE
         set(gridHeader, if (grid) 0.7f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
+        val showCont = grid && contHas
+        set(contHeader, if (showCont) 0.7f else 0f, 0f, if (showCont) View.VISIBLE else View.INVISIBLE)
+        set(contRv, if (showCont) 1f else 0f, 0f, if (showCont) View.VISIBLE else View.INVISIBLE)
         if (grid) set(gridRv, 1f, 0f) else set(gridRv, 1f, screenH.toFloat(), View.INVISIBLE)
         // Dock atenuado al 30% con la grilla abierta (sin foco, para no mezclarlo con la grilla)
         dockBox.descendantFocusability = if (grid) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
@@ -753,6 +784,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private fun openGrid(focusSlot: Int = AppAdapter.GRID) {
         if (gridOpen) return
+        // Continuar viendo: lee la lista ya cargada por preload (sin queries nuevas); sin items la fila no aparece
+        val list = try { graph.shelf.continueWatching(12) } catch (_: Throwable) { emptyList() }
+        contHas = list.isNotEmpty()
+        contRv.setItems(list)
+        val shift = if (contHas) 80 else 0
+        gridRv.setPadding(dp(8), dp(160 + shift), dp(8), dp(24))
+        (gridHeader.layoutParams as FrameLayout.LayoutParams).topMargin = dp(138 + shift)
+        gridHeader.requestLayout()
         applyState(HomeState.GRID)
         focusAt(focusSlot)
     }
@@ -768,6 +807,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun onClick(e: AppEntry) {
         if (moving) return
         if (e.component.className == IconOverrides.SHELF_SETTINGS_CLASS) { openSettings(); return }
+        if (e.key in adapter.newKeys) {
+            // primera apertura: desaparece la etiqueta "Nuevo"
+            val rest = adapter.newKeys - e.key
+            store.setNewApps(store.newApps() - e.key)
+            adapter.newKeys = rest
+            adapter.refreshSlot(adapter.slotOf(e.key, false))
+        }
         try { startActivity(repo.launchIntent(e)) } catch (_: Exception) {
             Toast.makeText(this, "No se pudo abrir ${e.label}", Toast.LENGTH_SHORT).show()
         }
@@ -1013,6 +1059,16 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         topBar.setStatus(timerTxt, alarmTxt, nightActive)
     }
 
+    /** Espacio libre en /data: se revisa como máximo una vez al día (al volver al home), sin polling. */
+    private fun checkLowSpace() {
+        val day = System.currentTimeMillis() / 86_400_000L
+        if (prefs.sp.getLong("space_day", -1L) != day) {
+            val free = try { android.os.StatFs(android.os.Environment.getDataDirectory().path).availableBytes } catch (_: Throwable) { Long.MAX_VALUE }
+            prefs.sp.edit().putLong("space_day", day).putBoolean("space_low", free < 500L * 1024 * 1024).apply()
+        }
+        topBar.setLowSpace(prefs.sp.getBoolean("space_low", false)) { QuickAccess.launch(this, QuickAccess.storage) }
+    }
+
     private fun applyLocalePrefs() {
         Es.english = prefs.english
         Es.sundayFirst = prefs.sundayFirst
@@ -1127,6 +1183,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onHidden = { closeMenu(restore = false); openHiddenList() },
             onRename = { closeMenu(restore = false); openRename(e) },
             onSettings = { closeMenu(restore = false); openSettings(keepPrev = true) },
+            onQuick = { q -> closeMenu(); QuickAccess.launch(this, q) },
             onInfo = {
                 closeMenu()
                 try {
@@ -1286,9 +1343,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 openGrid()
                 return true
             }
-            if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && slot != null && slot - AppAdapter.GRID < 7 && adapter.favCount > 0) {
+            if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && currentFocus?.parent === contRv) {
                 closeGrid()
                 return true
+            }
+            if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && slot != null && slot - AppAdapter.GRID < (gridRv.layoutManager as GridLayoutManager).spanCount) {
+                // primera fila: sube a "Continuar viendo" si existe; si no, cierra la grilla
+                if (contHas && contRv.childCount > 0) { contRv.getChildAt(0).requestFocus(); return true }
+                if (adapter.favCount > 0) { closeGrid(); return true }
             }
         }
         return super.dispatchKeyEvent(e)

@@ -69,6 +69,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Section("Íconos"),
         choice("Estilo de íconos", ShelfPrefs.ICON_ORIGINAL, listOf("Adaptado", "Original sin procesar"), listOf(false, true), { p.iconOriginal }, { p.iconOriginal = it }),
         Row.Act("Regenerar íconos") { host.regenerateIcons() },
+        Row.Section("Accesos rápidos"),
+        *QuickAccess.items.map { q -> Row.Act(q.label) { QuickAccess.launch(ctx, q) } }.toTypedArray(),
         Row.Section("Apps"),
         Row.Act("Restaurar apps ocultas", { "${host.hiddenCount()} ocultas" }) { host.restoreHidden() },
         Row.Act("Restablecer orden y favoritas", { if (confirmReset) "OK de nuevo para confirmar" else "" }) {
@@ -77,11 +79,23 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Section("Info"),
         Row.Info("Versión") { version },
         Row.Info("Memoria (PSS actual)") { host.pss() },
+        Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
         Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; clima Open-Meteo; feriados Nager.Date" },
         Row.Act("Exportar configuración") { lastBackup = host.exportBackup(); panel.rebuild() },
         Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
         Row.Act("Restaurar configuración") { panel.push(restorePage()) },
     ))
+
+    private fun storage(): Pair<Long, Long> {
+        val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+        return st.availableBytes to st.totalBytes
+    }
+    private fun storageText(): String {
+        val (free, total) = storage()
+        fun gb(b: Long) = "%.1f".format(java.util.Locale.US, b / 1073741824.0)
+        return "${gb(free)} GB libres de ${gb(total)} GB"
+    }
+    private fun storageUsed(): Float { val (f, t) = storage(); return if (t > 0) 1f - f.toFloat() / t else 0f }
 
     // ---- Ubicación y región ----
 

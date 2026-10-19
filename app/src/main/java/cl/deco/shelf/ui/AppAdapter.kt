@@ -35,6 +35,9 @@ class AppAdapter(
     val dock = TileAdapter(true)
     val grid = TileAdapter(false)
 
+    /** Claves de apps instaladas recientemente (etiqueta "Nuevo" hasta abrirlas). */
+    var newKeys: Set<String> = emptySet()
+
     /** Tile en modo mover (clave + sección). */
     var movingKey: String? = null
     var movingFav = false
@@ -135,6 +138,7 @@ class AppAdapter(
             cell.tag = e.key
             cell.label?.text = e.label
             cell.setMoving(movingKey == e.key && movingFav == isDock)
+            cell.setNew(!isDock && e.key in newKeys)
             val hit = loader.cached(e)
             if (hit != null) {
                 cell.image.setImageBitmap(hit)

@@ -46,6 +46,19 @@ open class FocusCell(
         alpha = 0f
     } else null
     var onFocus: ((Boolean) -> Unit)? = null
+    private var newTag: android.widget.TextView? = null
+
+    /** Etiqueta "Nuevo" (pill de 12 sp con el acento) para apps instaladas y aún no abiertas. */
+    fun setNew(on: Boolean) {
+        if (!on) { newTag?.visibility = GONE; return }
+        val t = newTag ?: tv(context, 12f, 0xFF111111.toInt(), "sans-serif-medium").apply {
+            text = "Nuevo"
+            setPadding(context.dp(8), context.dp(2), context.dp(8), context.dp(2))
+            content.addView(this, LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = context.dp(4); rightMargin = context.dp(4) })
+        }.also { newTag = it }
+        t.background = GradientDrawable().apply { setColor(Theme.accent); cornerRadius = context.dpf(10f) }
+        t.visibility = VISIBLE
+    }
 
     init {
         clipChildren = false

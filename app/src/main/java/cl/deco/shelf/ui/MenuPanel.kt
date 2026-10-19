@@ -45,7 +45,7 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
 
     private fun ctx() = context
 
-    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit, onHide: () -> Unit, onHidden: () -> Unit, onRename: () -> Unit, onSettings: () -> Unit) {
+    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit, onHide: () -> Unit, onHidden: () -> Unit, onRename: () -> Unit, onSettings: () -> Unit, onQuick: (QuickAccess.Item) -> Unit) {
         box.removeAllViews()
         title.text = label
         title.maxLines = 1
@@ -60,8 +60,32 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
             option("Ajustes de Lienzo", onSettings),
         )
         for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(40)))
+        addQuickRow(onQuick)
         visibility = VISIBLE
         opts[0].requestFocus()
+    }
+
+    /** Fila de accesos rápidos del sistema (íconos enfocables) y nombre del enfocado. */
+    private fun addQuickRow(onQuick: (QuickAccess.Item) -> Unit) {
+        val c = context
+        val name = tv(c, 13f, Ui.TEXT2).apply { text = "Accesos rápidos"; gravity = Gravity.CENTER }
+        val row = LinearLayout(c).apply { gravity = Gravity.CENTER; setPadding(0, c.dp(8), 0, 0) }
+        for (it in QuickAccess.items) {
+            val b = android.widget.ImageView(c).apply {
+                setImageResource(it.icon); setColorFilter(Ui.TEXT)
+                setPadding(c.dp(9), c.dp(9), c.dp(9), c.dp(9))
+                isFocusable = true; isClickable = true
+                background = StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { setColor(Theme.withAlpha(Theme.accent, 0xB0)); cornerRadius = c.dpf(10f) })
+                    addState(intArrayOf(), ColorDrawable(0))
+                }
+                setOnFocusChangeListener { _, f -> if (f) name.text = it.label }
+                setOnClickListener { _ -> onQuick(it) }
+            }
+            row.addView(b, LinearLayout.LayoutParams(c.dp(44), c.dp(44)))
+        }
+        box.addView(row, LinearLayout.LayoutParams(-1, -2))
+        box.addView(name, LinearLayout.LayoutParams(-1, -2).apply { topMargin = c.dp(2) })
     }
 
     /** Lista simple de opciones (p. ej. apps ocultas a restaurar). */

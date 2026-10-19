@@ -15,6 +15,27 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
     private val cache = HashMap<String, Entry>()
     private var loggedDenied = false
 
+    /** Watch Next de todas las apps en orden de interacción reciente (lo llena preload; sin queries extra). */
+    @Volatile private var flat: List<Pair<String, TopShelfItem>> = emptyList()
+
+    /** Item de "Continuar viendo": paquete de origen y contenido. */
+    class Continue(val pkg: String, val item: TopShelfItem)
+
+    /**
+     * Continuar viendo: Watch Next de todas las apps, orden por last_engagement DESC, deduplicado por paquete más
+     * título normalizado. Usa la lectura de [preload]; no consulta el provider.
+     */
+    fun continueWatching(max: Int = 12): List<Continue> {
+        val seen = HashSet<String>()
+        val out = ArrayList<Continue>()
+        for ((pkg, it) in flat) {
+            val key = pkg + "|" + it.title.lowercase().filter { c -> c.isLetterOrDigit() }
+            if (seen.add(key)) out += Continue(pkg, it)
+            if (out.size >= max) break
+        }
+        return out
+    }
+
     private class Entry(val at: Long, val items: List<TopShelfItem>)
 
     override fun itemsFor(packageName: String): List<TopShelfItem> {
@@ -78,6 +99,7 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
     /** Todo Watch Next agrupado por paquete (filtra en memoria, más robusto entre builds). */
     private fun readWatchNext(): Map<String, List<TopShelfItem>> {
         val out = LinkedHashMap<String, MutableList<TopShelfItem>>()
+        val order = ArrayList<Pair<String, TopShelfItem>>() // orden global por interacción reciente
         val cols = arrayOf(
             TvContract.WatchNextPrograms.COLUMN_PACKAGE_NAME,
             TvContract.WatchNextPrograms.COLUMN_TITLE,
@@ -95,8 +117,10 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
                 val pkg = c.str(0) ?: continue
                 val item = c.toItem(1, 2, 3, 4, 5, 6) ?: continue
                 out.getOrPut(pkg) { ArrayList() }.add(item)
+                order += pkg to item
             }
         }
+        flat = order
         return out
     }
 

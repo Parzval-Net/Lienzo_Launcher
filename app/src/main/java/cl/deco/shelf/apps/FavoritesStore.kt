@@ -24,6 +24,12 @@ class FavoritesStore(context: Context) {
 
     fun setHidden(h: Set<String>) { prefs.edit().putStringSet(HIDDEN, h).apply() }
 
+    /** Paquetes conocidos (null antes del primer arranque con esta función) y apps nuevas con etiqueta "Nuevo". */
+    fun known(): Set<String>? = if (prefs.contains(KNOWN)) prefs.getStringSet(KNOWN, emptySet()).orEmpty().toSet() else null
+    fun setKnown(s: Set<String>) { prefs.edit().putStringSet(KNOWN, s).apply() }
+    fun newApps(): Set<String> = prefs.getStringSet(NEWAPPS, emptySet()).orEmpty().toSet()
+    fun setNewApps(s: Set<String>) { prefs.edit().putStringSet(NEWAPPS, s).apply() }
+
     /** Nombres personalizados por paquete (JSON en prefs). */
     fun names(): Map<String, String> = try {
         val o = org.json.JSONObject(prefs.getString(NAMES, "{}") ?: "{}")
@@ -60,6 +66,8 @@ class FavoritesStore(context: Context) {
         const val ORDER = "order"
         const val HIDDEN = "hidden"
         const val NAMES = "app_names"
+        const val KNOWN = "known_pkgs"
+        const val NEWAPPS = "new_apps"
         const val SETTINGS = "com.android.tv.settings"
         val DEFAULT_FAVS = listOf(
             "cl.movistarplay", "com.netflix.ninja", "com.google.android.youtube.tv", "com.disney.disneyplus",

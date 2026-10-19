@@ -23,6 +23,8 @@ sealed class Row {
     class Choice(val label: String, val options: List<String>, val get: () -> Int, val set: (Int) -> Unit) : Row()
     class Act(val label: String, val detail: () -> String = { "" }, val run: () -> Unit) : Row()
     class Info(val label: String, val text: () -> String) : Row()
+    /** Barra de uso (p. ej. almacenamiento): texto y fracción usada, evaluados al construir la página. */
+    class Bar(val label: String, val text: () -> String, val used: () -> Float) : Row()
     class Input(val hint: String, val initial: String, val search: Boolean, val onSubmit: (String) -> Unit) : Row()
     /** Contenedor de filas que se llenan después (resultados de búsqueda). */
     class Slot : Row()
@@ -218,6 +220,21 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
                 row.addView(tv(ctx, 15f, Ui.TEXT).apply { text = r.text(); setLineSpacing(0f, 1.1f) })
                 row.isClickable = false
                 parent.addView(row, LinearLayout.LayoutParams(-1, -2))
+            }
+            is Row.Bar -> {
+                val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(8)) }
+                focusable(box); box.isClickable = false
+                box.addView(tv(ctx, 13f, Ui.TEXT2).apply { text = r.label })
+                box.addView(tv(ctx, 15f, Ui.TEXT).apply { text = r.text() })
+                val f = r.used().coerceIn(0f, 1f)
+                val bar = LinearLayout(ctx).apply {
+                    background = GradientDrawable().apply { setColor(0x33FFFFFF); cornerRadius = ctx.dpf(4f) }
+                    addView(View(ctx).apply { background = GradientDrawable().apply { setColor(if (f > 0.9f) 0xFFE5534B.toInt() else Theme.accent); cornerRadius = ctx.dpf(4f) } },
+                        LinearLayout.LayoutParams(0, -1, f.coerceAtLeast(0.02f)))
+                    addView(View(ctx), LinearLayout.LayoutParams(0, -1, 1f - f.coerceAtLeast(0.02f)))
+                }
+                box.addView(bar, LinearLayout.LayoutParams(-1, ctx.dp(8)).apply { topMargin = ctx.dp(6) })
+                parent.addView(box, LinearLayout.LayoutParams(-1, -2))
             }
             is Row.Input -> {
                 val et = EditText(ctx).apply {
