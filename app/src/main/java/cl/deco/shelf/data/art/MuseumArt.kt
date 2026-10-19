@@ -21,6 +21,8 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.random.Random
 
 /**
@@ -159,25 +161,41 @@ class MuseumArt(private val context: Context) : ArtSource {
         for (item in cat) {
             if (item.id in presentIds()) continue
             var ok = false
-            var attempt = 0
-            while (attempt < MAX_ATTEMPTS && !ok) {
+            var attempt = 0       // fallas "normales"
+            var throttled = 0     // 429/503: Commons limita por IP, se espera más sin descartar la obra
+            var waitMs = 0L
+            while (!ok && attempt < MAX_ATTEMPTS && throttled < MAX_THROTTLED) {
                 if (!networkAllowed()) {
                     Log.i(TAG, "sin red (o con medición): descarga en pausa; se reanuda en el próximo arranque")
                     return
                 }
-                if (attempt > 0) Thread.sleep(BACKOFF_MS shl (attempt - 1))
+                if (waitMs > 0) Thread.sleep(waitMs)
                 ok = try {
-                    process(item, dir)
+                    process(item, dir).also { if (!it) { attempt++; waitMs = BACKOFF_MS shl (attempt - 1) } }
+                } catch (e: HttpException) {
+                    Log.w(TAG, "${item.id}: HTTP ${e.code}")
+                    if (e.code == 429 || e.code == 503) {
+                        throttled++
+                        waitMs = max(e.retryAfterMs, 15_000L shl min(throttled - 1, 3))
+                    } else {
+                        attempt++; waitMs = BACKOFF_MS shl (attempt - 1)
+                    }
+                    false
                 } catch (e: Exception) {
-                    Log.w(TAG, "${item.id} intento ${attempt + 1}: ${e.message}")
+                    attempt++; waitMs = BACKOFF_MS shl (attempt - 1)
+                    Log.w(TAG, "${item.id} intento $attempt: ${e.message}")
                     false
                 } catch (e: OutOfMemoryError) {
+                    attempt++; waitMs = BACKOFF_MS shl (attempt - 1)
                     Log.w(TAG, "${item.id}: sin memoria")
                     false
                 }
-                attempt++
             }
-            if (ok) done++ else Log.w(TAG, "${item.id}: se omite tras $MAX_ATTEMPTS intentos")
+            if (!ok && throttled >= MAX_THROTTLED) {
+                Log.w(TAG, "Commons limita las peticiones (429): descarga en pausa; se reanuda en el próximo arranque")
+                return
+            }
+            if (ok) done++ else Log.w(TAG, "${item.id}: se omite (reintentos agotados)")
             Thread.sleep(PACE_MS)
         }
         Log.i(TAG, "descarga: $done obras nuevas en ${(System.currentTimeMillis() - t0) / 1000}s, progreso ${downloadProgress()}")
@@ -274,6 +292,8 @@ class MuseumArt(private val context: Context) : ArtSource {
         return out
     }
 
+    private class HttpException(val code: Int, val retryAfterMs: Long) : IOException("HTTP $code")
+
     private fun download(url: String, dest: File) {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
@@ -281,7 +301,10 @@ class MuseumArt(private val context: Context) : ArtSource {
             conn.readTimeout = IMG_TIMEOUT_MS
             conn.setRequestProperty("User-Agent", UA)
             conn.setRequestProperty("Accept", "image/jpeg,image/*;q=0.8")
-            if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
+            if (conn.responseCode != 200) {
+                val ra = conn.getHeaderField("Retry-After")?.trim()?.toLongOrNull() ?: 0L
+                throw HttpException(conn.responseCode, (ra * 1000).coerceIn(0L, 60_000L))
+            }
             var total = 0L
             conn.inputStream.use { input ->
                 dest.outputStream().use { out ->
@@ -346,6 +369,7 @@ class MuseumArt(private val context: Context) : ArtSource {
         private const val JPEG_QUALITY = 82
         private const val MAX_DOWNLOAD = 25L * 1024 * 1024
         private const val MAX_ATTEMPTS = 5
+        private const val MAX_THROTTLED = 4
         private const val BACKOFF_MS = 2_000L
         private const val PACE_MS = 600L
 
