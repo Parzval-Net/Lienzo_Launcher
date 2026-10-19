@@ -45,7 +45,7 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
 
     private fun ctx() = context
 
-    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit, onHide: () -> Unit, onHidden: () -> Unit) {
+    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit, onHide: () -> Unit, onHidden: () -> Unit, onRename: () -> Unit, onSettings: () -> Unit) {
         box.removeAllViews()
         title.text = label
         title.maxLines = 1
@@ -53,11 +53,13 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
         val opts = listOf(
             option(if (isFav) "Quitar de favoritas" else "Agregar a favoritas", onFav),
             option("Mover", onMove),
+            option("Renombrar", onRename),
             option("Info de la app", onInfo),
             option("Ocultar app", onHide),
             option("Ver apps ocultas", onHidden),
+            option("Ajustes de Shelf", onSettings),
         )
-        for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(44)))
+        for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(40)))
         visibility = VISIBLE
         opts[0].requestFocus()
     }

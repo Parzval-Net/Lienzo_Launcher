@@ -10,7 +10,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import cl.deco.shelf.data.weather.Weather
-import kotlin.math.roundToInt
 
 /** Reloj + fecha (+ feriado) a la izquierda y clima actual a la derecha. Ambos bloques son enfocables. */
 class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
@@ -21,6 +20,7 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
     private val date = tv(ctx, 16f, Ui.TEXT, "sans-serif-medium")
     private val holiday = tv(ctx, 13f, Ui.ACCENT, "sans-serif-medium").apply { visibility = GONE }
     private val icon = ImageView(ctx)
+    private val right = LinearLayout(ctx)
     private val rain = tv(ctx, 16f, Ui.TEXT).apply { alpha = 0.7f; visibility = GONE; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()); compoundDrawablePadding = ctx.dp(3) }
     private val temp = tv(ctx, 30f, Ui.TEXT, "sans-serif-light").apply { text = "--"; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()) }
 
@@ -52,7 +52,7 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
             addView(clock)
             addView(dateCol)
         }
-        val right = LinearLayout(ctx).apply {
+        right.apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(ctx.dp(14), ctx.dp(6), ctx.dp(14), ctx.dp(6))
@@ -67,6 +67,14 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
         icon.visibility = GONE
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         addView(right, LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
+    }
+
+    /** Reloj, clima y acento se actualizan por separado; el clima se oculta con el ajuste "Clima". */
+    fun setWeatherEnabled(on: Boolean) { right.visibility = if (on) VISIBLE else GONE }
+
+    fun setAccent(accent: Int, light: Int) {
+        holiday.setTextColor(accent)
+        rain.compoundDrawableTintList = android.content.res.ColorStateList.valueOf(light)
     }
 
     fun setTime(text: String) { if (clock.text != text) clock.text = text }
@@ -85,7 +93,7 @@ class TopBar(ctx: Context, onToday: () -> Unit) : FrameLayout(ctx) {
         } else {
             icon.setImageResource(WeatherIcons.iconFor(w.displayCode, w.isDay))
             icon.visibility = VISIBLE
-            temp.text = "${w.currentTemp.roundToInt()}°"
+            temp.text = "${Units.temp(w.currentTemp)}°"
             val p = w.rainSoonProb ?: 0
             if (p >= 50) {
                 rain.text = "$p%"

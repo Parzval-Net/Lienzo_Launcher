@@ -15,6 +15,10 @@ class ShelfPrefs(context: Context) {
     // Fondo
     var bgIntervalMin: Int get() = int(BG_INTERVAL, 30); set(v) = put(BG_INTERVAL, v)
     var bgOnline: Boolean get() = bool(BG_ONLINE, false); set(v) = put(BG_ONLINE, v)
+    var bgBrightness: Int get() = int(BG_BRIGHT, 100).coerceIn(60, 100); set(v) = put(BG_BRIGHT, v)
+    /** 0 = bajo, 1 = medio, 2 = alto. */
+    var blurLevel: Int get() = int(BLUR_LEVEL, 1).coerceIn(0, 2); set(v) = put(BLUR_LEVEL, v)
+    var dynamicColors: Boolean get() = bool(DYN_COLORS, true); set(v) = put(DYN_COLORS, v)
     // Modo arte del home
     var artEnabled: Boolean get() = bool(ART_ON, true); set(v) = put(ART_ON, v)
     var artWaitSec: Int get() = int(ART_WAIT, 45); set(v) = put(ART_WAIT, v)
@@ -63,6 +67,8 @@ class ShelfPrefs(context: Context) {
     private fun put(k: String, v: String) { sp.edit().putString(k, v).apply() }
 
     companion object {
+        const val BG_BRIGHTNESS = "bg_brightness"; const val BLUR_LEVEL = "blur_level"; const val DYNAMIC_COLORS = "dyn_colors"
+        private const val BG_BRIGHT = BG_BRIGHTNESS; private const val DYN_COLORS = DYNAMIC_COLORS
         const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
         const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
@@ -72,7 +78,7 @@ class ShelfPrefs(context: Context) {
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
-            BG_INTERVAL, BG_ONLINE, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
+            BG_INTERVAL, BG_ONLINE, BG_BRIGHT, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST,
         )

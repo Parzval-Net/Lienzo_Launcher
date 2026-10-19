@@ -19,7 +19,7 @@ object Ui {
     const val TEXT2 = 0xFFB8B8C0.toInt()
     const val ACCENT = 0xFFFF7A1A.toInt()
     const val FOCUS_MS = 150L
-    const val FOCUS_SCALE = 1.08f
+    const val FOCUS_SCALE = 1.06f
     val DECEL: android.view.animation.Interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
 }
 
@@ -38,16 +38,46 @@ fun newExecutor(): ThreadPoolExecutor = ThreadPoolExecutor(1, 1, 5, TimeUnit.SEC
     allowCoreThreadTimeOut(true)
 }
 
-/** Textos en español de Chile (no depende del locale del equipo). */
+/** Unidades de temperatura elegidas en ajustes. */
+object Units {
+    @JvmField var fahrenheit = false
+    fun temp(c: Double): Int = Math.round(if (fahrenheit) c * 9.0 / 5.0 + 32.0 else c).toInt()
+}
+
+/** Textos de fecha en español de Chile (por defecto) o inglés, según ajustes; no depende del locale del equipo. */
 object Es {
-    val dias = arrayOf("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
-    val diasCorto = arrayOf("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
-    val meses = arrayOf(
+    @JvmField var english = false
+    @JvmField var sundayFirst = false
+
+    private val diasEs = arrayOf("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+    private val diasEn = arrayOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    private val mesesEs = arrayOf(
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
     )
+    private val mesesEn = arrayOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    )
 
-    fun fecha(d: LocalDate) = "${dias[d.dayOfWeek.value - 1]} ${d.dayOfMonth} de ${meses[d.monthValue - 1]}"
-    fun corta(d: LocalDate) = "${diasCorto[d.dayOfWeek.value - 1]} ${d.dayOfMonth} ${meses[d.monthValue - 1].take(3)}"
+    val dias get() = if (english) diasEn else diasEs
+    val meses get() = if (english) mesesEn else mesesEs
+    val diasCorto get() = dias.map { it.take(3) }.toTypedArray()
+
+    /** Letras de cabecera del calendario según primer día de la semana. */
+    fun headers(): List<String> {
+        val l = if (english) listOf("M", "T", "W", "T", "F", "S", "S") else listOf("L", "M", "M", "J", "V", "S", "D")
+        return if (sundayFirst) listOf(l[6]) + l.take(6) else l
+    }
+
+    fun fecha(d: LocalDate) = if (english) "${dias[d.dayOfWeek.value - 1]}, ${meses[d.monthValue - 1]} ${d.dayOfMonth}"
+    else "${dias[d.dayOfWeek.value - 1]} ${d.dayOfMonth} de ${meses[d.monthValue - 1]}"
+    fun corta(d: LocalDate) = if (english) "${diasCorto[d.dayOfWeek.value - 1]} ${meses[d.monthValue - 1].take(3)} ${d.dayOfMonth}"
+    else "${diasCorto[d.dayOfWeek.value - 1]} ${d.dayOfMonth} ${meses[d.monthValue - 1].take(3)}"
     fun mes(m: Int, y: Int) = "${meses[m - 1].replaceFirstChar { it.uppercase() }} $y"
+    fun hoy() = if (english) "Today" else "Hoy"
+
+    /** Hora según formato 24 h / 12 h. */
+    fun hora(h: Int, m: Int, h24: Boolean): String =
+        if (h24) "%02d:%02d".format(h, m) else "%d:%02d %s".format(if (h % 12 == 0) 12 else h % 12, m, if (h < 12) "AM" else "PM")
 }

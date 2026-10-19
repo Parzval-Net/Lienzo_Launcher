@@ -29,8 +29,8 @@ import java.util.concurrent.Executors
  */
 class ImageLoader(private val context: Context, private val w: Int, private val h: Int, private val radius: Float) {
 
-    private val pm = context.packageManager
-    private val density = context.resources.displayMetrics.density
+    private val renderer = TileRenderer(context, w, h, radius)
+    private val prefs = cl.deco.shelf.settings.ShelfPrefs(context)
     private val main = Handler(Looper.getMainLooper())
     private val pool = Executors.newFixedThreadPool(2)
 
@@ -42,7 +42,7 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
 
     fun load(entry: AppEntry, onLoaded: (Bitmap) -> Unit) {
         pool.execute {
-            val bmp = cache.get(entry.key) ?: render(entry)?.also { cache.put(entry.key, it) }
+            val bmp = cache.get(entry.key) ?: renderer.tile(entry, prefs.iconOriginal)?.also { cache.put(entry.key, it) }
             if (bmp != null) main.post { onLoaded(bmp) }
         }
     }
@@ -68,6 +68,21 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
     }
 
     fun trim() = cache.evictAll()
+
+    /** Un paquete cambió (reemplazo o baja): borra su tile en disco y memoria para regenerarlo con el arte nuevo. */
+    fun invalidate(pkg: String) {
+        pool.execute { renderer.invalidate(pkg) }
+        for (k in cache.snapshot().keys) if (k.startsWith("$pkg/")) cache.remove(k)
+    }
+
+    /** "Regenerar íconos" o cambio de estilo: borra toda la cache de tiles. */
+    fun regenerateAll() {
+        cache.evictAll()
+        pool.execute { renderer.clearAll() }
+    }
+
+    /** Tipo de tile (banner, adaptive, legacy, override) por clave de app, para diagnóstico. */
+    fun kinds(): Map<String, TileRenderer.Kind> = renderer.kinds
 
     private fun readBytes(uri: String): ByteArray? {
         val u = Uri.parse(uri)
@@ -112,107 +127,9 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
         return out
     }
 
-    /** Color promedio (ponderado por alpha) del drawable, calculado sobre un bitmap diminuto. */
-    private fun averageColor(d: Drawable): Int {
-        val sw = 16
-        val sh = 9
-        val small = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888)
-        val oldBounds = d.copyBounds()
-        d.setBounds(0, 0, sw, sh)
-        d.draw(Canvas(small))
-        d.bounds = oldBounds
-        var r = 0L; var g = 0L; var b = 0L; var n = 0L
-        val px = IntArray(sw * sh)
-        small.getPixels(px, 0, sw, 0, 0, sw, sh)
-        small.recycle()
-        for (p in px) {
-            val a = Color.alpha(p)
-            if (a < 128) continue
-            r += Color.red(p); g += Color.green(p); b += Color.blue(p); n++
-        }
-        if (n == 0L) return 0xFF1B1E27.toInt()
-        return Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
-    }
-
-    private fun mix(c: Int, other: Int, t: Float): Int = Color.rgb(
-        (Color.red(c) + (Color.red(other) - Color.red(c)) * t).toInt(),
-        (Color.green(c) + (Color.green(other) - Color.green(c)) * t).toInt(),
-        (Color.blue(c) + (Color.blue(other) - Color.blue(c)) * t).toInt(),
-    )
-
-    private fun render(entry: AppEntry): Bitmap? = render(entry, w, h, radius)
-
-    private fun render(entry: AppEntry, w: Int, h: Int, radius: Float): Bitmap? = try {
-        if (entry.component.className == HIDDEN_CLASS) renderHiddenTile(w, h, radius) else renderApp(entry, w, h, radius)
-    } catch (e: Exception) {
-        null
-    }
-
-    /** Tile sintético "Apps ocultas". */
-    private fun renderHiddenTile(w: Int, h: Int, radius: Float): Bitmap {
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
-        c.clipPath(Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), radius, radius, Path.Direction.CW) })
-        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), Paint().apply {
-            shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), 0xFF3A3F4D.toInt(), 0xFF1A1D26.toInt(), Shader.TileMode.CLAMP)
-        })
-        val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 14f * density
-            textAlign = Paint.Align.CENTER
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        }
-        c.drawText("Apps ocultas", w / 2f, h / 2f + 5f * density, tp)
-        return bmp
-    }
-
-    private fun renderApp(entry: AppEntry, w: Int, h: Int, radius: Float): Bitmap? = try {
-        val info: ActivityInfo = pm.getActivityInfo(entry.component, 0)
-        val override = IconOverrides.forPackage(entry.component.packageName)?.let { context.getDrawable(it) }
-        val banner: Drawable? = override ?: info.loadBanner(pm)
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
-        val path = Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), radius, radius, Path.Direction.CW) }
-        c.clipPath(path)
-        if (banner != null) {
-            // Banner contenido en tile 5:3 sobre el color promedio del propio banner
-            c.drawColor(averageColor(banner))
-            val iw = banner.intrinsicWidth.takeIf { it > 0 } ?: w
-            val ih = banner.intrinsicHeight.takeIf { it > 0 } ?: h
-            val s = minOf(w / iw.toFloat(), h / ih.toFloat())
-            val dw = (iw * s).toInt()
-            val dh = (ih * s).toInt()
-            val l = (w - dw) / 2
-            val t = (h - dh) / 2
-            banner.setBounds(l, t, l + dw, t + dh)
-            banner.draw(c)
-        } else {
-            // Solo ícono: degradado diagonal de su color dominante (claro a oscuro), ícono al 55% del alto
-            val icon = info.loadIcon(pm)
-            val adaptive = icon as? android.graphics.drawable.AdaptiveIconDrawable
-            val base = adaptive?.background?.let { averageColor(it) } ?: averageColor(icon)
-            val bg = Paint().apply {
-                shader = LinearGradient(
-                    0f, 0f, w.toFloat(), h.toFloat(),
-                    mix(base, Color.WHITE, 0.22f), mix(base, Color.BLACK, 0.40f), Shader.TileMode.CLAMP,
-                )
-            }
-            c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), bg)
-            val side = if (adaptive != null) (h * 0.55f * 108f / 72f).toInt() else (h * 0.55f).toInt()
-            val l = (w - side) / 2
-            val t = (h - side) / 2
-            val layer: Drawable = adaptive?.foreground ?: icon
-            layer.setBounds(l, t, l + side, t + side)
-            layer.draw(c)
-        }
-        bmp
-    } catch (e: Exception) {
-        null
-    }
-
     private companion object {
         const val HIDDEN_CLASS = "hidden"
-        const val CACHE_BYTES = 8 * 1024 * 1024
+        const val CACHE_BYTES = 6 * 1024 * 1024
         const val MAX_DOWNLOAD = 4 * 1024 * 1024
     }
 }

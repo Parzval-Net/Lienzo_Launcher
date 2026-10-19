@@ -24,6 +24,22 @@ class FavoritesStore(context: Context) {
 
     fun setHidden(h: Set<String>) { prefs.edit().putStringSet(HIDDEN, h).apply() }
 
+    /** Nombres personalizados por paquete (JSON en prefs). */
+    fun names(): Map<String, String> = try {
+        val o = org.json.JSONObject(prefs.getString(NAMES, "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getString(it) }
+    } catch (_: Exception) { emptyMap() }
+
+    fun setName(pkg: String, name: String?) {
+        val o = org.json.JSONObject()
+        for ((k, v) in names()) if (k != pkg) o.put(k, v)
+        if (!name.isNullOrBlank()) o.put(pkg, name)
+        prefs.edit().putString(NAMES, o.toString()).apply()
+    }
+
+    /** Restablece orden y favoritas al primer arranque (no toca ocultas ni nombres). */
+    fun resetLayout() { prefs.edit().remove(FAVS).remove(ORDER).apply() }
+
     /** Dock por defecto (primer arranque): paquetes en este orden, solo los instalados. */
     fun defaultFavorites(all: List<AppEntry>): List<String> = DEFAULT_FAVS.mapNotNull { pkg ->
         all.firstOrNull { it.component.packageName == pkg }?.key
@@ -43,6 +59,7 @@ class FavoritesStore(context: Context) {
         const val FAVS = "favs"
         const val ORDER = "order"
         const val HIDDEN = "hidden"
+        const val NAMES = "app_names"
         const val SETTINGS = "com.android.tv.settings"
         val DEFAULT_FAVS = listOf(
             "cl.movistarplay", "com.netflix.ninja", "com.google.android.youtube.tv", "com.disney.disneyplus",

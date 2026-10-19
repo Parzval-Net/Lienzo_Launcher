@@ -28,6 +28,7 @@ class MuseumArt(private val context: Context) : ArtSource {
     private val indexFile by lazy { File(artDir, "index.json") }
     private val prefs by lazy { context.getSharedPreferences("museum_art", Context.MODE_PRIVATE) }
     private val indexLock = Any()
+    private val settings by lazy { cl.deco.shelf.settings.ShelfPrefs(context) }
 
     private data class Entry(
         val id: String,
@@ -104,7 +105,7 @@ class MuseumArt(private val context: Context) : ArtSource {
     }
 
     override fun next(forHome: Boolean): Artwork? = synchronized(indexLock) {
-        if (loadLocal().isNotEmpty()) return nextLocal(forHome)
+        if (loadLocal().isNotEmpty() && !(forHome && settings.bgOnline)) return nextLocal(forHome)
         val entries = loadIndex()
         if (entries.isEmpty()) return null
         val last = prefs.getInt(KEY_LAST, -1)
@@ -116,7 +117,7 @@ class MuseumArt(private val context: Context) : ArtSource {
 
     override fun prefetch(max: Int) {
         if (max <= 0) return
-        if (loadLocal().isNotEmpty()) return // colección curada local: no se descarga nada
+        if (loadLocal().isNotEmpty() && !settings.bgOnline) return // colección curada local: no se descarga nada
         val have = synchronized(indexLock) { loadIndex().map { it.id }.toMutableSet() }
         var added = 0
         val artists = CURATED.shuffled(Random(System.nanoTime()))

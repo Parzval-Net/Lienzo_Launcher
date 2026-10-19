@@ -13,6 +13,11 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.MediaPlayer
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import cl.deco.shelf.settings.ShelfPrefs
+import java.io.File
 import android.os.Handler
 import android.os.Looper
 import android.service.dreams.DreamService
@@ -31,7 +36,11 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 
-/** Protector de pantalla estilo Art Mode: obra a pantalla completa con passe-partout, crossfade cada 3 min. */
+/**
+ * Protector de pantalla estilo Art Mode. Ciclo: video Monet en loop completo (MediaPlayer sobre SurfaceView, sin audio,
+ * decodificación por hardware) y 3 obras a pantalla completa con passe-partout (crossfade, intervalo en ajustes),
+ * y repite. Sin video (archivo ausente o ajuste desactivado) solo obras.
+ */
 class ArtDreamService : DreamService() {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -46,9 +55,15 @@ class ArtDreamService : DreamService() {
     private var frontBmp: Bitmap? = null
     private var backBmp: Bitmap? = null
     private var attached = false
+    private val prefs by lazy { ShelfPrefs(this) }
+    private var player: MediaPlayer? = null
+    private var surface: SurfaceView? = null
+    private var worksShown = 0
     private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
 
-    private val nextRunnable = Runnable { loadNext() }
+    private val nextRunnable = Runnable {
+        if (worksShown >= WORKS_PER_CYCLE && videoFile() != null) startVideo() else loadNext()
+    }
     private val hideCaption = Runnable { caption.animate().alpha(0f).setDuration(600).start() }
     private val tick = object : Runnable {
         override fun run() {
@@ -67,12 +82,13 @@ class ArtDreamService : DreamService() {
         art = MuseumArt(this)
         tick.run()
         io.execute { runCatching { art?.prefetch(6) }.onFailure { Log.w(TAG, "prefetch: $it") } }
-        loadNext()
+        if (videoFile() != null) startVideo() else loadNext()
     }
 
     override fun onDetachedFromWindow() {
         attached = false
         main.removeCallbacksAndMessages(null)
+        releasePlayer()
         io.shutdownNow()
         imgA.setImageDrawable(null)
         imgB.setImageDrawable(null)
@@ -108,6 +124,72 @@ class ArtDreamService : DreamService() {
             rightMargin = dp(32f).toInt(); bottomMargin = dp(24f).toInt()
         })
         return root
+    }
+
+    /** Primer mp4 de getExternalFilesDir("video"), o null si no hay o el ajuste está desactivado. */
+    private fun videoFile(): File? {
+        if (!prefs.dreamVideo) return null
+        return getExternalFilesDir("video")?.listFiles { f -> f.extension.equals("mp4", true) }?.minByOrNull { it.name }
+    }
+
+    private fun startVideo() {
+        val file = videoFile()
+        if (!attached || file == null || player != null) { if (attached && file == null) loadNext(); return }
+        worksShown = 0
+        main.removeCallbacks(nextRunnable)
+        val sv = SurfaceView(this)
+        surface = sv
+        root.addView(sv, 0, FrameLayout.LayoutParams(-1, -1))
+        sv.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(h: SurfaceHolder) {
+                if (!attached || player != null) return
+                val mp = MediaPlayer()
+                player = mp
+                try {
+                    mp.setDataSource(file.path)
+                    mp.setSurface(h.surface)
+                    mp.setVolume(0f, 0f)
+                    mp.isLooping = false
+                    mp.setOnPreparedListener { it.start() }
+                    // Primer frame real: recién ahí se funde la obra saliente
+                    mp.setOnInfoListener { _, what, _ ->
+                        if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) revealVideo()
+                        false
+                    }
+                    mp.setOnCompletionListener { if (attached) loadNext() }
+                    mp.setOnErrorListener { _, w, e ->
+                        Log.w(TAG, "video error $w/$e")
+                        releasePlayer(); worksShown = 0; if (attached) loadNext(); true
+                    }
+                    mp.prepareAsync()
+                } catch (e: Exception) {
+                    Log.w(TAG, "video: $e")
+                    releasePlayer(); if (attached) loadNext()
+                }
+            }
+            override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {}
+            override fun surfaceDestroyed(h: SurfaceHolder) {}
+        })
+    }
+
+    private fun revealVideo() {
+        val out = front ?: return
+        out.animate().alpha(0f).setDuration(FADE_MS).setListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                out.animate().setListener(null)
+                out.setImageDrawable(null)
+                frontBmp?.recycle(); frontBmp = null
+                if (front === out) front = null
+            }
+        }).start()
+        caption.animate().alpha(0f).setDuration(400).start()
+    }
+
+    private fun releasePlayer() {
+        player?.let { runCatching { it.stop() }; runCatching { it.release() } }
+        player = null
+        surface?.let { runCatching { root.removeView(it) } }
+        surface = null
     }
 
     private fun loadNext() {
@@ -169,8 +251,9 @@ class ArtDreamService : DreamService() {
 
     private fun show(a: Artwork?, result: Pair<Bitmap, Int>?) {
         if (result == null || a == null) {
-            // Sin obras: degradado + reloj; reintenta en 3 min
-            main.postDelayed(nextRunnable, INTERVAL_MS / 3)
+            // Sin obras: si el video terminó se repite; si no, degradado + reloj y reintento
+            player?.let { runCatching { it.seekTo(0); it.start() } }
+            main.postDelayed(nextRunnable, intervalMs() / 3)
             return
         }
         val (bmp, bg) = result
@@ -192,6 +275,7 @@ class ArtDreamService : DreamService() {
                     }
                     frontBmp = bmp
                     backBmp = null
+                    releasePlayer() // la obra ya cubre el video
                 }
             }).start()
         oldIncomingBmp?.recycle()
@@ -207,12 +291,15 @@ class ArtDreamService : DreamService() {
         caption.animate().alpha(1f).setDuration(600).start()
         main.postDelayed(hideCaption, 6_000)
         main.removeCallbacks(nextRunnable)
-        main.postDelayed(nextRunnable, INTERVAL_MS)
+        worksShown++
+        main.postDelayed(nextRunnable, intervalMs())
     }
+
+    private fun intervalMs() = prefs.dreamIntervalMin * 60_000L
 
     private companion object {
         const val TAG = "Shelf"
-        const val INTERVAL_MS = 3 * 60 * 1000L
+        const val WORKS_PER_CYCLE = 3
         const val FADE_MS = 1500L
     }
 }

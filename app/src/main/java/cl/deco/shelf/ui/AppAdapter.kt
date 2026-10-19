@@ -47,7 +47,7 @@ class AppAdapter(
 
     /** Devuelve false (sin tocar nada) si la lista no cambió, para no perder el foco. */
     fun submit(f: List<AppEntry>, all: List<AppEntry>): Boolean {
-        if (f.map { it.key } == favKeys() && all.map { it.key } == appKeys()) return false
+        if (f == favs && all == apps) return false
         favs.clear(); favs.addAll(f)
         apps.clear(); apps.addAll(all)
         dock.notifyDataSetChanged()
@@ -83,6 +83,15 @@ class AppAdapter(
             grid.notifyItemMoved(a, b)
         }
         return true
+    }
+
+    /** Vuelve a enlazar todos los tiles (cambió el estilo de íconos). */
+    fun refreshAll() { dock.notifyDataSetChanged(); grid.notifyDataSetChanged() }
+
+    /** Vuelve a enlazar los tiles de un paquete (su ícono cambió por una actualización). */
+    fun refreshPkg(pkg: String) {
+        favs.forEachIndexed { i, e -> if (e.component.packageName == pkg) dock.notifyItemChanged(i) }
+        apps.forEachIndexed { i, e -> if (e.component.packageName == pkg) grid.notifyItemChanged(i) }
     }
 
     fun refreshSlot(slot: Int) {
