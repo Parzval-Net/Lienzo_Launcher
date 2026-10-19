@@ -1,100 +1,138 @@
 package cl.deco.shelf.ui
 
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.StateListDrawable
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import cl.deco.shelf.apps.AppEntry
 import cl.deco.shelf.apps.ImageLoader
 
+/**
+ * Una sola lista para el dock y la grilla: [favoritas][separador][todas las apps].
+ * Las favoritas aparecen también en la grilla (grilla = todas las apps).
+ */
 class AppAdapter(
     private val loader: ImageLoader,
-    private val cellW: Int,
-    private val cellH: Int,
-    private val onClick: (AppEntry) -> Unit,
+    private val tileW: Int,
+    private val tileH: Int,
+    private val padX: Int,
+    private val padY: Int,
+    private val gapH: Int,
+    private val radius: Float,
+    private val cb: Callbacks,
 ) : RecyclerView.Adapter<AppAdapter.VH>() {
 
-    private var items: List<AppEntry> = emptyList()
+    interface Callbacks {
+        fun onClick(e: AppEntry)
+        fun onLongClick(e: AppEntry, pos: Int)
+        fun onFocus(e: AppEntry, pos: Int)
+    }
 
-    fun submit(list: List<AppEntry>) {
-        items = list
+    private val favs = ArrayList<AppEntry>()
+    private val apps = ArrayList<AppEntry>()
+
+    /** Tile en modo mover (clave + sección). */
+    var movingKey: String? = null
+    var movingFav = false
+
+    init { setHasStableIds(true) }
+
+    val favCount get() = favs.size
+    val gridStart get() = if (favs.isEmpty()) 0 else favs.size + 1
+
+    class VH(v: View, val cell: FocusCell?) : RecyclerView.ViewHolder(v)
+
+    fun submit(f: List<AppEntry>, all: List<AppEntry>) {
+        favs.clear(); favs.addAll(f)
+        apps.clear(); apps.addAll(all)
         notifyDataSetChanged()
     }
 
-    class VH(val root: FrameLayout, val image: ImageView, val label: TextView) : RecyclerView.ViewHolder(root) {
-        var key: String? = null
+    fun entryAt(pos: Int): AppEntry? = when {
+        pos < favs.size -> favs[pos]
+        favs.isEmpty() -> apps.getOrNull(pos)
+        pos == favs.size -> null
+        else -> apps.getOrNull(pos - favs.size - 1)
+    }
+
+    fun isFavPos(pos: Int) = pos < favs.size
+    fun isGridPos(pos: Int) = pos >= gridStart
+    fun isGap(pos: Int) = favs.isNotEmpty() && pos == favs.size
+
+    fun posOf(key: String, fav: Boolean): Int {
+        if (fav) return favs.indexOfFirst { it.key == key }
+        val i = apps.indexOfFirst { it.key == key }
+        return if (i < 0) -1 else gridStart + i
+    }
+
+    fun favKeys() = favs.map { it.key }
+    fun appKeys() = apps.map { it.key }
+
+    /** Mueve un elemento dentro de su sección. Devuelve false si el destino cae fuera. */
+    fun move(from: Int, to: Int): Boolean {
+        if (from == to) return false
+        if (isFavPos(from)) {
+            if (to !in 0 until favs.size) return false
+            favs.add(to, favs.removeAt(from))
+        } else {
+            val a = from - gridStart
+            val b = to - gridStart
+            if (a !in 0 until apps.size || b !in 0 until apps.size) return false
+            apps.add(b, apps.removeAt(a))
+        }
+        notifyItemMoved(from, to)
+        return true
+    }
+
+    override fun getItemCount() = favs.size + (if (favs.isEmpty()) 0 else 1) + apps.size
+
+    override fun getItemViewType(position: Int) = if (isGap(position)) 1 else 0
+
+    override fun getItemId(position: Int): Long {
+        val e = entryAt(position) ?: return -1L
+        return e.key.hashCode().toLong() * 2 + (if (isFavPos(position)) 1 else 0)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val ctx = parent.context
-        val d = ctx.resources.displayMetrics.density
-        val pad = (6 * d).toInt()
-        val image = ImageView(ctx).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            layoutParams = FrameLayout.LayoutParams(cellW, cellH)
+        if (viewType == 1) {
+            val v = View(parent.context)
+            v.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gapH)
+            return VH(v, null)
         }
-        val label = TextView(ctx).apply {
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            maxLines = 1
-            setPadding(pad, 0, pad, pad)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { gravity = android.view.Gravity.BOTTOM }
-            visibility = View.GONE
+        val cell = FocusCell(parent.context, tileW, tileH, padX, padY, radius)
+        val vh = VH(cell, cell)
+        cell.setOnClickListener { entryAt(vh.bindingAdapterPosition)?.let(cb::onClick) }
+        cell.setOnLongClickListener {
+            val p = vh.bindingAdapterPosition
+            entryAt(p)?.let { e -> cb.onLongClick(e, p); true } ?: false
         }
-        val root = FrameLayout(ctx).apply {
-            layoutParams = RecyclerView.LayoutParams(cellW + 2 * pad, cellH + 2 * pad)
-            setPadding(pad, pad, pad, pad)
-            isFocusable = true
-            isClickable = true
-            background = focusBackground(d)
-            addView(image)
-            addView(label)
-        }
-        val vh = VH(root, image, label)
-        root.setOnClickListener { items.getOrNull(vh.bindingAdapterPosition)?.let(onClick) }
-        root.setOnFocusChangeListener { v, focused ->
-            val s = if (focused) 1.08f else 1f
-            v.animate().scaleX(s).scaleY(s).setDuration(100).start()
-            label.visibility = if (focused) View.VISIBLE else View.GONE
+        cell.onFocus = { f ->
+            if (f) {
+                val p = vh.bindingAdapterPosition
+                entryAt(p)?.let { e -> cb.onFocus(e, p) }
+            }
         }
         return vh
     }
 
     override fun onBindViewHolder(h: VH, position: Int) {
-        val e = items[position]
-        h.key = e.key
-        h.label.text = e.label
+        val cell = h.cell ?: return
+        val e = entryAt(position) ?: return
+        cell.tag = e.key
+        cell.setMoving(movingKey == e.key && movingFav == isFavPos(position))
         val hit = loader.cached(e)
         if (hit != null) {
-            h.image.setImageBitmap(hit)
+            cell.image.setImageBitmap(hit)
         } else {
-            h.image.setImageDrawable(null)
-            loader.load(e) { bmp -> if (h.key == e.key) h.image.setImageBitmap(bmp) }
+            cell.image.setImageDrawable(null)
+            loader.load(e) { bmp -> if (cell.tag == e.key) cell.image.setImageBitmap(bmp) }
         }
     }
 
     override fun onViewRecycled(h: VH) {
-        h.image.setImageDrawable(null)
-        h.key = null
-    }
-
-    override fun getItemCount() = items.size
-
-    private fun focusBackground(d: Float): StateListDrawable {
-        fun box(color: Int, stroke: Int) = GradientDrawable().apply {
-            setColor(color)
-            setStroke((3 * d).toInt(), stroke)
-        }
-        return StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_focused), box(0xFF202020.toInt(), Color.WHITE))
-            addState(intArrayOf(), box(0xFF101010.toInt(), Color.TRANSPARENT))
+        h.cell?.let {
+            it.resetFx()
+            it.image.setImageDrawable(null)
+            it.tag = null
         }
     }
 }
