@@ -41,4 +41,5 @@ kotlin {
 
 dependencies {
     implementation("androidx.recyclerview:recyclerview:1.4.0")
+    testImplementation("junit:junit:4.13.2")
 }
