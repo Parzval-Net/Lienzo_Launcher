@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tile 5:3 para Kino TV: claqueta con play sobre fondo carmesí. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="500dp" android:height="300dp"
+    android:viewportWidth="500" android:viewportHeight="300">
+    <path android:pathData="M0,0h500v300h-500z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="500" android:endY="300"
+                android:startColor="#FF3A0A12" android:endColor="#FF0E0A0C" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M0,0h500v300h-500z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="250" android:centerY="105" android:gradientRadius="300"
+                android:startColor="#59E8392B" android:endColor="#00E8392B" />
+        </aapt:attr>
+    </path>
+    <group android:rotation="-12" android:pivotX="180" android:pivotY="112">
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M180,96h140a8,8 0,0 1,8 8v20a8,8 0,0 1,-8 8h-140a8,8 0,0 1,-8 -8v-20a8,8 0,0 1,8 -8z" />
+        <path android:fillColor="#FFE8392B"
+            android:pathData="M196,96h22l-18,36h-22zM240,96h22l-18,36h-22zM284,96h22l-18,36h-22z" />
+    </group>
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M180,140h140a10,10 0,0 1,10 10v76a10,10 0,0 1,-10 10h-140a10,10 0,0 1,-10 -10v-76a10,10 0,0 1,10 -10z" />
+    <path android:fillColor="#FFE8392B" android:pathData="M234,160l48,28l-48,28z" />
+</vector>
