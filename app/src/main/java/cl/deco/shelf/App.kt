@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
+import cl.deco.shelf.clock.ClockScheduler
 import cl.deco.shelf.guard.CrashLog
 import cl.deco.shelf.guard.GuardReceiver
 import cl.deco.shelf.data.art.ArtSource
@@ -36,6 +37,9 @@ class App : Application() {
             getSharedPreferences("shelf", MODE_PRIVATE)
             installCrashHandler()
             if (BuildConfig.CRASH_TRIGGER) registerCrashTrigger()
+            // Alarmas, temporizadores y apagado nocturno se reprograman una vez por proceso (no en cada regreso al home), en un hilo
+            // propio y breve: leen prefs y llaman a AlarmManager. Cambios de hora, zona, reinicio y APK los cubre BootReceiver.
+            Thread({ ClockScheduler.rescheduleAll(this) }, "clock-resched").start()
         }
     }
 

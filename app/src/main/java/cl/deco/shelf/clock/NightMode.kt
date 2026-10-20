@@ -25,7 +25,8 @@ object NightMode {
         else -> nowMin >= from || nowMin < to
     }
 
-    fun active(ctx: Context) = ShelfPrefs(ctx).sp.getBoolean("night_active", false)
+    fun active(ctx: Context) = active(ShelfPrefs(ctx))
+    fun active(p: ShelfPrefs) = p.sp.getBoolean("night_active", false)
 
     /** Aplica el estado correcto para la hora actual. Devuelve true si la ventana está activa. */
     fun evaluate(ctx: Context): Boolean {

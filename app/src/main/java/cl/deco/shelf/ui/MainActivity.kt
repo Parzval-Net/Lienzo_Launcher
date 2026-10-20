@@ -104,7 +104,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var dockBg: GradientDrawable
     private var artPlayer: MediaPlayer? = null
     private var pendingFree: Runnable? = null
-    private var nightActive = false
     private val secTick: Runnable = object : Runnable { override fun run() { updateClockStatus() } }
     private var artSurface: SurfaceView? = null
     private val themeListener: () -> Unit = { applyTheme() }
@@ -366,9 +365,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         main.postDelayed(checkHealth, 4000)
         // Asistente de primer inicio: una sola vez; después, desde Ajustes
         if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
-        ClockScheduler.scheduleAll(this) // reprograma temporizadores, alarmas y apagado nocturno
-        nightActive = NightMode.refresh(this)
-        updateClockStatus()
+        updateClockStatus() // alarmas y apagado nocturno ya se reprograman en App.onCreate, BootReceiver y al cambiar ajustes
         scheduleSun()
         restoreLastArt()
         val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
@@ -1184,7 +1181,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 if (prefs.weatherOn) { lastWeather = System.currentTimeMillis(); refreshWeather() }
             }
             ShelfPrefs.NIGHT_ON, ShelfPrefs.NIGHT_FROM, ShelfPrefs.NIGHT_TO, ShelfPrefs.NIGHT_IDLE -> {
-                nightActive = NightMode.refresh(this); updateClockStatus()
+                NightMode.refresh(this); updateClockStatus()
             }
             ShelfPrefs.DOCK_MAX -> if ((prefs.dockMax >= 8) != (tileDp == 98)) recreate() else rebuild()
             ShelfPrefs.ICON_ORIGINAL -> regenerateIcons()
@@ -1222,7 +1219,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val nextAlarm = store.alarms().filter { it.enabled }.mapNotNull { ClockScheduler.nextTime(it, now) }.minOrNull()
             ?.takeIf { it - now < 12 * 3600_000L }
         val alarmTxt = nextAlarm?.let { java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(it)) }
-        topBar.setStatus(timerTxt, alarmTxt, nightActive)
+        topBar.setStatus(timerTxt, alarmTxt, NightMode.active(prefs)) // lee night_active en cada actualización: la luna sigue al evento nocturno aunque no haya onStart
     }
 
     /** Lectura de salud; en builds con -PlienzoForceHealth (solo pruebas) simula 8 días encendido y recordatorio de 60 s. */
