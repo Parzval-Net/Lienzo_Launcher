@@ -350,7 +350,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         super.onStart()
         if (!ready) return
         started = true
-        lienzoVisible = true
         if (state == HomeState.ART_MODE) applyState(stateBeforeArt, animate = false)
         registerReceiver(pkgReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -389,7 +388,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun onStop() {
         if (!ready) { super.onStop(); return }
         started = false
-        lienzoVisible = false
         stopAt = System.currentTimeMillis()
         main.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(pkgReceiver) }
@@ -1571,9 +1569,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun onBackPressed() { /* launcher: ignorar back */ }
 
     companion object {
-        /** Lienzo visible (lo consulta el servicio de accesibilidad de Home, sin estado propio). */
-        @Volatile @JvmStatic var lienzoVisible = false
-
         const val TILE_W = 224
         const val TILE_H = 126
         const val GRID_COLS = 7

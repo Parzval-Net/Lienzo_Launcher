@@ -103,9 +103,6 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
         Row.Act("Restaurar configuración") { panel.push(restorePage()) },
         Row.Act("Asistente de configuración") { panel.push(wizard()) },
-        Row.Section("Avanzado"),
-        Row.Info("Botón Home con accesibilidad") { if (homeServiceOn()) "Activo" else "Apagado (opcional, para decos donde no se puede cambiar el launcher por defecto)" },
-        Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
     ))
 
     // ---- Mis fondos ----
@@ -186,9 +183,6 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         return ri?.activityInfo?.packageName == ctx.packageName
     }
 
-    private fun homeServiceOn(): Boolean =
-        Settings.Secure.getString(ctx.contentResolver, "enabled_accessibility_services").orEmpty().contains("${ctx.packageName}/")
-
     private fun openActivity(i: Intent): Boolean = try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (_: Exception) { false }
 
     private fun artState(): Pair<Boolean, String> {
@@ -243,8 +237,6 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
                     Row.Info("") { "Pulsa el botón Home del control y, cuando Android pregunte, elige Lienzo y marca \"Siempre\"." },
                 )))
             }
-            rows += Row.Info("") { "Si tu deco no deja cambiar el launcher, activa \"Botón Home con accesibilidad\": Lienzo se abrirá al pulsar Home." }
-            rows += Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
         rows += Row.Act("Siguiente") { panel.push(wizardAdb()) }
         return Page("Pantalla de inicio", rows)
