@@ -62,6 +62,13 @@ android {
     androidResources {
         localeFilters += listOf("es", "en")
     }
+
+    // Recursos de tooling que no se leen en runtime (sin kotlin-reflect ni agente de depuración de coroutines): ~50 KB sin comprimir
+    packaging {
+        resources {
+            excludes += listOf("kotlin/**", "META-INF/*.version", "DebugProbesKt.bin")
+        }
+    }
 }
 
 kotlin {
