@@ -121,7 +121,7 @@ class ContinueRow(
             h.cell.tag = uri
             h.cell.image.setImageDrawable(GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2E3340.toInt(), 0xFF14161D.toInt())).apply { cornerRadius = radius })
             if (uri != null) {
-                val hit = loader.cachedUri(uri)
+                val hit = loader.cachedUri(uri, 320, 180)
                 if (hit != null) h.cell.image.setImageBitmap(hit)
                 else loader.loadUri(uri, 320, 180) { bmp -> if (bmp != null && h.cell.tag == uri) h.cell.image.setImageBitmap(bmp) }
             }

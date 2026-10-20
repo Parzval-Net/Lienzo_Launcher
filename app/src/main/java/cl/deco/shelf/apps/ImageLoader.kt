@@ -21,7 +21,9 @@ import android.text.TextUtils
 import android.util.LruCache
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Genera en background el bitmap final de cada tile (fondo, banner/ícono, label, esquinas redondeadas ya
@@ -32,7 +34,8 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
     private val renderer = TileRenderer(context, w, h, radius)
     private val prefs = cl.deco.shelf.settings.ShelfPrefs(context)
     private val main = Handler(Looper.getMainLooper())
-    private val pool = Executors.newFixedThreadPool(2)
+    // 2 hilos que mueren tras 10 s ociosos: en reposo el loader no retiene ningún hilo (cada uno reserva ~230 KB de stack)
+    private val pool = ThreadPoolExecutor(2, 2, 10L, TimeUnit.SECONDS, LinkedBlockingQueue<Runnable>()).apply { allowCoreThreadTimeOut(true) }
 
     private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
@@ -47,11 +50,11 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
         }
     }
 
-    fun cachedUri(uri: String): Bitmap? = cache.get("u:$uri")
+    fun cachedUri(uri: String, cw: Int, ch: Int): Bitmap? = cache.get(uriCacheKey(uri, cw, ch))
 
     /** Imagen de tarjeta (cover recortada, esquinas redondeadas y scrim inferior) descargada/decodificada en background. */
     fun loadUri(uri: String, cw: Int, ch: Int, onLoaded: (Bitmap?) -> Unit) {
-        val key = "u:$uri"
+        val key = uriCacheKey(uri, cw, ch)
         pool.execute {
             val bmp = cache.get(key) ?: try {
                 readBytes(uri)?.let { BitmapUtil.decodeBytes(it, cw, ch) }?.let { src ->
@@ -86,24 +89,30 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
 
     private fun readBytes(uri: String): ByteArray? {
         val u = Uri.parse(uri)
-        val stream = if (u.scheme == "http" || u.scheme == "https") {
-            val c = URL(uri).openConnection() as HttpURLConnection
-            c.connectTimeout = 6000
-            c.readTimeout = 8000
-            c.inputStream
-        } else {
-            context.contentResolver.openInputStream(u)
-        } ?: return null
-        stream.use { s ->
-            val out = java.io.ByteArrayOutputStream()
-            val buf = ByteArray(16 * 1024)
-            while (true) {
-                val n = s.read(buf)
-                if (n < 0) break
-                out.write(buf, 0, n)
-                if (out.size() > MAX_DOWNLOAD) return null
+        var conn: HttpURLConnection? = null
+        try {
+            val stream = if (u.scheme == "http" || u.scheme == "https") {
+                val c = URL(uri).openConnection() as HttpURLConnection
+                conn = c
+                c.connectTimeout = 6000
+                c.readTimeout = 8000
+                c.inputStream
+            } else {
+                context.contentResolver.openInputStream(u)
+            } ?: return null
+            stream.use { s ->
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(16 * 1024)
+                while (true) {
+                    val n = s.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (out.size() > MAX_DOWNLOAD) return null
+                }
+                return out.toByteArray()
             }
-            return out.toByteArray()
+        } finally {
+            conn?.disconnect() // libera el socket aunque la lectura falle o se corte por tamaño
         }
     }
 
@@ -133,3 +142,6 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
         const val MAX_DOWNLOAD = 4 * 1024 * 1024
     }
 }
+
+/** Clave de caché de una imagen por URI: incluye el tamaño pedido, porque cada vista la recorta y redondea a su escala. */
+internal fun uriCacheKey(uri: String, cw: Int, ch: Int) = "u:$uri:${cw}x$ch"

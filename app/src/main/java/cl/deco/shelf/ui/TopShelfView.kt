@@ -137,7 +137,7 @@ class TopShelfView(
                 h.cell.image.setImageDrawable(placeholder())
                 return
             }
-            val hit = loader.cachedUri(uri)
+            val hit = loader.cachedUri(uri, cardW, cardH)
             if (hit != null) {
                 h.cell.image.setImageBitmap(hit)
             } else {
