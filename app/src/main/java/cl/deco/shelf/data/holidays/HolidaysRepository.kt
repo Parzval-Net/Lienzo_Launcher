@@ -2,12 +2,11 @@ package cl.deco.shelf.data.holidays
 
 import android.content.Context
 import android.util.Log
+import cl.deco.shelf.util.Http
 import cl.deco.shelf.settings.ShelfPrefs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.LocalDate
 
 /**
@@ -35,7 +34,11 @@ class HolidaysRepository(private val context: Context, private val prefs: ShelfP
             Log.w(TAG, "Nager falló para $cc $year: ${e.message}")
             null
         }
-        if (online != null) {
+        if (online === NOT_MODIFIED && cached != null) {
+            writeCache(year, cc, Cache(now, cached.holidays)) // 304: mismos datos, TTL renovado
+            return cached.holidays
+        }
+        if (online != null && online !== NOT_MODIFIED) {
             writeCache(year, cc, Cache(now, online))
             return online
         }
@@ -46,26 +49,14 @@ class HolidaysRepository(private val context: Context, private val prefs: ShelfP
     private data class Cache(val fetchedAt: Long, val holidays: List<Holiday>)
 
     private fun fetchNager(year: Int, cc: String): List<Holiday>? {
-        val arr = JSONArray(get("https://date.nager.at/api/v3/PublicHolidays/$year/$cc"))
+        val r = Http.get(context, "https://date.nager.at/api/v3/PublicHolidays/$year/$cc", UA, TIMEOUT_MS, revalidate = readCache(year, cc) != null)
+        if (r.notModified) return NOT_MODIFIED // el llamador conserva su cache y solo renueva la fecha
+        val arr = JSONArray(r.body ?: return null)
         val out = parseNager(arr, year, cc)
         // Validación mínima solo para Chile (>= 10 nacionales); para otros países basta con tener datos
         if (cc == "CL" && out.count { it.counties.isEmpty() } < 10) return null
         if (out.isEmpty()) return null
         return out.sortedBy { it.date }
-    }
-
-    private fun get(url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
-            conn.setRequestProperty("Accept", "application/json")
-            conn.setRequestProperty("User-Agent", UA)
-            if (conn.responseCode != 200) throw java.io.IOException("HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
     }
 
     private fun cacheFile(year: Int, cc: String) = File(File(context.filesDir, "holidays").apply { mkdirs() }, "$cc-$year.json")
@@ -105,6 +96,7 @@ class HolidaysRepository(private val context: Context, private val prefs: ShelfP
 
     companion object {
         private const val TAG = "HolidaysRepository"
+        private val NOT_MODIFIED: List<Holiday> = ArrayList()
         private const val UA = "Shelf-TV-Launcher/0.1"
         private const val TIMEOUT_MS = 8_000
         private const val TTL_MS = 30L * 24 * 60 * 60 * 1000

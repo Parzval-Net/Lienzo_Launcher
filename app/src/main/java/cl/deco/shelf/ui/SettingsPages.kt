@@ -249,7 +249,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             if (q.length < 2) return
             panel.fillSlot(status, listOf(Row.Info("") { "Buscando…" }))
             io.execute {
-                val res = try { Geocoding.search(q) } catch (_: Throwable) { null }
+                val res = try { Geocoding.search(ctx, q) } catch (_: Throwable) { null }
                 main.post {
                     if (!panel.isOpen) return@post
                     when {

@@ -2,13 +2,12 @@ package cl.deco.shelf.data.weather
 
 import android.content.Context
 import android.util.Log
+import cl.deco.shelf.util.Http
 import cl.deco.shelf.settings.ShelfPrefs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.LocalDate
 
 /** Tipo de icono por código WMO. Mapeo sobre la tabla de Open-Meteo (https://open-meteo.com/en/docs). */
@@ -71,24 +70,12 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
         val now = System.currentTimeMillis()
         if (!forceRefresh && cached != null && now - cached.fetchedAt < TTL_MS) return cached
         return try {
-            parse(download(), now).also { writeCache(it, locKey) }
+            val r = Http.get(context, forecastUrl(), UA, TIMEOUT_MS, revalidate = cached != null)
+            if (r.notModified && cached != null) cached.copy(fetchedAt = now).also { writeCache(it, locKey) }
+            else parse(r.body ?: throw IOException("sin cuerpo"), now).also { writeCache(it, locKey) }
         } catch (e: Exception) {
             Log.w(TAG, "Open-Meteo falló: ${e.message}")
             cached
-        }
-    }
-
-    private fun download(): String {
-        val conn = URL(forecastUrl()).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = TIMEOUT_MS
-            conn.readTimeout = TIMEOUT_MS
-            conn.setRequestProperty("Accept", "application/json")
-            conn.setRequestProperty("User-Agent", UA)
-            if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            conn.disconnect()
         }
     }
 
@@ -106,6 +93,12 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
         val tMax = daily.getJSONArray("temperature_2m_max")
         val tMin = daily.getJSONArray("temperature_2m_min")
         val precip = daily.getJSONArray("precipitation_probability_max")
+        val rise = daily.optJSONArray("sunrise")
+        val set = daily.optJSONArray("sunset")
+        val zone = try { java.time.ZoneId.of(prefs.cityTz) } catch (_: Exception) { java.time.ZoneId.systemDefault() }
+        fun epoch(a: JSONArray?, i: Int): Long? = try {
+            if (a == null || a.isNull(i)) null else java.time.LocalDateTime.parse(a.getString(i)).atZone(zone).toInstant().toEpochMilli()
+        } catch (_: Exception) { null }
         val days = (0 until times.length()).map { i ->
             DayForecast(
                 date = LocalDate.parse(times.getString(i)),
@@ -113,6 +106,7 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
                 tMax = tMax.getDouble(i),
                 code = codes.getInt(i),
                 precipProb = if (precip.isNull(i)) null else precip.getDouble(i).toInt(),
+                sunrise = epoch(rise, i), sunset = epoch(set, i),
             )
         }
         return Weather(
@@ -151,6 +145,8 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
                 tMax = d.getDouble("tMax"),
                 code = d.getInt("code"),
                 precipProb = if (d.isNull("precip")) null else d.getInt("precip"),
+                sunrise = if (d.has("sr")) d.getLong("sr") else null,
+                sunset = if (d.has("ss")) d.getLong("ss") else null,
             )
         }
         Weather(
@@ -172,7 +168,8 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
                         .put("tMin", d.tMin)
                         .put("tMax", d.tMax)
                         .put("code", d.code)
-                        .put("precip", d.precipProb ?: JSONObject.NULL),
+                        .put("precip", d.precipProb ?: JSONObject.NULL)
+                        .apply { d.sunrise?.let { put("sr", it) }; d.sunset?.let { put("ss", it) } },
                 )
             }
             val o = JSONObject()
@@ -200,6 +197,6 @@ class OpenMeteoWeather(private val context: Context) : WeatherSource {
         const val URL_PARAMS = "&forecast_days=7" +
             "&current=temperature_2m,weather_code,is_day" +
             "&hourly=precipitation_probability&forecast_hours=4" +
-            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset"
     }
 }

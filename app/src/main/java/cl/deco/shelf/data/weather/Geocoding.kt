@@ -1,9 +1,8 @@
 package cl.deco.shelf.data.weather
 
+import android.content.Context
+import cl.deco.shelf.util.Http
 import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 
 data class GeoPlace(val name: String, val admin: String?, val country: String?, val lat: Double, val lon: Double, val tz: String) {
@@ -14,17 +13,20 @@ data class GeoPlace(val name: String, val admin: String?, val country: String?, 
 /** Geocoding API de Open-Meteo (https://open-meteo.com/en/docs/geocoding-api). Bloqueante. */
 object Geocoding {
 
-    fun search(query: String): List<GeoPlace> {
-        val url = "https://geocoding-api.open-meteo.com/v1/search?name=${URLEncoder.encode(query.trim(), "UTF-8")}&count=8&language=es&format=json"
-        val c = URL(url).openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 8000; c.readTimeout = 8000
-            c.setRequestProperty("User-Agent", "Shelf-TV-Launcher/0.1")
-            if (c.responseCode != 200) throw IOException("HTTP ${c.responseCode}")
-            return parse(c.inputStream.bufferedReader().use { it.readText() })
-        } finally {
-            c.disconnect()
-        }
+    private class Hit(val at: Long, val places: List<GeoPlace>)
+    private val memo = HashMap<String, Hit>()
+    private const val TTL_MS = 24L * 3600_000
+
+    /** Cache en memoria 24 h por consulta (los nombres de ciudades no cambian); Http deduplica las consultas en vuelo. */
+    fun search(ctx: Context, query: String): List<GeoPlace> {
+        val q = query.trim()
+        val key = q.lowercase()
+        synchronized(memo) { memo[key]?.let { if (System.currentTimeMillis() - it.at < TTL_MS) return it.places } }
+        val url = "https://geocoding-api.open-meteo.com/v1/search?name=${URLEncoder.encode(q, "UTF-8")}&count=8&language=es&format=json"
+        val r = Http.get(ctx, url, "Shelf-TV-Launcher/0.1", 8000, revalidate = false)
+        val places = parse(r.body.orEmpty())
+        synchronized(memo) { memo[key] = Hit(System.currentTimeMillis(), places) }
+        return places
     }
 
     /** Sin resultados la API omite "results": lista vacía. Descarta entradas sin coordenadas. */
