@@ -231,7 +231,9 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             try { cr.openInputStream(item.uri)?.use { orientation = ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1) } } catch (_: Exception) {}
         }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        cr.openInputStream(item.uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: throw IOException("sin lectura")
+        // decodeStream devuelve null con inJustDecodeBounds: se confirma la apertura aparte
+        val stream = cr.openInputStream(item.uri) ?: throw IOException("sin lectura")
+        stream.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalStateException("no es una imagen")
         val rot = ImportMath.exifRotation(orientation)
         val (ow, oh) = if (rot % 180 == 90) bounds.outHeight to bounds.outWidth else bounds.outWidth to bounds.outHeight

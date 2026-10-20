@@ -74,7 +74,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
 
     init {
         visibility = GONE
-        setBackgroundColor(0xF50B0B10.toInt())
+        setBackgroundColor(0xFF0B0B10.toInt()) // opaco: los ajustes quedan debajo y no deben traslucirse
         isClickable = true
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -216,7 +216,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
         } else {
             s.setTextColor(if (chk.ok) Ui.TEXT else 0xFFFF8A80.toInt())
             s.text = "Total: ${SpaceRules.format(total)}" + (if (imgs > 0) " (imágenes estimadas)" else "") +
-                (if (chk.ok) ". Libre: ${SpaceRules.format(freeBytes)}" else ". Falta espacio: faltan ${SpaceRules.format(chk.shortBy)} (se reservan 500 MB)")
+                (if (chk.ok) ". Libre: ${SpaceRules.format(freeBytes)}" else ". Sin espacio: faltan ${SpaceRules.format(chk.shortBy)} (se reservan 500 MB)")
         }
     }
 
@@ -300,6 +300,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
             line("Se necesitan ${SpaceRules.format(it.needed)} y quedan ${SpaceRules.format(it.free)} libres. Lienzo deja al menos 500 MB libres: faltan ${SpaceRules.format(it.shortBy)}.", 0xFFFF8A80.toInt())
             line("Libera espacio en el deco o elige menos archivos.", Ui.TEXT2)
         }
+        if (o.cancelled) line("Se detuvo la copia y se borró el archivo parcial.", Ui.TEXT2)
         if (o.images + o.videos > 0) line("Importados: ${o.images} ${if (o.images == 1) "imagen" else "imágenes"} y ${o.videos} ${if (o.videos == 1) "video" else "videos"}.")
         if (o.rejected.isNotEmpty()) {
             line("Rechazados por formato:", 0xFFFFC27A.toInt())
@@ -310,6 +311,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
             line("Con error:", 0xFFFF8A80.toInt())
             o.failed.forEach { (n, why) -> line("• $n: $why", Ui.TEXT2, 14f) }
         }
+        if (o.noSpace == null && !o.cancelled && o.images + o.videos == 0 && o.rejected.isEmpty() && o.failed.isEmpty() && o.skipped.isEmpty()) line("No había nada nuevo que importar.", Ui.TEXT2)
         val scroll = ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; overScrollMode = OVER_SCROLL_NEVER; isFocusable = false; addView(col, ViewGroup.LayoutParams(-1, -2)) }
         val done = PageUi.chip(ctx, "Listo", 120) { back(); onClose() }
         val again = PageUi.chip(ctx, "Importar más", 150) { selected.clear(); load(); title.text = "Importar desde USB" }

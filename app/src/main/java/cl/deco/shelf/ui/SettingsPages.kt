@@ -112,6 +112,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     private fun sourceName() = listOf("Colección curada", "Mis fondos", "Ambas")[p.bgSource.coerceIn(0, 2)]
 
+    private fun counts(i: Int, v: Int) = "$i ${if (i == 1) "imagen" else "imágenes"}, $v ${if (v == 1) "video" else "videos"}"
+
     private fun short(n: String, max: Int = 28) = if (n.length <= max) n else n.take(max - 1) + "…"
 
     private var pendingDelete: String? = null
@@ -124,7 +126,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         return Page("Mis fondos", listOf(
             Row.Section("Importar"),
             Row.Act("Importar desde USB", { "Imágenes y videos" }) { host.importFromUsb() },
-            Row.Act("Gestionar mis fondos", { "${ua.count()} imágenes, ${VideoLibrary.userVideos(ctx).size} videos" }) { pendingDelete = null; panel.push(managePage()) },
+            Row.Act("Gestionar mis fondos", { counts(ua.count(), VideoLibrary.userVideos(ctx).size) }) { pendingDelete = null; panel.push(managePage()) },
             Row.Section("Uso"),
             choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, listOf("Colección curada", "Mis fondos", "Ambas"), listOf(0, 1, 2), { p.bgSource }, { p.bgSource = it }),
             Row.Choice("Video del protector y del modo arte", names, { tokens.indexOf(p.videoChoice).coerceAtLeast(0) }, { p.videoChoice = tokens[it]; host.changed(ShelfPrefs.VIDEO_CHOICE) }),
