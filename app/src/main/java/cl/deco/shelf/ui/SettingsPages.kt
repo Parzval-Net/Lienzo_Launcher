@@ -7,6 +7,9 @@ import android.content.Intent
 import android.provider.Settings
 import cl.deco.shelf.Graph
 import cl.deco.shelf.clock.NightMode
+import cl.deco.shelf.data.art.SpaceRules
+import cl.deco.shelf.data.art.VideoLibrary
+import cl.deco.shelf.data.art.VideoPolicy
 import cl.deco.shelf.settings.ShelfPrefs
 import java.io.File
 import java.util.concurrent.Executors
@@ -28,6 +31,10 @@ interface SettingsHost {
     fun finishSettings()
     /** Abre el panel Salud del deco (cierra Ajustes). */
     fun openHealth()
+    /** "Importar desde USB": pide el permiso de medios si falta y abre la grilla de importación. */
+    fun importFromUsb()
+    /** Cambió el contenido de Mis fondos (borrado) o la fuente: recargar el fondo si corresponde. */
+    fun fondosChanged()
 }
 
 /** Construye las páginas del panel de ajustes a partir de ShelfPrefs. */
@@ -50,7 +57,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Section("Fondo"),
         choice("Rotación de obra", ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", "Diario"), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
         Row.Act("Cambiar obra ahora") { host.nextArt() },
-        choice("Fuente", ShelfPrefs.BG_ONLINE, listOf("Colección curada", "En línea"), listOf(false, true), { p.bgOnline }, { p.bgOnline = it }),
+        Row.Act("Mis fondos", { sourceName() }) { panel.push(myBackgroundsPage()) },
         choice("Brillo del fondo", ShelfPrefs.BG_BRIGHTNESS, listOf("60%", "70%", "80%", "90%", "100%"), listOf(60, 70, 80, 90, 100), { p.bgBrightness }, { p.bgBrightness = it }),
         toggle("Atenuar de noche", ShelfPrefs.NIGHT_DIM, "Sí", "No", { p.nightDim }, { p.nightDim = it }),
         choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Ninguno", "Bajo", "Medio", "Alto"), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
@@ -100,6 +107,74 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Botón Home con accesibilidad") { if (homeServiceOn()) "Activo" else "Apagado (opcional, para decos donde no se puede cambiar el launcher por defecto)" },
         Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
     ))
+
+    // ---- Mis fondos ----
+
+    private fun sourceName() = listOf("Colección curada", "Mis fondos", "Ambas")[p.bgSource.coerceIn(0, 2)]
+
+    private fun short(n: String, max: Int = 28) = if (n.length <= max) n else n.take(max - 1) + "…"
+
+    private var pendingDelete: String? = null
+
+    fun myBackgroundsPage(): Page {
+        val ua = Graph.from(ctx).userArt
+        val videos = VideoLibrary.userVideos(ctx)
+        val tokens = listOf(VideoPolicy.MONET) + videos.map { VideoPolicy.userChoice(it.name) } + (if (videos.isNotEmpty()) listOf(VideoPolicy.ALL) else emptyList())
+        val names = listOf("Monet") + videos.map { "Propio: " + short(it.name, 22) } + (if (videos.isNotEmpty()) listOf("Alternar todos") else emptyList())
+        return Page("Mis fondos", listOf(
+            Row.Section("Importar"),
+            Row.Act("Importar desde USB", { "Imágenes y videos" }) { host.importFromUsb() },
+            Row.Act("Gestionar mis fondos", { "${ua.count()} imágenes, ${VideoLibrary.userVideos(ctx).size} videos" }) { pendingDelete = null; panel.push(managePage()) },
+            Row.Section("Uso"),
+            choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, listOf("Colección curada", "Mis fondos", "Ambas"), listOf(0, 1, 2), { p.bgSource }, { p.bgSource = it }),
+            Row.Choice("Video del protector y del modo arte", names, { tokens.indexOf(p.videoChoice).coerceAtLeast(0) }, { p.videoChoice = tokens[it]; host.changed(ShelfPrefs.VIDEO_CHOICE) }),
+            Row.Section("Cómo preparar el pendrive"),
+            Row.Info("Imágenes") { "JPG, PNG o WebP en cualquier carpeta. Se ajustan a 1920x1080 (recorte centrado; las verticales llevan passe-partout y solo salen en el protector)." },
+            Row.Info("Videos") { "MP4, MOV, M4V o MKV con H.264 o H.265, hasta 1920x1080 y 60 fps. 4K u otros formatos pueden afectar la reproducción de Netflix y se rechazan." },
+            Row.Info("Espacio") { "Lienzo deja siempre al menos 500 MB libres en el deco." },
+        ))
+    }
+
+    /** Tras importar: reconstruye la página Mis fondos para que las opciones de video y los conteos queden al día. */
+    fun refreshFondos() {
+        if (panel.isOpen && panel.currentTitle() == "Mis fondos") { panel.back(); panel.push(myBackgroundsPage()) }
+    }
+
+    private fun managePage(): Page {
+        val ua = Graph.from(ctx).userArt
+        val imgs = ua.entries()
+        val vids = VideoLibrary.userVideos(ctx)
+        val rows = ArrayList<Row>()
+        if (imgs.isEmpty() && vids.isEmpty()) rows += Row.Info("") { "Todavía no importaste nada. Usa Importar desde USB." }
+        fun confirmable(key: String, label: String, size: Long, delete: () -> Unit) = Row.Act(short(label), { if (pendingDelete == key) "OK de nuevo para borrar" else SpaceRules.format(size) }) {
+            if (pendingDelete == key) {
+                pendingDelete = null
+                io.execute {
+                    delete()
+                    main.post {
+                        if (!panel.isOpen) return@post
+                        host.fondosChanged()
+                        panel.back(); panel.push(managePage())
+                    }
+                }
+            } else pendingDelete = key
+        }
+        if (imgs.isNotEmpty()) {
+            rows += Row.Section("Imágenes (${imgs.size})")
+            imgs.forEach { e -> rows += confirmable("i:${e.id}", e.title + if (e.home) "" else " (vertical)", e.bytes) { ua.remove(e.id) } }
+        }
+        if (vids.isNotEmpty()) {
+            rows += Row.Section("Videos (${vids.size})")
+            vids.forEach { f ->
+                rows += confirmable("v:${f.name}", f.name, f.length()) {
+                    VideoLibrary.delete(ctx, f.name)
+                    if (p.videoChoice == VideoPolicy.userChoice(f.name)) p.videoChoice = VideoPolicy.MONET
+                }
+            }
+        }
+        rows += Row.Info("") { "OK sobre un elemento lo marca; OK de nuevo lo borra." }
+        return Page("Gestionar mis fondos", rows)
+    }
 
     // ---- Asistente de configuración ----
 

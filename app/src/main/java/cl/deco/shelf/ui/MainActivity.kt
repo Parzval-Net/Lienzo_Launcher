@@ -52,6 +52,8 @@ import cl.deco.shelf.apps.FavoritesStore
 import cl.deco.shelf.apps.IconOverrides
 import cl.deco.shelf.apps.ImageLoader
 import cl.deco.shelf.data.art.Artwork
+import cl.deco.shelf.data.art.MediaImporter
+import cl.deco.shelf.data.art.VideoLibrary
 import cl.deco.shelf.data.holidays.Holiday
 import cl.deco.shelf.data.weather.SunDim
 import cl.deco.shelf.data.weather.Weather
@@ -96,6 +98,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var prefs: ShelfPrefs
     private lateinit var settings: SettingsPanel
     private lateinit var health: HealthPanel
+    private lateinit var importPanel: ImportPanel
+    private var pendingImport = false
     private lateinit var settingsPages: SettingsPages
     private lateinit var dockBg: GradientDrawable
     private var artPlayer: MediaPlayer? = null
@@ -290,6 +294,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onSnooze = { prefs.healthSnoozeUntil = System.currentTimeMillis() + (if (BuildConfig.FORCE_HEALTH) 60_000L else cl.deco.shelf.util.DeviceHealth.SNOOZE_MS); topBar.setRestartHint(false) {}; closeHealth() }
             onOpenAndroidSettings = { QuickAccess.launch(this@MainActivity, QuickAccess.items.last()) }
         }
+        importPanel = ImportPanel(this).apply {
+            onClose = { closeImport() }
+            onImported = { fondosChanged(); settingsPages.refreshFondos() }
+        }
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
         settingsPages = SettingsPages(this, settings, prefs, this, "Lienzo $ver")
         topBar.setWeatherEnabled(prefs.weatherOn)
@@ -304,6 +312,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         root.addView(menu, ViewGroup.LayoutParams(-1, -1))
         root.addView(settings, ViewGroup.LayoutParams(-1, -1))
         root.addView(health, ViewGroup.LayoutParams(-1, -1))
+        root.addView(importPanel, ViewGroup.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(16) })
         setContentView(root)
         // El foco decide el estado visual: barra superior vs dock
@@ -326,6 +335,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (!ready) return
+        if (requestCode == REQ_MEDIA) {
+            val ok = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            val wanted = pendingImport
+            pendingImport = false
+            if (wanted && ok) openImport()
+            else if (wanted) Toast.makeText(this, "Sin el permiso de medios Lienzo no puede leer el pendrive", Toast.LENGTH_LONG).show()
+            return
+        }
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) reloadApps()
         if (settings.isOpen) settings.rebuild()
     }
@@ -380,6 +397,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         main.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(pkgReceiver) }
         if (today.visibility == View.VISIBLE) closeToday()
+        dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
         if (artMode) applyState(stateBeforeArt, animate = false)
@@ -398,6 +416,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // HOME con el launcher ya visible: cerrar overlays y volver al dock
         if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
+        dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
         endMove()
@@ -997,9 +1016,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private val artVideoRun = Runnable { startArtVideo() }
 
-    private fun videoFile(): File? =
-        getExternalFilesDir("video")?.listFiles { f -> f.extension.equals("mp4", true) }?.minByOrNull { it.name }
-
     /**
      * Video detrás del fondo: SurfaceView en el índice 0 de content (la obra queda encima) y MediaPlayer en loop sin audio.
      * Al primer frame real se funde la obra de alpha 1 a 0 en 1200 ms. Sin video o con el ajuste apagado, el modo arte
@@ -1007,7 +1023,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
      */
     private fun startArtVideo() {
         if (state != HomeState.ART_MODE || artPlayer != null || !started || !prefs.artVideo) return
-        val file = videoFile() ?: return
+        val file = VideoLibrary.pick(this, prefs) ?: return // Monet, video propio o rotación de todos (ver ajustes: Mis fondos)
         val sv = SurfaceView(this)
         artSurface = sv
         content.addView(sv, 0, ViewGroup.LayoutParams(-1, -1))
@@ -1063,7 +1079,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun enterArtMode() {
-        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen) return
+        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || importPanel.isOpen) return
         if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
         stateBeforeArt = state
         applyState(HomeState.ART_MODE)
@@ -1094,6 +1110,41 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun requestTvPermission() { requestPermissions(arrayOf(PERM_TV), 1) }
 
+    // ---------- Mis fondos: importar desde USB ----------
+
+    /** Permiso estándar de medios (READ_MEDIA_* en Android 13+, READ_EXTERNAL_STORAGE en 12) y luego la grilla. */
+    override fun importFromUsb() {
+        if (!MediaImporter.hasPermission(this)) {
+            pendingImport = true
+            requestPermissions(MediaImporter.permissions(), REQ_MEDIA)
+            return
+        }
+        openImport()
+    }
+
+    private fun openImport() {
+        if (!settings.isOpen) { prevFocus = currentFocus; blockContent(true) }
+        settings.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        importPanel.open()
+    }
+
+    private fun closeImport() {
+        importPanel.close()
+        settings.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+        if (settings.isOpen) settings.rebuild() else { blockContent(false); prevFocus?.requestFocus() }
+    }
+
+    /** Cierra la grilla sin tocar el foco (onStop / HOME: después se cierran los ajustes). */
+    private fun dropImport() {
+        if (importPanel.isOpen) importPanel.close()
+        settings.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+    }
+
+    /** Se importó o borró algo: si el fondo usa Mis fondos se vuelve a elegir obra. */
+    override fun fondosChanged() {
+        if (prefs.bgSource != 0) { lastArt = System.currentTimeMillis(); loadArt(true) }
+    }
+
     private fun closeSettings() {
         settings.close()
         blockContent(false)
@@ -1114,7 +1165,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun changed(key: String) {
         when (key) {
-            ShelfPrefs.BG_ONLINE -> { lastArt = System.currentTimeMillis(); loadArt(true) }
+            ShelfPrefs.BG_ONLINE, ShelfPrefs.BG_SOURCE -> { lastArt = System.currentTimeMillis(); loadArt(true) }
             ShelfPrefs.BG_BRIGHTNESS -> applyDim(animate = true)
             ShelfPrefs.NIGHT_DIM -> { scheduleSun(); applyDim(animate = true) }
             ShelfPrefs.BLUR_LEVEL -> {
@@ -1443,6 +1494,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 KeyEvent.KEYCODE_DPAD_DOWN -> { Nav.dx = 0; Nav.dy = 1 }
             }
         }
+        if (importPanel.isOpen) {
+            if (k == KeyEvent.KEYCODE_BACK) { if (down && !importPanel.back()) closeImport(); return true }
+            if (k == KeyEvent.KEYCODE_MENU) return true
+            return super.dispatchKeyEvent(e)
+        }
         if (settings.isOpen) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down && !settings.back()) closeSettings(); return true }
             return super.dispatchKeyEvent(e)
@@ -1532,5 +1588,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L
         const val PERM_TV = "android.permission.READ_TV_LISTINGS"
+        const val REQ_MEDIA = 2
     }
 }

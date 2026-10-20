@@ -30,7 +30,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import cl.deco.shelf.data.art.Artwork
-import cl.deco.shelf.data.art.MuseumArt
+import cl.deco.shelf.Graph
+import cl.deco.shelf.data.art.ArtSource
+import cl.deco.shelf.data.art.VideoLibrary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,7 +46,7 @@ import java.util.concurrent.Executors
 class ArtDreamService : DreamService() {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
-    private var art: MuseumArt? = null
+    private var art: ArtSource? = null
 
     private lateinit var root: FrameLayout
     private lateinit var imgA: ImageView
@@ -62,7 +64,7 @@ class ArtDreamService : DreamService() {
     private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     private val nextRunnable = Runnable {
-        if (worksShown >= WORKS_PER_CYCLE && videoFile() != null) startVideo() else loadNext()
+        if (worksShown >= WORKS_PER_CYCLE && hasVideo()) startVideo() else loadNext()
     }
     private val hideCaption = Runnable { caption.animate().alpha(0f).setDuration(600).start() }
     private val tick = object : Runnable {
@@ -79,10 +81,10 @@ class ArtDreamService : DreamService() {
         isFullscreen = true
         attached = true
         setContentView(buildViews(this))
-        art = MuseumArt(this)
+        art = Graph.from(this).art // curada, Mis fondos o ambas según ajustes
         tick.run()
         io.execute { runCatching { art?.prefetch(6) }.onFailure { Log.w(TAG, "prefetch: $it") } }
-        if (videoFile() != null) startVideo() else loadNext()
+        if (hasVideo()) startVideo() else loadNext()
     }
 
     // Al despertar se suelta el decodificador antes de que la app siguiente reproduzca.
@@ -132,15 +134,16 @@ class ArtDreamService : DreamService() {
         return root
     }
 
-    /** Primer mp4 de getExternalFilesDir("video"), o null si no hay o el ajuste está desactivado. */
-    private fun videoFile(): File? {
-        if (!prefs.dreamVideo) return null
-        return getExternalFilesDir("video")?.listFiles { f -> f.extension.equals("mp4", true) }?.minByOrNull { it.name }
-    }
+    /** Hay video elegible (Monet o propio, según ajustes) y el protector lo usa. No avanza la rotación de "Alternar todos". */
+    private fun hasVideo(): Boolean = prefs.dreamVideo && VideoLibrary.hasVideo(this, prefs)
+
+    /** Video de esta pasada: el de Monet, un video propio o el siguiente de la rotación. */
+    private fun videoFile(): File? = if (prefs.dreamVideo) VideoLibrary.pick(this, prefs) else null
 
     private fun startVideo() {
+        if (!attached || player != null) return
         val file = videoFile()
-        if (!attached || file == null || player != null) { if (attached && file == null) loadNext(); return }
+        if (file == null) { loadNext(); return }
         worksShown = 0
         main.removeCallbacks(nextRunnable)
         val sv = SurfaceView(this)
