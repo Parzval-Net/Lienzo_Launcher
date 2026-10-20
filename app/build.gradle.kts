@@ -1,6 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
+
+// Firma de release: se lee de keystore.properties (fuera de git). Si no existe, cae a la firma debug.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val hasReleaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !keystoreProps.getProperty(it).isNullOrBlank() } &&
+    file(keystoreProps.getProperty("storeFile", "")).exists()
 
 android {
     namespace = "cl.deco.shelf"
@@ -20,13 +31,24 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("lienzoRelease") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Firma debug para sideload
-            signingConfig = signingConfigs.getByName("debug")
+            // Firma propia si hay keystore.properties; si no, debug (flujo anterior)
+            signingConfig = signingConfigs.getByName(if (hasReleaseKey) "lienzoRelease" else "debug")
         }
     }
 
