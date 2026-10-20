@@ -60,7 +60,10 @@ object ClockScheduler {
         return null
     }
 
-    /** Reprograma todo lo persistido (arranque de la app y BOOT_COMPLETED). */
+    /** Reprograma todo lo persistido y evalúa el apagado nocturno: arranque del proceso, eventos de [Reschedule] y cambios de ajustes. */
+    fun rescheduleAll(ctx: Context) { scheduleAll(ctx); NightMode.evaluate(ctx) }
+
+    /** Reprograma todo lo persistido (temporizadores, alarmas y los dos eventos del apagado nocturno). */
     fun scheduleAll(ctx: Context) {
         val store = ClockStore(ctx)
         val now = System.currentTimeMillis()
