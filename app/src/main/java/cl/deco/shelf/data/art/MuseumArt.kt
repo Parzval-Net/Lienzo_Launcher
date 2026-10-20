@@ -170,13 +170,18 @@ class MuseumArt(private val context: Context) : ArtSource {
                     return
                 }
                 if (waitMs > 0) Thread.sleep(waitMs)
+                waitForAllowed()
                 ok = try {
-                    process(item, dir).also { if (!it) { attempt++; waitMs = BACKOFF_MS shl (attempt - 1) } }
+                    process(item, dir).also {
+                        if (it) prefs.edit().putInt(KEY_BACKOFF_LEVEL, 0).apply()
+                        else { attempt++; waitMs = BACKOFF_MS shl (attempt - 1) }
+                    }
                 } catch (e: HttpException) {
                     Log.w(TAG, "${item.id}: HTTP ${e.code}")
                     if (e.code == 429 || e.code == 503) {
                         throttled++
-                        waitMs = max(e.retryAfterMs, 15_000L shl min(throttled - 1, 3))
+                        scheduleThrottle(e.retryAfterMs) // pausa toda la cola, persistente
+                        waitMs = 0
                     } else {
                         attempt++; waitMs = BACKOFF_MS shl (attempt - 1)
                     }
@@ -191,14 +196,31 @@ class MuseumArt(private val context: Context) : ArtSource {
                     false
                 }
             }
-            if (!ok && throttled >= MAX_THROTTLED) {
-                Log.w(TAG, "Commons limita las peticiones (429): descarga en pausa; se reanuda en el próximo arranque")
-                return
-            }
             if (ok) done++ else Log.w(TAG, "${item.id}: se omite (reintentos agotados)")
             Thread.sleep(PACE_MS)
         }
         Log.i(TAG, "descarga: $done obras nuevas en ${(System.currentTimeMillis() - t0) / 1000}s, progreso ${downloadProgress()}")
+    }
+
+    /** Próximo intento permitido (persistido): backoff exponencial 60 s .. 30 min con jitter, o Retry-After si es mayor. */
+    private fun scheduleThrottle(retryAfterMs: Long) {
+        val level = prefs.getInt(KEY_BACKOFF_LEVEL, 0)
+        val base = min(MAX_BACKOFF_MS, MIN_BACKOFF_MS shl min(level, 5))
+        val jitter = 0.8 + Random.nextDouble() * 0.4
+        val delay = max(retryAfterMs, (base * jitter).toLong()).coerceAtMost(MAX_BACKOFF_MS)
+        prefs.edit().putInt(KEY_BACKOFF_LEVEL, level + 1).putLong(KEY_NEXT_TRY, System.currentTimeMillis() + delay).apply()
+        Log.w(TAG, "429/503: cola en pausa ${delay / 1000}s (nivel ${level + 1})")
+    }
+
+    private fun nextAllowedMs(): Long = prefs.getLong(KEY_NEXT_TRY, 0L)
+
+    /** Bloquea el hilo de descarga hasta que pase el próximo intento permitido (no martilla a Commons). */
+    private fun waitForAllowed() {
+        while (true) {
+            val w = nextAllowedMs() - System.currentTimeMillis()
+            if (w <= 0) return
+            Thread.sleep(min(w, 30_000L))
+        }
     }
 
     private fun networkAllowed(): Boolean {
@@ -358,20 +380,24 @@ class MuseumArt(private val context: Context) : ArtSource {
 
     companion object {
         private const val TAG = "MuseumArt"
-        private const val UA = "Lienzo-TV-Launcher/1.0 (personal use)"
+        private const val UA = "Lienzo-TV-Launcher/1.0 (https://github.com/; uso personal)"
         private const val ASSET_INDEX = "art_index.json"
         private const val ONLINE_FLAG = ".online"
         private const val KEY_LAST_LOCAL_HOME = "last_local_home"
         private const val KEY_LAST_LOCAL_ALL = "last_local_all"
+        private const val KEY_NEXT_TRY = "art_next_try"
+        private const val KEY_BACKOFF_LEVEL = "art_backoff_level"
+        private const val MIN_BACKOFF_MS = 60_000L
+        private const val MAX_BACKOFF_MS = 30 * 60_000L
         private const val LOCAL_SEED = 585
         private const val TIMEOUT_MS = 10_000
         private const val IMG_TIMEOUT_MS = 30_000
         private const val JPEG_QUALITY = 82
         private const val MAX_DOWNLOAD = 25L * 1024 * 1024
         private const val MAX_ATTEMPTS = 5
-        private const val MAX_THROTTLED = 4
+        private const val MAX_THROTTLED = 100
         private const val BACKOFF_MS = 2_000L
-        private const val PACE_MS = 600L
+        private const val PACE_MS = 1_500L
 
         private val running = AtomicBoolean(false)
         @Volatile private var catalogCache: List<CatalogItem>? = null
