@@ -19,6 +19,61 @@ object DeviceHealth {
         val restartRecommended get() = cmaLow || longUptime
     }
 
+    /** Acción sugerida en el panel: qué botón recibe el foco inicial. */
+    enum class Action { NONE, FREE_MEMORY, RESTART }
+
+    class Reco(val action: Action, val text: String)
+
+    /**
+     * Decisión de recomendación (JVM, sin Android).
+     * - CMA baja y/o muchos días encendido juntos: reiniciar (liberar apps no arregla la fragmentación acumulada).
+     * - Solo CMA baja: primero liberar memoria (no interrumpe nada); si ya se liberó y sigue baja, reiniciar.
+     * - Solo uptime alto: reiniciar.
+     * - Todo sano pero RAM libre bajo [RAM_LOW_PCT]%: liberar memoria.
+     */
+    fun recommend(s: Snapshot, ramAvailKb: Long, ramTotalKb: Long, freed: Boolean = false): Reco = when {
+        s.cmaLow && s.longUptime ->
+            Reco(Action.RESTART, "Memoria de video baja y ${uptimeText(s.uptimeMs)} encendido. Reinicia el deco.")
+        s.cmaLow && !freed ->
+            Reco(Action.FREE_MEMORY, "Memoria de video baja. Libera memoria; si sigue baja, reinicia.")
+        s.cmaLow ->
+            Reco(Action.RESTART, "La memoria de video sigue baja. Reinicia el deco.")
+        s.longUptime ->
+            Reco(Action.RESTART, "El deco lleva ${uptimeText(s.uptimeMs)} encendido. Reinicia el deco.")
+        ramTotalKb > 0 && ramAvailKb * 100 < ramTotalKb * RAM_LOW_PCT ->
+            Reco(Action.FREE_MEMORY, "Poca RAM disponible. Libera memoria.")
+        else -> Reco(Action.NONE, "Todo en orden.")
+    }
+
+    /** RAM disponible bajo este porcentaje del total sugiere liberar memoria. */
+    const val RAM_LOW_PCT = 15
+
+    /** "Recordarme más tarde": el aviso se oculta este tiempo. */
+    const val SNOOZE_MS = 24L * 3_600_000L
+
+    fun snoozed(nowMs: Long, untilMs: Long) = untilMs > nowMs && untilMs - nowMs <= SNOOZE_MS
+
+    /** Tamaño de la lectura de RAM para el panel (ActivityManager.MemoryInfo), en KB. */
+    class Ram(val availKb: Long, val totalKb: Long)
+
+    fun readRam(ctx: android.content.Context): Ram {
+        val am = ctx.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        return Ram(mi.availMem / 1024, mi.totalMem / 1024)
+    }
+
+    /** Mínimo de mejora (RAM o CMA) para considerar que "Liberar memoria" sirvió. */
+    const val FREE_GAIN_KB = 20L * 1024
+
+    /** Texto honesto del resultado de "Liberar memoria" según lo medido antes y después. */
+    fun freeVerdict(ramBefore: Long, ramAfter: Long, cmaBefore: Long, cmaAfter: Long): String {
+        val gain = maxOf(ramAfter - ramBefore, cmaAfter - cmaBefore)
+        return if (gain >= FREE_GAIN_KB) "Se liberaron ${mbText(gain)}. La próxima vez que abras una app puede tardar un poco más."
+        else "Casi no cambió: Android no permite que Lienzo cierre otras apps. Si la memoria de video sigue baja, reinicia."
+    }
+
+    fun mbText(kb: Long) = if (kb < 0) "n/d" else "${kb / 1024} MB"
+
     fun read(): Snapshot {
         var free = -1L; var total = -1L
         runCatching {

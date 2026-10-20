@@ -27,6 +27,8 @@ android {
         val trigger = project.hasProperty("lienzoCrashTrigger")
         buildConfigField("boolean", "CRASH_TRIGGER", trigger.toString())
         buildConfigField("boolean", "STRICT", trigger.toString())
+        // Solo con -PlienzoForceHealth: simula 8 días encendido para probar el aviso de Salud del deco. El release normal NO lo trae.
+        buildConfigField("boolean", "FORCE_HEALTH", project.hasProperty("lienzoForceHealth").toString())
     }
 
     buildFeatures { buildConfig = true }

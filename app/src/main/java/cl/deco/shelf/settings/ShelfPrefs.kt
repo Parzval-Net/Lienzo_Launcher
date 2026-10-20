@@ -42,6 +42,8 @@ class ShelfPrefs(context: Context) {
     var nightIdleMin: Int get() = int(NIGHT_IDLE, 60); set(v) = put(NIGHT_IDLE, v)
     /** El asistente de primer inicio ya se mostró. */
     var setupDone: Boolean get() = bool(SETUP_DONE, false); set(v) = put(SETUP_DONE, v)
+    /** "Recordarme más tarde" de Salud del deco: el aviso queda oculto hasta esta hora (ms epoch). */
+    var healthSnoozeUntil: Long get() = sp.getLong("health_snooze_until", 0L); set(v) { sp.edit().putLong("health_snooze_until", v).apply() }
     // Ubicación y región
     var cityName: String get() = str(CITY_NAME, "Santiago"); set(v) = put(CITY_NAME, v)
     var cityLat: Double get() = java.lang.Double.longBitsToDouble(sp.getLong(CITY_LAT, java.lang.Double.doubleToLongBits(-33.4489))); set(v) { sp.edit().putLong(CITY_LAT, java.lang.Double.doubleToLongBits(v)).apply() }

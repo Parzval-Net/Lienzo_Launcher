@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Salud del deco: "Liberar memoria" pide cerrar apps en segundo plano (permiso normal, sin acceso shell).
+         En este firmware (Android 12) el sistema solo deja cerrar procesos de la propia app: ver MemoryCleaner -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <!-- Apagado nocturno: se concede por adb (pm grant), no es un permiso de usuario -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
