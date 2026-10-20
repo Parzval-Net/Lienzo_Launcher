@@ -60,6 +60,9 @@ import cl.deco.shelf.data.weather.Weather
 import cl.deco.shelf.shelf.TopShelfItem
 import cl.deco.shelf.util.Blur
 import cl.deco.shelf.util.NetworkWatcher
+import cl.deco.shelf.util.HealthNotice
+import cl.deco.shelf.util.HealthNoticeStore
+import cl.deco.shelf.util.MemoryCleaner
 import cl.deco.shelf.data.art.ArtProgress
 import java.time.LocalDate
 import java.time.LocalTime
@@ -295,7 +298,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         health = HealthPanel(this).apply {
             snapshot = { healthSnapshot() }
             onTrimCaches = { trimCaches() }
-            onSnooze = { prefs.healthSnoozeUntil = System.currentTimeMillis() + (if (BuildConfig.FORCE_HEALTH) 60_000L else cl.deco.shelf.util.DeviceHealth.SNOOZE_MS); topBar.setRestartHint(false) {}; closeHealth() }
+            onSnooze = { dismissHealthNotice(); closeHealth() }
             onOpenAndroidSettings = { QuickAccess.launch(this@MainActivity, QuickAccess.items.last()) }
         }
         importPanel = ImportPanel(this).apply {
@@ -1265,25 +1268,56 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         topBar.setStatus(timerTxt, alarmTxt, NightMode.active(prefs)) // lee night_active en cada actualización: la luna sigue al evento nocturno aunque no haya onStart
     }
 
-    /** Lectura de salud; en builds con -PlienzoForceHealth (solo pruebas) simula 8 días encendido y recordatorio de 60 s. */
+    /** Lectura de salud; en builds con -PlienzoForceHealth (solo pruebas) simula CMA baja (60 MB) y usa tiempos de 1/360. */
     private fun healthSnapshot(): cl.deco.shelf.util.DeviceHealth.Snapshot {
         val h = cl.deco.shelf.util.DeviceHealth.read()
-        return if (BuildConfig.FORCE_HEALTH) h.copy(uptimeMs = 8 * 86_400_000L) else h
+        return if (BuildConfig.FORCE_HEALTH) h.copy(cmaFreeKb = 60L * 1024, cmaTotalKb = 544L * 1024) else h
     }
 
-    private val checkHealth = Runnable { evaluateHealth(confirmed = false) }
+    private val healthTiming get() = if (BuildConfig.FORCE_HEALTH) HealthNotice.Timing.FAST else HealthNotice.Timing.NORMAL
+    private val healthStore by lazy { HealthNoticeStore(prefs.sp) }
 
-    /** Con CMA baja (y sin 7 días de uptime) la primera lectura no avisa: se repite tras DeviceHealth.CONFIRM_MS. */
-    private fun evaluateHealth(confirmed: Boolean) {
-        if (!started || artPlayer != null) return
-        val h = healthSnapshot()
-        if (h.needsConfirm && !confirmed) { main.postDelayed({ evaluateHealth(confirmed = true) }, cl.deco.shelf.util.DeviceHealth.CONFIRM_MS); return }
-        val snoozed = cl.deco.shelf.util.DeviceHealth.snoozed(System.currentTimeMillis(), prefs.healthSnoozeUntil)
-        topBar.setRestartHint(h.restartRecommended && !snoozed) { openHealth() }
+    private val checkHealth = Runnable { evaluateHealth(confirming = false) }
+
+    /**
+     * Aviso "Reiniciar recomendado" con reglas antifatiga (ver HealthNotice): se evalúa al volver al home, como máximo cada 6 h,
+     * nunca con reproducción ni en modo arte; una CMA baja se confirma 20 s después y exige 2 evaluaciones bajas separadas.
+     */
+    private fun evaluateHealth(confirming: Boolean) {
+        if (!started) return
+        val t = healthTiming
+        val now = System.currentTimeMillis()
+        val up = android.os.SystemClock.elapsedRealtime()
+        var st = healthStore.load()
+        if (HealthNotice.rebooted(st, up)) st = HealthNotice.afterReboot(st, up)
+        val blocked = artPlayer != null || artMode || MemoryCleaner.playbackActive(this)
+        if (confirming && !blocked) {
+            val h2 = healthSnapshot()
+            st = HealthNotice.onEvaluation(st, now, h2.cmaFreeKb, h2.cmaTotalKb, h2.uptimeMs, t)
+        } else if (!confirming && HealthNotice.canEvaluate(st, now, t, blocked)) {
+            val h = healthSnapshot()
+            if (h.needsConfirm) {
+                // Primera lectura baja: se sella la evaluación (tope de 6 h) y se repite a los 20 s antes de contarla
+                healthStore.save(st.copy(lastEvalMs = now, lastUptimeMs = up))
+                main.postDelayed({ evaluateHealth(confirming = true) }, cl.deco.shelf.util.DeviceHealth.CONFIRM_MS)
+                return
+            }
+            st = HealthNotice.onEvaluation(st, now, h.cmaFreeKb, h.cmaTotalKb, h.uptimeMs, t)
+        } else st = st.copy(lastUptimeMs = up)
+        healthStore.save(st)
+        topBar.setRestartHint(!blocked && HealthNotice.visible(st, now, t)) { openHealth() }
     }
 
-    /** Aviso, MENU sobre el aviso o Ajustes > Info: panel propio de Salud del deco. */
+    /** "Recordarme más tarde": oculta el aviso y no vuelve antes de 24 h. */
+    private fun dismissHealthNotice() {
+        val t = healthTiming
+        healthStore.save(HealthNotice.onDismissed(healthStore.load(), System.currentTimeMillis(), t.cooldownMs))
+        topBar.setRestartHint(false) {}
+    }
+
     override fun openHealth() {
+        healthStore.save(HealthNotice.onOpened(healthStore.load()))
+        topBar.setRestartHint(false) {}
         // Desde Ajustes, prevFocus ya guarda el foco del home; desde el aviso se guarda el foco actual
         if (settings.isOpen) closeSettings() else prevFocus = currentFocus
         blockContent(true)

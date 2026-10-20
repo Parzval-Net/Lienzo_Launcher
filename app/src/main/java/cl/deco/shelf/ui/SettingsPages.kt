@@ -96,6 +96,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Memoria (PSS actual)") { host.pss() },
         Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
         Row.Act("Salud del deco", { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) "Reinicio recomendado" else "En orden" }) { host.openHealth() },
+        Row.Info("Último aviso") { cl.deco.shelf.util.HealthNoticeStore(p.sp).lastNoticeText(Es.english) },
         Row.Info("Memoria de video (CMA)") { cl.deco.shelf.util.DeviceHealth.cmaText(cl.deco.shelf.util.DeviceHealth.read()) },
         Row.Info("Encendido hace") { cl.deco.shelf.util.DeviceHealth.uptimeText(cl.deco.shelf.util.DeviceHealth.read().uptimeMs) },
         Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; clima Open-Meteo; feriados Nager.Date; idea del watchdog: Free My TV (MIT)" },
