@@ -9,7 +9,7 @@ package cl.deco.shelf.util
  * 3. Mostrado, el chip queda hasta que se abre o se descarta. Descartado ("Recordarme más tarde") no vuelve en 24 h; ignorado
  *    se oculta solo a las [Timing.showMaxMs] (12 h) y tampoco vuelve en [Timing.cooldownMs] (24 h) desde que apareció.
  * 4. Si la condición se normaliza (CMA sobre el umbral + [HYSTERESIS_KB], o hubo reinicio) el chip se oculta y el contador parte de cero.
- * 5. Por 7 días encendido: como máximo un aviso por semana ([Timing.uptimeNoticeMs]).
+ * 5. Por 5 días encendido: como máximo un aviso por semana ([Timing.uptimeNoticeMs]).
  * 6. Nunca se evalúa ni se muestra con reproducción, modo arte o protector (lo decide quien llama con `blocked`).
  */
 object HealthNotice {
@@ -51,7 +51,7 @@ object HealthNotice {
         // El chip ignorado se oculta solo
         if (n.shownMs > 0 && now - n.shownMs >= t.showMaxMs) n = n.copy(shownMs = 0L)
         val known = cmaTotalKb > 0 && cmaFreeKb >= 0
-        val low = known && cmaFreeKb < DeviceHealth.CMA_LOW_KB
+        val low = known && cmaFreeKb < DeviceHealth.CMA_LOW_KB && uptimeMs >= DeviceHealth.CMA_MIN_UPTIME_H * 3_600_000L
         val normalized = !known || cmaFreeKb >= DeviceHealth.CMA_LOW_KB + HYSTERESIS_KB
         val longUptime = uptimeMs > DeviceHealth.UPTIME_DAYS * 86_400_000L
         if (normalized && !longUptime) n = n.copy(lowCount = 0, lastLowMs = 0L, shownMs = 0L)

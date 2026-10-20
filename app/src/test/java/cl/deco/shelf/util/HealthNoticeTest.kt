@@ -11,9 +11,9 @@ class HealthNoticeTest {
     private val h = 3_600_000L
     private val day = 24 * h
     private val total = 544L * 1024
-    private val low = 97L * 1024          // falla real observada
+    private val low = 40L * 1024          // CMA muy baja (bajo el umbral de 50 MB)
     private val ok = 347L * 1024          // recién reiniciado
-    private fun eval(s: State, now: Long, cma: Long, up: Long = 20 * h) = HealthNotice.onEvaluation(s, now, cma, total, up, t)
+    private fun eval(s: State, now: Long, cma: Long, up: Long = 60 * h) = HealthNotice.onEvaluation(s, now, cma, total, up, t)
 
     @Test fun primeraEvaluacionBajaNoMuestra() {
         val s = eval(State(), 100 * h, low)
@@ -117,5 +117,10 @@ class HealthNoticeTest {
     @Test fun modoRapidoEsUn360Avo() {
         assertEquals(60_000L, HealthNotice.Timing.FAST.evalGapMs)
         assertEquals(240_000L, HealthNotice.Timing.FAST.cooldownMs)
+    }
+
+    @Test fun cmaBajaRecienReiniciadoNoCuenta() {
+        val s = eval(eval(State(), 100 * h, low, up = 10 * h), 106 * h, low, up = 16 * h)
+        assertFalse(HealthNotice.visible(s, 106 * h, t))
     }
 }

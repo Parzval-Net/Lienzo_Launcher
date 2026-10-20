@@ -7,9 +7,9 @@ import org.junit.Test
 
 class DeviceHealthTest {
     private val day = 86_400_000L
-    @Test fun cmaBajaRecomiendaReiniciar() = assertTrue(DeviceHealth.Snapshot(97 * 1024, 544 * 1024, day).restartRecommended)
+    @Test fun cmaBajaRecomiendaReiniciar() = assertTrue(DeviceHealth.Snapshot(40 * 1024, 544 * 1024, 3 * day).restartRecommended)
     @Test fun cmaSanaYPocoUptimeNoAvisa() = assertFalse(DeviceHealth.Snapshot(347 * 1024, 544 * 1024, day).restartRecommended)
-    @Test fun ochoDiasEncendidoAvisa() = assertTrue(DeviceHealth.Snapshot(347 * 1024, 544 * 1024, 8 * day).restartRecommended)
+    @Test fun seisDiasEncendidoAvisa() = assertTrue(DeviceHealth.Snapshot(347 * 1024, 544 * 1024, 6 * day).restartRecommended)
     @Test fun sinDatosCmaNoAvisa() = assertFalse(DeviceHealth.Snapshot(-1, -1, day).restartRecommended)
     @Test fun textoUptime() = assertEquals("1 d 19 h", DeviceHealth.uptimeText(43 * 3_600_000L))
 }
@@ -22,22 +22,24 @@ class DeviceHealthRecoTest {
         DeviceHealth.recommend(s, availMb * 1024, ram, freed).action
 
     @Test fun todoSanoNoRecomienda() = assertEquals(DeviceHealth.Action.NONE, reco(snap(347, day)))
-    @Test fun cmaBajaPrimeroLiberar() = assertEquals(DeviceHealth.Action.FREE_MEMORY, reco(snap(97, day)))
-    @Test fun cmaBajaTrasLiberarReiniciar() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(97, day), freed = true))
-    @Test fun cmaBajaYUptimeReiniciar() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(97, 8 * day)))
-    @Test fun soloUptimeReiniciar() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(347, 8 * day)))
+    @Test fun cmaBajaPrimeroLiberar() = assertEquals(DeviceHealth.Action.FREE_MEMORY, reco(snap(40, 3 * day)))
+    @Test fun cmaBajaTrasLiberarReiniciar() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(40, 3 * day), freed = true))
+    @Test fun cmaBajaYUptimeReiniciar() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(40, 6 * day)))
+    @Test fun soloUptimeReiniciar() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(347, 6 * day)))
     @Test fun ramBajaLiberar() = assertEquals(DeviceHealth.Action.FREE_MEMORY, reco(snap(347, day), availMb = 200))
     @Test fun ramBajaSinTotalNoRecomienda() =
         assertEquals(DeviceHealth.Action.NONE, DeviceHealth.recommend(snap(347, day), 100, 0).action)
-    @Test fun umbralCmaExactoNoEsBajo() = assertEquals(DeviceHealth.Action.NONE, reco(snap(130, day)))
+    @Test fun umbralCmaExactoNoEsBajo() = assertEquals(DeviceHealth.Action.NONE, reco(snap(50, 3 * day)))
 
-    // Evidencia (ver DeviceHealth.CMA_LOW_KB): falla real de Netflix con ~97 MB; sano ~347 MB recién reiniciado
-    @Test fun fallaRealObservadaAvisa() = assertEquals(DeviceHealth.Action.FREE_MEMORY, reco(snap(97, day)))
+    // Calibración (ver DeviceHealth.CMA_LOW_KB): con 18 h encendido CmaFree osciló 50-196 MB sin fallas; el criterio es el uptime
+    @Test fun lecturaNormalDeCalibracionNoAvisa() = assertEquals(DeviceHealth.Action.NONE, reco(snap(77, day)))
+    @Test fun cmaMuyBajaRecienReiniciadoNoAvisa() = assertEquals(DeviceHealth.Action.NONE, reco(snap(40, day)))
     @Test fun recienReiniciadoNoAvisa() = assertEquals(DeviceHealth.Action.NONE, reco(snap(347, day)))
-    @Test fun umbralVigenteEs130Mb() = assertEquals(130L * 1024, DeviceHealth.CMA_LOW_KB)
-    @Test fun umbralSobreLaFallaConMargen() = assertTrue(DeviceHealth.CMA_LOW_KB >= 97L * 1024 + 30 * 1024)
-    @Test fun cmaBajaSinUptimeSeConfirma() = assertTrue(snap(97, day).needsConfirm)
-    @Test fun cmaBajaConUptimeNoEsperaConfirmacion() = assertFalse(snap(97, 8 * day).needsConfirm)
+    @Test fun umbralVigenteEs50Mb() = assertEquals(50L * 1024, DeviceHealth.CMA_LOW_KB)
+    @Test fun cincoDiasEncendidoAvisa() = assertEquals(DeviceHealth.Action.RESTART, reco(snap(347, 5 * day + 3_600_000L)))
+    @Test fun cuatroDiasEncendidoNoAvisa() = assertEquals(DeviceHealth.Action.NONE, reco(snap(347, 4 * day)))
+    @Test fun cmaBajaSinUptimeSeConfirma() = assertTrue(snap(40, 3 * day).needsConfirm)
+    @Test fun cmaBajaConUptimeNoEsperaConfirmacion() = assertFalse(snap(40, 6 * day).needsConfirm)
     @Test fun cmaSanaNoSeConfirma() = assertFalse(snap(347, day).needsConfirm)
 
     @Test fun veredictoSinMejora() = assertTrue(DeviceHealth.freeVerdict(600 * 1024, 603 * 1024, 160 * 1024, 158 * 1024).startsWith("Casi no cambió"))

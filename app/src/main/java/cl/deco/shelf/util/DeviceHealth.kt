@@ -16,24 +16,25 @@ object DeviceHealth {
      * - Falla real, 19-10-2026: Netflix con error del decodificador seguro (configureCodec -12, HEVC 1080p protegido) con
      *   CmaFree ~97 MB medido en el home con Lienzo en primer plano, tras 43 h encendido.
      * - Sano: ~347 MB libres recién reiniciado.
-     * El umbral va por encima de la falla observada: 130 MB (margen de ~33 MB sobre 97 MB). No se baja a un valor menor
-     * porque ese caso real habría quedado sin aviso.
-     * Lecturas de la sesión de calibración (20-10-2026, 18 h encendido, sin fallas de reproducción): en el home sin apps de
-     * video en caché CmaFree osciló entre 77 y 111 MB, es decir bajo 130 MB aun con reproducción correcta, de modo que con
-     * ese uptime el aviso puede salir sin falla; por eso el aviso exige [CONFIRM_MS] (la lectura baja debe repetirse) y se
-     * puede posponer 24 h. Lienzo no puede ver el RSS de otras apps (Android 12), así que no distingue apps de video en caché.
+     * Lecturas de calibración (20-10-2026, 18 h encendido, sin fallas): CmaFree osciló entre 50 y 196 MB en el home
+     * (77 a 111 MB sin apps de video en caché) con reproducción correcta. La CMA libre por sí sola NO predice la falla:
+     * el problema es la fragmentación acumulada con los días encendido. Por eso el criterio principal es el uptime
+     * ([UPTIME_DAYS]) y la CMA solo avisa si está muy baja ([CMA_LOW_KB]) y el deco ya lleva [CMA_MIN_UPTIME_H] h
+     * encendido. Lienzo no puede ver el RSS de otras apps (Android 12), así que no distingue apps de video en caché.
      */
-    const val CMA_LOW_KB = 130L * 1024
+    const val CMA_LOW_KB = 50L * 1024
+    /** La CMA baja solo cuenta si el deco lleva al menos estas horas encendido (recién reiniciado no hay fragmentación). */
+    const val CMA_MIN_UPTIME_H = 48L
 
     /** Una lectura baja de CMA se confirma con otra tras este tiempo antes de avisar. */
     const val CONFIRM_MS = 20_000L
-    const val UPTIME_DAYS = 7
+    const val UPTIME_DAYS = 5
 
     data class Snapshot(val cmaFreeKb: Long, val cmaTotalKb: Long, val uptimeMs: Long) {
-        val cmaLow get() = cmaTotalKb > 0 && cmaFreeKb in 0 until CMA_LOW_KB
+        val cmaLow get() = cmaTotalKb > 0 && cmaFreeKb in 0 until CMA_LOW_KB && uptimeMs >= CMA_MIN_UPTIME_H * 3_600_000L
         val longUptime get() = uptimeMs > UPTIME_DAYS * 86_400_000L
         val restartRecommended get() = cmaLow || longUptime
-        /** Solo la CMA baja (sin 7 días de uptime) se confirma con una segunda lectura. */
+        /** Solo la CMA baja (sin los días de uptime) se confirma con una segunda lectura. */
         val needsConfirm get() = cmaLow && !longUptime
     }
 
