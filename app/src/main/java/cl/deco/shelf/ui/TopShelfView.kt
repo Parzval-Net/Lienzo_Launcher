@@ -89,6 +89,12 @@ class TopShelfView(
 
     private fun fade(v: View, on: Boolean) {
         v.animate().cancel()
+        // El carrusel (RecyclerView con ~8 tarjetas) aparece sin fundido: un alpha de contenedor lo manda a una capa fuera
+        // de pantalla por frame y en la Mali-450 eso costaba 8-17 ms de issue-draw durante los 200 ms. El nombre (una sola View) sí se funde.
+        if (v === carousel) {
+            if (on) { v.visibility = VISIBLE; v.alpha = 1f } else if (v.visibility == VISIBLE) { v.alpha = 0f; v.visibility = INVISIBLE }
+            return
+        }
         if (on) {
             v.visibility = VISIBLE
             v.animate().alpha(1f).setDuration(200).start()
