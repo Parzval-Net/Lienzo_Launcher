@@ -4,13 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.BitmapRegionDecoder
-import android.graphics.BlurMaskFilter
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.Rect
-import android.graphics.RectF
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
@@ -262,56 +256,15 @@ class MuseumArt(private val context: Context) : ArtSource {
             if (!item.mat) {
                 val sample = ArtCatalog.sampleSize(r.width, ArtCatalog.OUT_W)
                 val region = decoder.decodeRegion(rect, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
-                return scaleTo(region, ArtCatalog.OUT_W, ArtCatalog.OUT_H)
+                return ArtRender.scaleTo(region, ArtCatalog.OUT_W, ArtCatalog.OUT_H)
             }
             val (aw, ah) = ArtCatalog.matArtSize(r.width, r.height)
             val sample = ArtCatalog.sampleSize(r.width, aw)
             val region = decoder.decodeRegion(rect, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
-            return composeMat(scaleTo(region, aw, ah))
+            return ArtRender.composeMat(ArtRender.scaleTo(region, aw, ah))
         } finally {
             decoder.recycle()
         }
-    }
-
-    private fun scaleTo(b: Bitmap, w: Int, h: Int): Bitmap {
-        if (b.width == w && b.height == h) return b
-        val out = Bitmap.createScaledBitmap(b, w, h, true)
-        if (out !== b) b.recycle()
-        return out
-    }
-
-    /** Passe-partout en CPU: papel, sombra del bisel y sombra interior (equivale a mat169 de art/tools/process.py). */
-    private fun composeMat(art: Bitmap): Bitmap {
-        val W = ArtCatalog.OUT_W
-        val H = ArtCatalog.OUT_H
-        val out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
-        val c = Canvas(out)
-        c.drawColor(Color.rgb(0xED, 0xE8, 0xE0))
-        val x = (W - art.width) / 2
-        val y = (H - art.height) / 2
-        // sombra del bisel: caída suave bajo la obra
-        val sh = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(120, 60, 52, 44)
-            maskFilter = BlurMaskFilter(14.7f, BlurMaskFilter.Blur.NORMAL)
-        }
-        c.drawRect(x.toFloat(), (y + 3).toFloat(), (x + art.width).toFloat(), (y + art.height + 3).toFloat(), sh)
-        // sombra interior sobre la obra: anillo difuminado dentro de sus bordes
-        val a = art.copy(Bitmap.Config.ARGB_8888, true)
-        art.recycle()
-        val ac = Canvas(a)
-        val ring = Path().apply {
-            fillType = Path.FillType.EVEN_ODD
-            addRect(RectF(-30f, -30f, a.width + 30f, a.height + 30f), Path.Direction.CW)
-            addRect(RectF(8f, 10f, a.width - 8f, a.height - 6f), Path.Direction.CW)
-        }
-        val inner = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(77, 20, 16, 12)
-            maskFilter = BlurMaskFilter(11.3f, BlurMaskFilter.Blur.NORMAL)
-        }
-        ac.drawPath(ring, inner)
-        c.drawBitmap(a, x.toFloat(), y.toFloat(), null)
-        a.recycle()
-        return out
     }
 
     private class HttpException(val code: Int, val retryAfterMs: Long) : IOException("HTTP $code")
