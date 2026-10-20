@@ -497,6 +497,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
      */
     private fun pollArtProgress() {
         if (!started || artPolling) return
+        if (BuildConfig.FORCE_OFFLINE) { topBar.setArtProgress(ArtProgress.chipText(12, 60, true, Es.english)); return } // solo build de debug: muestra el chip
         artPolling = true
         ioArt.execute {
             val (d, t) = try { graph.art.downloadProgress() } catch (_: Throwable) { 0 to 0 }
