@@ -38,6 +38,17 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
         setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6))
         background = focusBg(ctx)
     }
+    /** Aviso "Reiniciar recomendado": memoria de video baja o muchos días encendido. */
+    private val healthChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
+        text = "Reiniciar recomendado"
+        isFocusable = true; isClickable = true
+        setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6))
+        background = focusBg(ctx)
+    }
+    fun setRestartHint(on: Boolean, onClick: () -> Unit) {
+        healthChip.visibility = if (on) VISIBLE else GONE
+        healthChip.setOnClickListener { onClick() }
+    }
     fun setLowSpace(on: Boolean, onClick: () -> Unit) {
         lowChip.visibility = if (on) VISIBLE else GONE
         lowChip.setOnClickListener { onClick() }
@@ -93,7 +104,11 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
             addView(rain, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
         }
         icon.visibility = GONE
-        addView(lowChip, LayoutParams(-2, -2, Gravity.CENTER))
+        addView(LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(lowChip)
+            addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
+        }, LayoutParams(-2, -2, Gravity.CENTER))
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         // Accesos directos junto al clima (como en AT4K y Monet): Wi-Fi y Ajustes
         fun action(res: Int, desc: String, f: () -> Unit) = android.widget.ImageView(ctx).apply {

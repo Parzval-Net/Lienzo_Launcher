@@ -336,6 +336,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         reloadApps()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
         checkLowSpace()
+        // Salud del deco: se mide unos segundos después de volver, cuando la app anterior ya soltó su memoria de video
+        main.postDelayed(checkHealth, 4000)
         // Asistente de primer inicio: una sola vez; después, desde Ajustes
         if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
         ClockScheduler.scheduleAll(this) // reprograma temporizadores, alarmas y apagado nocturno
@@ -1157,6 +1159,21 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             ?.takeIf { it - now < 12 * 3600_000L }
         val alarmTxt = nextAlarm?.let { java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(it)) }
         topBar.setStatus(timerTxt, alarmTxt, nightActive)
+    }
+
+    private val checkHealth = Runnable {
+        if (!started || artPlayer != null) return@Runnable
+        val h = cl.deco.shelf.util.DeviceHealth.read()
+        topBar.setRestartHint(h.restartRecommended) {
+            val why = if (h.cmaLow) "La memoria de video está baja (${h.cmaFreeKb / 1024} MB libres)."
+            else "El deco lleva ${cl.deco.shelf.util.DeviceHealth.uptimeText(h.uptimeMs)} encendido."
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Reiniciar recomendado")
+                .setMessage("$why\n\nPara evitar errores de reproducción en Netflix o Movistar, reinicia el deco: " +
+                    "desenchúfalo 10 segundos o usa Ajustes > Sistema > Reiniciar.")
+                .setPositiveButton("Entendido", null)
+                .show()
+        }
     }
 
     /** Espacio libre en /data: se revisa como máximo una vez al día (al volver al home), sin polling. */

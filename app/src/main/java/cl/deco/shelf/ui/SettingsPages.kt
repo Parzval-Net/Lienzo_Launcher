@@ -86,6 +86,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Versión") { version },
         Row.Info("Memoria (PSS actual)") { host.pss() },
         Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
+        Row.Info("Memoria de video (CMA)") { cl.deco.shelf.util.DeviceHealth.cmaText(cl.deco.shelf.util.DeviceHealth.read()) },
+        Row.Info("Encendido hace") { cl.deco.shelf.util.DeviceHealth.uptimeText(cl.deco.shelf.util.DeviceHealth.read().uptimeMs) },
         Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; clima Open-Meteo; feriados Nager.Date; idea del watchdog: Free My TV (MIT)" },
         Row.Act("Exportar configuración") { lastBackup = host.exportBackup(); panel.rebuild() },
         Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
