@@ -15,6 +15,10 @@ class ShelfPrefs(context: Context) {
     // Fondo
     var bgIntervalMin: Int get() = int(BG_INTERVAL, 30); set(v) = put(BG_INTERVAL, v)
     var bgOnline: Boolean get() = bool(BG_ONLINE, false); set(v) = put(BG_ONLINE, v)
+    /** Fuente del fondo: 0 = colección curada (por defecto), 1 = Mis fondos, 2 = ambas. Ver SourcePolicy. */
+    var bgSource: Int get() = int(BG_SOURCE, 0).coerceIn(0, 2); set(v) = put(BG_SOURCE, v)
+    /** Video del protector y del modo arte: "monet" (por defecto), "user:<archivo>" o "all". Ver VideoPolicy. */
+    var videoChoice: String get() = str(VIDEO_CHOICE, "monet"); set(v) = put(VIDEO_CHOICE, v)
     var bgBrightness: Int get() = int(BG_BRIGHT, 100).coerceIn(60, 100); set(v) = put(BG_BRIGHT, v)
     /** 0 = ninguno (por defecto, sin generar el bitmap), 1 = bajo, 2 = medio, 3 = alto. */
     var blurLevel: Int get() = int(BLUR_LEVEL, 0).coerceIn(0, 3); set(v) = put(BLUR_LEVEL, v)
@@ -82,6 +86,7 @@ class ShelfPrefs(context: Context) {
         private const val BG_BRIGHT = BG_BRIGHTNESS; private const val DYN_COLORS = DYNAMIC_COLORS
         const val NIGHT_DIM = "night_dim"
         const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
+        const val BG_SOURCE = "bg_source"; const val VIDEO_CHOICE = "video_choice"
         const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
         const val TOP_SHELF = "top_shelf"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"
@@ -92,7 +97,7 @@ class ShelfPrefs(context: Context) {
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
-            BG_INTERVAL, BG_ONLINE, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
+            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )

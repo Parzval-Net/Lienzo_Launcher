@@ -10,6 +10,8 @@ import android.os.Looper
 import cl.deco.shelf.guard.CrashLog
 import cl.deco.shelf.guard.GuardReceiver
 import cl.deco.shelf.data.art.ArtSource
+import cl.deco.shelf.data.art.CompositeArt
+import cl.deco.shelf.data.art.UserArt
 import cl.deco.shelf.data.art.MuseumArt
 import cl.deco.shelf.data.holidays.HolidaysRepository
 import cl.deco.shelf.data.holidays.HolidaySource
@@ -65,7 +67,9 @@ class Graph(ctx: Context) {
     private val app = ctx.applicationContext
     val weather: WeatherSource by lazy { OpenMeteoWeather(app) }
     val holidays: HolidaySource by lazy { HolidaysRepository(app) }
-    val art: ArtSource by lazy { MuseumArt(app) }
+    val userArt: UserArt by lazy { UserArt(app) }
+    /** Fuente del fondo según el ajuste: colección curada, Mis fondos o ambas. */
+    val art: ArtSource by lazy { CompositeArt(app, MuseumArt(app), userArt) }
     val shelf: TvProviderShelf by lazy { TvProviderShelf(app) }
 
     companion object {
