@@ -12,16 +12,18 @@ object DeviceHealth {
     /**
      * Bajo este umbral de CmaFree, medido en el home, se recomienda reiniciar.
      *
-     * Criterio (medido en el deco DIW585, Android 12, CmaTotal 544 MB, 18 h encendido, reproducción correcta en Netflix,
-     * Movistar y YouTube): CmaFree no mide fragmentación sino cuánto de la CMA no usa el sistema para página caché
-     * (memoria movible que el kernel desaloja al pedir CMA contigua). En un home sano oscila entre 77 y 130 MB, con o sin
-     * apps de video en caché (Netflix ~125 MB y YouTube ~170 MB de RSS no cambian la tendencia) y deriva unos MB por minuto.
-     * Con 150 MB el aviso salía siempre (falso positivo permanente). Se fija en 48 MB, ~40% bajo el mínimo sano medido,
-     * y [CONFIRM_MS] exige que la lectura baja se repita 20 s después, para no avisar por el valor transitorio de los
-     * segundos posteriores a cerrar un video. Los 7 días encendido siguen siendo el otro disparador.
-     * Lienzo no puede ver el RSS de otras apps (Android 12), así que la recomendación no distingue apps en caché.
+     * Evidencia (deco DIW585, Android 12, CmaTotal 544 MB):
+     * - Falla real, 19-10-2026: Netflix con error del decodificador seguro (configureCodec -12, HEVC 1080p protegido) con
+     *   CmaFree ~97 MB medido en el home con Lienzo en primer plano, tras 43 h encendido.
+     * - Sano: ~347 MB libres recién reiniciado.
+     * El umbral va por encima de la falla observada: 130 MB (margen de ~33 MB sobre 97 MB). No se baja a un valor menor
+     * porque ese caso real habría quedado sin aviso.
+     * Lecturas de la sesión de calibración (20-10-2026, 18 h encendido, sin fallas de reproducción): en el home sin apps de
+     * video en caché CmaFree osciló entre 77 y 111 MB, es decir bajo 130 MB aun con reproducción correcta, de modo que con
+     * ese uptime el aviso puede salir sin falla; por eso el aviso exige [CONFIRM_MS] (la lectura baja debe repetirse) y se
+     * puede posponer 24 h. Lienzo no puede ver el RSS de otras apps (Android 12), así que no distingue apps de video en caché.
      */
-    const val CMA_LOW_KB = 48L * 1024
+    const val CMA_LOW_KB = 130L * 1024
 
     /** Una lectura baja de CMA se confirma con otra tras este tiempo antes de avisar. */
     const val CONFIRM_MS = 20_000L
