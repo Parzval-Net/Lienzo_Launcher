@@ -827,7 +827,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!(art && artPlayer != null)) set(artView, 1f)
         // La obra se mantiene nítida en GRID; con desenfoque elegido (y bitmap generado) se funde a la versión blur.
         // Capas a pantalla completa con alpha 0 pasan a INVISIBLE: la GPU ni las considera
-        if (grid && prefs.blurLevel > 0 && blurBmp == null) rebuildBlur() // se soltó con "Liberar memoria"
+        if (grid && prefs.blurLevel > 0 && blurBmp == null) rebuildBlur() // se soltó con "Liberar cachés de Lienzo"
         val blurOn = grid && prefs.blurLevel > 0 && blurBmp != null
         set(blurView, if (blurOn) 1f else 0f, 0f, if (blurOn) View.VISIBLE else View.INVISIBLE)
         // Brillo del fondo: filtro de color sobre la propia obra (sin capa a pantalla completa extra para la GPU)
@@ -1112,7 +1112,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     // ---------- Mis fondos: importar desde USB ----------
 
-    /** Permiso estándar de medios (READ_MEDIA_* en Android 13+, READ_EXTERNAL_STORAGE en 12) y luego la grilla. */
+    /** Permiso estándar de medios (READ_EXTERNAL_STORAGE en Android 12) y luego la grilla. */
     override fun importFromUsb() {
         if (!MediaImporter.hasPermission(this)) {
             pendingImport = true

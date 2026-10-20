@@ -15,11 +15,11 @@ import cl.deco.shelf.util.MemoryCleaner
 /**
  * Panel "Salud del deco": estado (CMA, RAM, tiempo encendido), recomendación y acciones.
  * Mismo estilo que los paneles Hoy y Ajustes (scrim oscuro, tarjeta translúcida de 20 dp, foco con el acento).
- * Sin servicios ni polling: lee al abrir y 3 s después de liberar memoria. BACK vuelve de "Cómo reiniciar" y luego cierra.
+ * Sin servicios ni polling: lee al abrir y 3 s después de liberar cachés. BACK vuelve de "Cómo reiniciar" y luego cierra.
  */
 class HealthPanel(ctx: Context) : FrameLayout(ctx) {
 
-    /** Soltar cachés propias (LRU de tiles y blur) al liberar memoria. */
+    /** Soltar cachés propias (LRU de tiles y blur) al liberar cachés. */
     var onTrimCaches: () -> Unit = {}
     /** "Recordarme más tarde": el host oculta el aviso 24 h y cierra el panel. */
     var onSnooze: () -> Unit = {}
@@ -113,7 +113,7 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         if (result.isNotEmpty()) body.addView(label(result, 13f, Ui.TEXT), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(6); leftMargin = ctx.dp(8) })
 
         body.addView(section("Acciones"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(2); leftMargin = ctx.dp(8) })
-        val free = action(if (busy) "Liberando memoria de Lienzo..." else "Liberar memoria de Lienzo", "Vacía las cachés de Lienzo. Para la memoria de video, reinicia el deco") { liberar() }
+        val free = action(if (busy) "Liberando cachés de Lienzo..." else "Liberar cachés de Lienzo", "No cierra otras apps. Para la memoria de video, reinicia") { liberar() }
         val how = action("Cómo reiniciar", "Pasos para reiniciar el deco") { howTo = true; build() }
         val later = action("Recordarme más tarde", "Oculta el aviso 24 h") { onSnooze() }
         for (v in listOf(free, how, later)) body.addView(v, LinearLayout.LayoutParams(-1, ctx.dp(42)))
@@ -163,7 +163,7 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    // ---- Liberar memoria ----
+    // ---- Liberar cachés de Lienzo ----
 
     private fun liberar() {
         if (busy) return
@@ -173,7 +173,6 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         }
         val b = snapshot() to DeviceHealth.readRam(context)
         before = b
-        try { MemoryCleaner.free(context) } catch (_: Throwable) { }
         onTrimCaches()
         busy = true
         result = "Liberando... el resultado aparece en 3 segundos."

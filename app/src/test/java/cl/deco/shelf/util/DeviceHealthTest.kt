@@ -38,28 +38,3 @@ class DeviceHealthRecoTest {
     @Test fun snoozeVencido() = assertFalse(DeviceHealth.snoozed(5_000, 4_000))
     @Test fun snoozeConRelojAdelantadoSeIgnora() = assertFalse(DeviceHealth.snoozed(0, 3 * day)) // más de 24 h: dato inválido
 }
-
-class KillPolicyTest {
-    private val own = "cl.deco.shelf"
-    private fun prot(p: String, ime: String? = "com.google.android.inputmethod.latin") = KillPolicy.isProtected(p, ime, own)
-
-    @Test fun protegeLista() {
-        for (p in listOf("com.google.android.gms", "com.google.android.gms.persistent", "com.google.android.gsf", "com.android.vending",
-            "com.google.android.apps.mediashell", "com.google.android.tv.remote.service", "com.android.systemui", "com.android.tv.settings",
-            "com.droidlogic", "com.droidlogic.tv.settings", "com.droidlogic.otaupgrade", "com.sdmc.tms", "com.sdmc.hwinfo",
-            "com.android.providers.tv", "com.android.providers.media.module", "com.google.android.tv.providers", "android", "tv.settings"))
-            assertTrue(p, prot(p))
-    }
-    @Test fun protegeLienzo() = assertTrue(prot(own))
-    @Test fun protegeImeActivo() = assertTrue(KillPolicy.isProtected("com.acme.teclado", "com.acme.teclado", own))
-    @Test fun noProtegeAppsDeUsuario() {
-        for (p in listOf("com.netflix.ninja", "com.google.android.youtube.tv", "com.disney.disneyplus", "cl.movistarplay", "com.wbd.stream", "com.arkiv.player.light"))
-            assertFalse(p, prot(p))
-    }
-    @Test fun prefijoNoCoincideParcial() = assertFalse(prot("com.sdmcfake.app")) // "com.sdmc." exige el punto
-    @Test fun imePackageDeComponente() {
-        assertEquals("com.google.android.inputmethod.latin", KillPolicy.imePackage("com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"))
-        assertEquals(null, KillPolicy.imePackage(null))
-        assertEquals(null, KillPolicy.imePackage(""))
-    }
-}

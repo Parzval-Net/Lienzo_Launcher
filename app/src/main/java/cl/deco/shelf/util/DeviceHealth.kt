@@ -26,22 +26,22 @@ object DeviceHealth {
 
     /**
      * Decisión de recomendación (JVM, sin Android).
-     * - CMA baja y/o muchos días encendido juntos: reiniciar (liberar apps no arregla la fragmentación acumulada).
-     * - Solo CMA baja: primero liberar memoria (no interrumpe nada); si ya se liberó y sigue baja, reiniciar.
+     * - CMA baja y/o muchos días encendido juntos: reiniciar (liberar cachés no arregla la fragmentación acumulada).
+     * - Solo CMA baja: primero liberar cachés de Lienzo (no interrumpe nada); si ya se liberó y sigue baja, reiniciar.
      * - Solo uptime alto: reiniciar.
-     * - Todo sano pero RAM libre bajo [RAM_LOW_PCT]%: liberar memoria.
+     * - Todo sano pero RAM libre bajo [RAM_LOW_PCT]%: liberar cachés de Lienzo.
      */
     fun recommend(s: Snapshot, ramAvailKb: Long, ramTotalKb: Long, freed: Boolean = false): Reco = when {
         s.cmaLow && s.longUptime ->
             Reco(Action.RESTART, "Memoria de video baja y ${uptimeText(s.uptimeMs)} encendido. Reinicia el deco.")
         s.cmaLow && !freed ->
-            Reco(Action.FREE_MEMORY, "Memoria de video baja. Libera memoria; si sigue baja, reinicia.")
+            Reco(Action.FREE_MEMORY, "Memoria de video baja. Libera cachés de Lienzo; si sigue baja, reinicia.")
         s.cmaLow ->
             Reco(Action.RESTART, "La memoria de video sigue baja. Reinicia el deco.")
         s.longUptime ->
             Reco(Action.RESTART, "El deco lleva ${uptimeText(s.uptimeMs)} encendido. Reinicia el deco.")
         ramTotalKb > 0 && ramAvailKb * 100 < ramTotalKb * RAM_LOW_PCT ->
-            Reco(Action.FREE_MEMORY, "Poca RAM disponible. Libera memoria.")
+            Reco(Action.FREE_MEMORY, "Poca RAM disponible. Libera cachés de Lienzo.")
         else -> Reco(Action.NONE, "Todo en orden.")
     }
 
@@ -62,14 +62,14 @@ object DeviceHealth {
         return Ram(mi.availMem / 1024, mi.totalMem / 1024)
     }
 
-    /** Mínimo de mejora (RAM o CMA) para considerar que "Liberar memoria" sirvió. */
+    /** Mínimo de mejora (RAM o CMA) para considerar que "Liberar cachés de Lienzo" sirvió. */
     const val FREE_GAIN_KB = 20L * 1024
 
-    /** Texto honesto del resultado de "Liberar memoria" según lo medido antes y después. */
+    /** Texto honesto del resultado de "Liberar cachés de Lienzo" según lo medido antes y después. */
     fun freeVerdict(ramBefore: Long, ramAfter: Long, cmaBefore: Long, cmaAfter: Long): String {
         val gain = maxOf(ramAfter - ramBefore, cmaAfter - cmaBefore)
-        return if (gain >= FREE_GAIN_KB) "Se liberaron ${mbText(gain)}. La próxima vez que abras una app puede tardar un poco más."
-        else "Casi no cambió: Android no permite que Lienzo cierre otras apps. Si la memoria de video sigue baja, reinicia."
+        return if (gain >= FREE_GAIN_KB) "Se liberaron ${mbText(gain)} de cachés. Al volver al home las imágenes se cargan de nuevo y puede tardar un poco."
+        else "Casi no cambió: Lienzo solo libera sus propias cachés y Android no le permite cerrar otras apps. Si la memoria de video sigue baja, reinicia."
     }
 
     fun mbText(kb: Long) = if (kb < 0) "n/d" else "${kb / 1024} MB"

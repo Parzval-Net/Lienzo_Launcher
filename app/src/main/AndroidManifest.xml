@@ -13,17 +13,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- Salud del deco: "Liberar memoria" pide cerrar apps en segundo plano (permiso normal, sin acceso shell).
-         En este firmware (Android 12) el sistema solo deja cerrar procesos de la propia app: ver MemoryCleaner -->
-    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <!-- Apagado nocturno: se concede por adb (pm grant), no es un permiso de usuario -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
     <!-- Mis fondos: leer imágenes y videos del pendrive USB vía MediaStore (diálogo estándar de permisos).
-         Android 12 usa READ_EXTERNAL_STORAGE; Android 13+ los permisos de medios. No hay acceso a red ni shell. -->
+         El deco es Android 12: ahí solo existe READ_EXTERNAL_STORAGE. READ_MEDIA_IMAGES/VIDEO se quitaron porque no existen
+         en Android 12 y maxSdkVersion no sirve para "solo desde 13" (es un tope, no un mínimo). Sin acceso a red ni shell. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
