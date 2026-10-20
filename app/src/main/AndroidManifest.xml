@@ -50,6 +50,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Red de seguridad: proceso aparte para el modo seguro y el aviso de crashes -->
+        <activity
+            android:name=".guard.SafeActivity"
+            android:process=":guard"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:theme="@style/Theme.Shelf" />
+        <receiver android:name=".guard.GuardReceiver" android:process=":guard" android:exported="false" />
+
         <service
             android:name=".access.HomeKeyService"
             android:exported="true"

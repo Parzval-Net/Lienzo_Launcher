@@ -24,7 +24,7 @@ class AlarmActivity : Activity() {
         registerReceiver(closer, IntentFilter(AlarmService.ACTION_STOPPED), RECEIVER_NOT_EXPORTED)
     }
 
-    override fun dispatchKeyEvent(e: KeyEvent): Boolean = card.dispatchKeyEvent(e)
+    override fun dispatchKeyEvent(e: KeyEvent): Boolean = if (::card.isInitialized) card.dispatchKeyEvent(e) else super.dispatchKeyEvent(e)
 
     override fun onDestroy() { runCatching { unregisterReceiver(closer) }; super.onDestroy() }
 }

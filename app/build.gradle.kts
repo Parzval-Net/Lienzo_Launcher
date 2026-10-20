@@ -12,7 +12,13 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "1.0.0"
+        // Solo con -PlienzoCrashTrigger: gatillo de crash para probar el modo seguro. El release normal NO lo trae.
+        val trigger = project.hasProperty("lienzoCrashTrigger")
+        buildConfigField("boolean", "CRASH_TRIGGER", trigger.toString())
+        buildConfigField("boolean", "STRICT", trigger.toString())
     }
+
+    buildFeatures { buildConfig = true }
 
     buildTypes {
         release {

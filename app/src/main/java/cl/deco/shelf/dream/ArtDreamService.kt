@@ -90,8 +90,7 @@ class ArtDreamService : DreamService() {
         main.removeCallbacksAndMessages(null)
         releasePlayer()
         io.shutdownNow()
-        imgA.setImageDrawable(null)
-        imgB.setImageDrawable(null)
+        if (::imgA.isInitialized) { imgA.setImageDrawable(null); imgB.setImageDrawable(null) } // puede desacoplarse sin haber armado las vistas
         frontBmp?.recycle(); backBmp?.recycle()
         frontBmp = null; backBmp = null
         super.onDetachedFromWindow()
