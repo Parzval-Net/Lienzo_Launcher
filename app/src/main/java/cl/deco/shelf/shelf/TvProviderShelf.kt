@@ -3,7 +3,6 @@ package cl.deco.shelf.shelf
 import android.content.Context
 import android.database.Cursor
 import android.media.tv.TvContract
-import android.net.Uri
 import android.util.Log
 
 /**
@@ -68,16 +67,11 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
             Log.w(TAG, "preload: $e")
             return
         }
-        for (pkg in pkgs) {
-            val items = try {
-                merge(grouped[pkg].orEmpty(), readPreview(pkg))
-            } catch (e: SecurityException) {
-                logDenied(e); emptyList()
-            } catch (e: Exception) {
-                Log.w(TAG, "preload($pkg): $e"); emptyList()
-            }
-            put(pkg, items)
+        // Preview: UNA query de canales y UNA de programas para todos los paquetes (antes: 1 + N canales por app)
+        val previews = try { readPreviewAll(pkgs.toSet()) } catch (e: SecurityException) { logDenied(e); emptyMap() } catch (e: Exception) {
+            Log.w(TAG, "preload preview: $e"); emptyMap()
         }
+        for (pkg in pkgs) put(pkg, merge(grouped[pkg].orEmpty(), previews[pkg].orEmpty()))
     }
 
     private fun merge(watch: List<TopShelfItem>, preview: List<TopShelfItem>): List<TopShelfItem> =
@@ -129,25 +123,30 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
         return out
     }
 
-    private fun readPreview(pkg: String): List<TopShelfItem> {
-        // Canales preview del paquete; el browsable va primero.
-        class Ch(val id: Long, val browsable: Boolean)
-        val channels = ArrayList<Ch>()
-        val cCols = arrayOf(
-            TvContract.Channels._ID,
-            TvContract.Channels.COLUMN_PACKAGE_NAME,
-            TvContract.Channels.COLUMN_TYPE,
-            TvContract.Channels.COLUMN_BROWSABLE,
-        )
-        resolver.query(TvContract.Channels.CONTENT_URI, cCols, null, null, null)?.use { c ->
+    private fun readPreview(pkg: String): List<TopShelfItem> = readPreviewAll(setOf(pkg))[pkg].orEmpty()
+
+    /**
+     * PreviewPrograms de los canales preview de [pkgs]: una query a Channels (proyección mínima, filtrada por tipo) y una
+     * a PreviewPrograms.CONTENT_URI filtrada por esos canales; se agrupa por channel_id en memoria. El canal browsable va primero.
+     */
+    private fun readPreviewAll(pkgs: Set<String>): Map<String, List<TopShelfItem>> {
+        class Ch(val id: Long, val pkg: String, val browsable: Boolean)
+        val channels = HashMap<Long, Ch>()
+        resolver.query(
+            TvContract.Channels.CONTENT_URI,
+            arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_PACKAGE_NAME, TvContract.Channels.COLUMN_BROWSABLE),
+            "${TvContract.Channels.COLUMN_TYPE}=?", arrayOf(TvContract.Channels.TYPE_PREVIEW), null,
+        )?.use { c ->
             while (c.moveToNext()) {
-                if (c.str(1) != pkg || c.str(2) != TvContract.Channels.TYPE_PREVIEW) continue
-                channels += Ch(c.getLong(0), !c.isNull(3) && c.getInt(3) == 1)
+                val pkg = c.str(1) ?: continue
+                if (pkg in pkgs) channels[c.getLong(0)] = Ch(c.getLong(0), pkg, !c.isNull(2) && c.getInt(2) == 1)
             }
         }
-        if (channels.isEmpty()) return emptyList()
-        val ordered = channels.sortedByDescending { it.browsable }
+        if (channels.isEmpty()) return emptyMap()
+        val ids = channels.keys.joinToString(",")
+        // channel_id va primero: agrupa; el resto es la proyección mínima para armar TopShelfItem
         val pCols = arrayOf(
+            TvContract.PreviewPrograms.COLUMN_CHANNEL_ID,
             TvContract.PreviewPrograms.COLUMN_TITLE,
             TvContract.PreviewPrograms.COLUMN_SHORT_DESCRIPTION,
             TvContract.PreviewPrograms.COLUMN_EPISODE_TITLE,
@@ -155,15 +154,24 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
             TvContract.PreviewPrograms.COLUMN_THUMBNAIL_URI,
             TvContract.PreviewPrograms.COLUMN_INTENT_URI,
         )
-        val out = ArrayList<TopShelfItem>()
-        for (ch in ordered) {
-            val uri: Uri = TvContract.buildPreviewProgramsUriForChannel(ch.id)
-            resolver.query(uri, pCols, null, null, "${TvContract.PreviewPrograms.COLUMN_WEIGHT} DESC, ${TvContract.PreviewPrograms._ID} DESC")?.use { c ->
-                while (c.moveToNext() && out.size < MAX_ITEMS) {
-                    c.toItem(0, 1, 2, 3, 4, 5)?.let { out += it }
-                }
+        val byChannel = HashMap<Long, MutableList<TopShelfItem>>()
+        resolver.query(
+            TvContract.PreviewPrograms.CONTENT_URI, pCols,
+            "${TvContract.PreviewPrograms.COLUMN_CHANNEL_ID} IN ($ids)", null,
+            "${TvContract.PreviewPrograms.COLUMN_WEIGHT} DESC, ${TvContract.PreviewPrograms._ID} DESC",
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val list = byChannel.getOrPut(c.getLong(0)) { ArrayList() }
+                if (list.size >= MAX_ITEMS) continue
+                c.toItem(1, 2, 3, 4, 5, 6)?.let { list += it }
             }
-            if (out.size >= MAX_ITEMS) break
+        }
+        val out = HashMap<String, MutableList<TopShelfItem>>()
+        // Por paquete: canales browsable primero y, dentro, el orden de peso ya aplicado
+        for (ch in channels.values.sortedWith(compareByDescending<Ch> { it.browsable }.thenBy { it.id })) {
+            val l = byChannel[ch.id] ?: continue
+            val dest = out.getOrPut(ch.pkg) { ArrayList() }
+            for (it in l) if (dest.size < MAX_ITEMS) dest += it
         }
         return out
     }
