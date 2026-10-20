@@ -29,6 +29,8 @@ android {
         buildConfigField("boolean", "STRICT", trigger.toString())
         // Solo con -PlienzoForceHealth: simula 8 días encendido para probar el aviso de Salud del deco. El release normal NO lo trae.
         buildConfigField("boolean", "FORCE_HEALTH", project.hasProperty("lienzoForceHealth").toString())
+        // Solo con -PlienzoForceOffline: el home se comporta como sin red (sin apagar el WiFi del deco). El release normal NO lo trae.
+        buildConfigField("boolean", "FORCE_OFFLINE", project.hasProperty("lienzoForceOffline").toString())
     }
 
     buildFeatures { buildConfig = true }

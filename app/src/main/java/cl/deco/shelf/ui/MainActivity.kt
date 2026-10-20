@@ -59,6 +59,8 @@ import cl.deco.shelf.data.weather.SunDim
 import cl.deco.shelf.data.weather.Weather
 import cl.deco.shelf.shelf.TopShelfItem
 import cl.deco.shelf.util.Blur
+import cl.deco.shelf.util.NetworkWatcher
+import cl.deco.shelf.data.art.ArtProgress
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -104,6 +106,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var dockBg: GradientDrawable
     private var artPlayer: MediaPlayer? = null
     private var pendingFree: Runnable? = null
+    private var netWatcher: NetworkWatcher? = null
+    private var artPolling = false
+    private val artProgressTick = Runnable { artPolling = false; pollArtProgress() }
     private val secTick: Runnable = object : Runnable { override fun run() { updateClockStatus() } }
     private var artSurface: SurfaceView? = null
     private val themeListener: () -> Unit = { applyTheme() }
@@ -300,6 +305,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
         settingsPages = SettingsPages(this, settings, prefs, this, "Lienzo $ver")
         topBar.setWeatherEnabled(prefs.weatherOn)
+        netWatcher = NetworkWatcher(this, main) { onNetChanged(it) }
         Theme.listeners.add(themeListener)
         hint = tv(this, 14f).apply {
             setPadding(dp(18), dp(8), dp(18), dp(8))
@@ -358,6 +364,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             addDataScheme("package")
         })
         reloadApps()
+        // Red: el callback vive solo mientras el home está visible (se retira en onStop)
+        if (BuildConfig.FORCE_OFFLINE) topBar.setOnline(false)
+        else netWatcher?.let { it.start(); topBar.setOnline(it.online) }
+        pollArtProgress()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
         checkLowSpace()
         // Salud del deco: se mide unos segundos después de volver, cuando la app anterior ya soltó su memoria de video
@@ -390,6 +400,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         started = false
         stopAt = System.currentTimeMillis()
         main.removeCallbacksAndMessages(null)
+        artPolling = false
+        netWatcher?.stop()
         runCatching { unregisterReceiver(pkgReceiver) }
         if (today.visibility == View.VISIBLE) closeToday()
         dropImport()
@@ -459,15 +471,45 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 updateHoliday(d)
             }
             updateClockStatus()
+            pollArtProgress()
             if (now - lastArt >= prefs.bgIntervalMin * 60_000L) { lastArt = now; loadArt(true) }
             if (prefs.weatherOn && now - lastWeather >= WEATHER_MS) { lastWeather = now; refreshWeather() }
             main.postDelayed(this, 60_000L - now % 60_000L + 50L)
         }
     }
 
+    /** Cambio de red mientras el home es visible: actualiza el aviso del clima y, al volver la red, reintenta clima y descarga. */
+    private fun onNetChanged(on: Boolean) {
+        if (!ready || !started) return
+        topBar.setOnline(on)
+        if (on) {
+            if (prefs.weatherOn) { lastWeather = System.currentTimeMillis(); refreshWeather() }
+            ioArt.execute { try { graph.art.prefetch(1) } catch (_: Throwable) { } ; main.post { pollArtProgress() } }
+        }
+    }
+
+    /**
+     * Chip "Obras 12/60": lee el avance en el hilo de arte y, mientras la descarga esté activa, repite cada 5 s. Sin descarga
+     * en curso no queda ningún Handler pendiente (el tick por minuto solo revisa si arrancó una).
+     */
+    private fun pollArtProgress() {
+        if (!started || artPolling) return
+        artPolling = true
+        ioArt.execute {
+            val (d, t) = try { graph.art.downloadProgress() } catch (_: Throwable) { 0 to 0 }
+            val dl = try { graph.art.downloading() } catch (_: Throwable) { false }
+            main.post {
+                artPolling = false
+                if (!started) return@post
+                topBar.setArtProgress(ArtProgress.chipText(d, t, dl, Es.english))
+                if (dl) { artPolling = true; main.postDelayed(artProgressTick, 5000L) }
+            }
+        }
+    }
+
     private fun refreshWeather() {
         ioData.execute {
-            val w = try { graph.weather.get(false) } catch (_: Throwable) { null }
+            val w = if (BuildConfig.FORCE_OFFLINE) null else try { graph.weather.get(false) } catch (_: Throwable) { null }
             main.post {
                 if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w); scheduleSun() }
                 // Sin datos (red lenta o caída): reintenta en ~1 min en vez de esperar el ciclo completo
@@ -529,6 +571,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             }
             // repone cache para las próximas rotaciones
             if (art != null) try { graph.art.prefetch(2) } catch (_: Throwable) {}
+            main.post { pollArtProgress() } // si prefetch arrancó la descarga, el chip "Obras n/total" empieza a seguirla
         }
     }
 

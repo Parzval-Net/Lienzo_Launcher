@@ -29,5 +29,6 @@ class CompositeArt(context: Context, private val curated: ArtSource, private val
 
     override fun prefetch(max: Int) = curated.prefetch(max)
     override fun downloadProgress() = curated.downloadProgress()
+    override fun downloading() = curated.downloading()
     override fun startFullDownload() = curated.startFullDownload()
 }

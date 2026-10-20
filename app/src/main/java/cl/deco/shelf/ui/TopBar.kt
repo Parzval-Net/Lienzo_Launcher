@@ -10,6 +10,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import cl.deco.shelf.data.weather.Weather
+import cl.deco.shelf.data.weather.WeatherStatus
+import cl.deco.shelf.data.weather.WeatherView
 
 /** Reloj + fecha (+ feriado) a la izquierda y clima actual a la derecha. Ambos bloques son enfocables. */
 class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: () -> Unit = {}, onSettings: () -> Unit = {}) : FrameLayout(ctx) {
@@ -69,6 +71,16 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
     }
     private val rain = tv(ctx, 16f, Ui.TEXT).apply { alpha = 0.7f; visibility = GONE; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()); compoundDrawablePadding = ctx.dp(3) }
     private val temp = tv(ctx, 30f, Ui.TEXT, "sans-serif-light").apply { text = "--"; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()) }
+    /** Sin red y sin dato vigente: ícono de "sin conexión" y este texto breve en lugar de "--". */
+    private val offlineText = tv(ctx, 16f, Ui.TEXT, "sans-serif-medium").apply { visibility = GONE; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()) }
+    private var lastWeather: Weather? = null
+    private var online = true
+    /** Chip discreto de descarga de la colección ("Obras 12/60"): sin foco, desaparece al terminar. */
+    private val artChip = tv(ctx, 13f, Ui.TEXT2, "sans-serif-medium").apply {
+        visibility = GONE
+        setPadding(ctx.dp(10), ctx.dp(4), ctx.dp(10), ctx.dp(4))
+        background = GradientDrawable().apply { setColor(0x59000000); cornerRadius = ctx.dpf(14f) }
+    }
 
     private fun focusBg(ctx: Context) = StateListDrawable().apply {
         addState(
@@ -109,11 +121,13 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
             setOnClickListener { onWeather() }
             addView(icon, LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(40)))
             addView(temp, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(6) })
+            addView(offlineText, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(6) })
             addView(rain, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
         }
         icon.visibility = GONE
         addView(LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
+            addView(artChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = ctx.dp(10) })
             addView(lowChip)
             addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
         }, LayoutParams(-2, -2, Gravity.CENTER))
@@ -159,21 +173,43 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
         holiday.visibility = if (name.isNullOrEmpty()) GONE else VISIBLE
     }
 
-    fun setWeather(w: Weather?) {
-        if (w == null) {
-            icon.visibility = GONE
-            temp.text = "--"
-            rain.visibility = GONE
-        } else {
-            icon.setImageResource(WeatherIcons.iconFor(w.displayCode, w.isDay))
-            icon.visibility = VISIBLE
-            temp.text = "${Units.temp(w.currentTemp)}°"
-            val p = w.rainSoonProb ?: 0
-            if (p >= 50) {
-                rain.text = "$p%"
-                rain.setCompoundDrawablesRelativeWithIntrinsicBounds(cl.deco.shelf.R.drawable.ic_wx_drop, 0, 0, 0)
-                rain.visibility = VISIBLE
-            } else rain.visibility = GONE
+    fun setWeather(w: Weather?) { lastWeather = w; renderWeather() }
+
+    /** Estado de red: sin conexión y sin dato vigente, el clima muestra el aviso en vez de "--". */
+    fun setOnline(on: Boolean) { if (online != on) { online = on; renderWeather() } }
+
+    /** Texto del chip de descarga ("Obras 12/60") o null para ocultarlo. */
+    fun setArtProgress(text: String?) {
+        if (text == null) { artChip.visibility = GONE; return }
+        if (artChip.text != text) artChip.text = text
+        artChip.visibility = VISIBLE
+    }
+
+    private fun renderWeather() {
+        val w = lastWeather
+        when (WeatherStatus.of(w, online, System.currentTimeMillis())) {
+            WeatherView.LOADING -> {
+                icon.visibility = GONE; offlineText.visibility = GONE; rain.visibility = GONE
+                temp.visibility = VISIBLE; temp.text = "--"
+            }
+            WeatherView.OFFLINE -> {
+                icon.setImageResource(cl.deco.shelf.R.drawable.ic_wx_offline); icon.visibility = VISIBLE
+                temp.visibility = GONE; rain.visibility = GONE
+                offlineText.text = if (Es.english) "Offline" else "Sin conexión"; offlineText.visibility = VISIBLE
+            }
+            WeatherView.SHOW -> {
+                w!!
+                offlineText.visibility = GONE; temp.visibility = VISIBLE
+                icon.setImageResource(WeatherIcons.iconFor(w.displayCode, w.isDay))
+                icon.visibility = VISIBLE
+                temp.text = "${Units.temp(w.currentTemp)}°"
+                val p = w.rainSoonProb ?: 0
+                if (p >= 50) {
+                    rain.text = "$p%"
+                    rain.setCompoundDrawablesRelativeWithIntrinsicBounds(cl.deco.shelf.R.drawable.ic_wx_drop, 0, 0, 0)
+                    rain.visibility = VISIBLE
+                } else rain.visibility = GONE
+            }
         }
     }
 }

@@ -94,6 +94,8 @@ class MuseumArt(private val context: Context) : ArtSource {
 
     // ---- Progreso ----
 
+    override fun downloading(): Boolean = running.get()
+
     override fun downloadProgress(): Pair<Int, Int> {
         val cat = catalog()
         if (cat.isEmpty()) return 0 to 0

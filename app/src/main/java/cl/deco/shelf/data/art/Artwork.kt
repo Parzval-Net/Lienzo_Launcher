@@ -22,6 +22,8 @@ interface ArtSource {
     fun prefetch(max: Int)
     /** (obras listas, total) de la colección curada. (0, 0) si no aplica. */
     fun downloadProgress(): Pair<Int, Int> = 0 to 0
+    /** true mientras el hilo de descarga de la colección curada está activo (incluye las esperas por 429/503). */
+    fun downloading(): Boolean = false
     /** Inicia en background la descarga de la colección curada completa. No bloquea; idempotente. */
     fun startFullDownload() {}
 }
