@@ -113,7 +113,7 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         if (result.isNotEmpty()) body.addView(label(result, 13f, Ui.TEXT), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(6); leftMargin = ctx.dp(8) })
 
         body.addView(section("Acciones"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(2); leftMargin = ctx.dp(8) })
-        val free = action(if (busy) "Liberando memoria..." else "Liberar memoria", "Suelta memoria de Lienzo y pide cerrar apps") { liberar() }
+        val free = action(if (busy) "Liberando memoria de Lienzo..." else "Liberar memoria de Lienzo", "Vacía las cachés de Lienzo. Para la memoria de video, reinicia el deco") { liberar() }
         val how = action("Cómo reiniciar", "Pasos para reiniciar el deco") { howTo = true; build() }
         val later = action("Recordarme más tarde", "Oculta el aviso 24 h") { onSnooze() }
         for (v in listOf(free, how, later)) body.addView(v, LinearLayout.LayoutParams(-1, ctx.dp(42)))
