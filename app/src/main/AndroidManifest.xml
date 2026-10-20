@@ -19,6 +19,12 @@
     <!-- Apagado nocturno: se concede por adb (pm grant), no es un permiso de usuario -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
+    <!-- Mis fondos: leer imágenes y videos del pendrive USB vía MediaStore (diálogo estándar de permisos).
+         Android 12 usa READ_EXTERNAL_STORAGE; Android 13+ los permisos de medios. No hay acceso a red ni shell. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
