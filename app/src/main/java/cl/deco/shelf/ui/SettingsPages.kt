@@ -26,6 +26,8 @@ interface SettingsHost {
     fun restoreBackup(f: File)
     fun requestTvPermission()
     fun finishSettings()
+    /** Abre el panel Salud del deco (cierra Ajustes). */
+    fun openHealth()
 }
 
 /** Construye las páginas del panel de ajustes a partir de ShelfPrefs. */
@@ -86,6 +88,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Versión") { version },
         Row.Info("Memoria (PSS actual)") { host.pss() },
         Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
+        Row.Act("Salud del deco", { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) "Reinicio recomendado" else "En orden" }) { host.openHealth() },
         Row.Info("Memoria de video (CMA)") { cl.deco.shelf.util.DeviceHealth.cmaText(cl.deco.shelf.util.DeviceHealth.read()) },
         Row.Info("Encendido hace") { cl.deco.shelf.util.DeviceHealth.uptimeText(cl.deco.shelf.util.DeviceHealth.read().uptimeMs) },
         Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; clima Open-Meteo; feriados Nager.Date; idea del watchdog: Free My TV (MIT)" },

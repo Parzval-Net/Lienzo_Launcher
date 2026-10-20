@@ -31,20 +31,28 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
     private val timerChip = chip(ctx, cl.deco.shelf.R.drawable.ic_timer)
     private val alarmChip = chip(ctx, cl.deco.shelf.R.drawable.ic_alarm)
     private val moonChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
+    /** Fondo de los avisos: píldora oscura (legible sobre obras claras) y foco con el acento, bien visible. */
+    private fun noticeBg(ctx: Context) = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_focused),
+            GradientDrawable().apply { setColor(Theme.withAlpha(Theme.accent, 0xE0)); cornerRadius = ctx.dpf(18f); setStroke(ctx.dp(2), 0xFFFFFFFF.toInt()) })
+        addState(intArrayOf(), GradientDrawable().apply { setColor(0x80000000.toInt()); cornerRadius = ctx.dpf(18f) })
+    }
     /** Aviso discreto "Poco espacio": enfocable, abre Almacenamiento. */
     private val lowChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
         text = "Poco espacio"
         isFocusable = true; isClickable = true
         setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6))
-        background = focusBg(ctx)
+        background = noticeBg(ctx)
     }
     /** Aviso "Reiniciar recomendado": memoria de video baja o muchos días encendido. */
     private val healthChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
         text = "Reiniciar recomendado"
         isFocusable = true; isClickable = true
         setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6))
-        background = focusBg(ctx)
+        background = noticeBg(ctx)
     }
+    /** El aviso de salud tiene el foco (para que MENU abra el panel de salud y no los ajustes). */
+    fun healthFocused() = healthChip.visibility == VISIBLE && healthChip.hasFocus()
     fun setRestartHint(on: Boolean, onClick: () -> Unit) {
         healthChip.visibility = if (on) VISIBLE else GONE
         healthChip.setOnClickListener { onClick() }

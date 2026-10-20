@@ -41,6 +41,7 @@ import android.widget.Toast
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import cl.deco.shelf.BuildConfig
 import cl.deco.shelf.Graph
 import cl.deco.shelf.guard.CrashLog
 import cl.deco.shelf.guard.SafeActivity
@@ -94,6 +95,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var hint: android.widget.TextView
     private lateinit var prefs: ShelfPrefs
     private lateinit var settings: SettingsPanel
+    private lateinit var health: HealthPanel
     private lateinit var settingsPages: SettingsPages
     private lateinit var dockBg: GradientDrawable
     private var artPlayer: MediaPlayer? = null
@@ -282,6 +284,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         today = TodayPanel(this).apply { onNeedYear = { loadHolidays(it) }; setCity(prefs.cityName); onClockChanged = { updateClockStatus() } }
         menu = MenuPanel(this)
         settings = SettingsPanel(this)
+        health = HealthPanel(this).apply {
+            snapshot = { healthSnapshot() }
+            onTrimCaches = { trimCaches() }
+            onSnooze = { prefs.healthSnoozeUntil = System.currentTimeMillis() + (if (BuildConfig.FORCE_HEALTH) 60_000L else cl.deco.shelf.util.DeviceHealth.SNOOZE_MS); topBar.setRestartHint(false) {}; closeHealth() }
+            onOpenAndroidSettings = { QuickAccess.launch(this@MainActivity, QuickAccess.items.last()) }
+        }
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
         settingsPages = SettingsPages(this, settings, prefs, this, "Lienzo $ver")
         topBar.setWeatherEnabled(prefs.weatherOn)
@@ -295,6 +303,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         root.addView(today, ViewGroup.LayoutParams(-1, -1))
         root.addView(menu, ViewGroup.LayoutParams(-1, -1))
         root.addView(settings, ViewGroup.LayoutParams(-1, -1))
+        root.addView(health, ViewGroup.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(16) })
         setContentView(root)
         // El foco decide el estado visual: barra superior vs dock
@@ -372,6 +381,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         runCatching { unregisterReceiver(pkgReceiver) }
         if (today.visibility == View.VISIBLE) closeToday()
         if (settings.isOpen) closeSettings()
+        if (health.isOpen) closeHealth()
         if (artMode) applyState(stateBeforeArt, animate = false)
         stopArtVideo(animate = false)
         pendingFree?.run()
@@ -389,6 +399,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
         if (settings.isOpen) closeSettings()
+        if (health.isOpen) closeHealth()
         endMove()
         if (state != HomeState.DOCK) applyState(HomeState.DOCK)
         focusFirst()
@@ -584,6 +595,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 blurBmp = b
                 blurView.setImageBitmap(b)
                 if (old != null) main.postDelayed({ old.recycle() }, 400)
+                if (state == HomeState.GRID) applyState(state, animate = false)
             }
         }
     }
@@ -796,6 +808,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!(art && artPlayer != null)) set(artView, 1f)
         // La obra se mantiene nítida en GRID; con desenfoque elegido (y bitmap generado) se funde a la versión blur.
         // Capas a pantalla completa con alpha 0 pasan a INVISIBLE: la GPU ni las considera
+        if (grid && prefs.blurLevel > 0 && blurBmp == null) rebuildBlur() // se soltó con "Liberar memoria"
         val blurOn = grid && prefs.blurLevel > 0 && blurBmp != null
         set(blurView, if (blurOn) 1f else 0f, 0f, if (blurOn) View.VISIBLE else View.INVISIBLE)
         // Brillo del fondo: filtro de color sobre la propia obra (sin capa a pantalla completa extra para la GPU)
@@ -1050,7 +1063,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun enterArtMode() {
-        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen) return
+        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen) return
         if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
         stateBeforeArt = state
         applyState(HomeState.ART_MODE)
@@ -1161,18 +1174,39 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         topBar.setStatus(timerTxt, alarmTxt, nightActive)
     }
 
+    /** Lectura de salud; en builds con -PlienzoForceHealth (solo pruebas) simula 8 días encendido y recordatorio de 60 s. */
+    private fun healthSnapshot(): cl.deco.shelf.util.DeviceHealth.Snapshot {
+        val h = cl.deco.shelf.util.DeviceHealth.read()
+        return if (BuildConfig.FORCE_HEALTH) h.copy(uptimeMs = 8 * 86_400_000L) else h
+    }
+
     private val checkHealth = Runnable {
         if (!started || artPlayer != null) return@Runnable
-        val h = cl.deco.shelf.util.DeviceHealth.read()
-        topBar.setRestartHint(h.restartRecommended) {
-            val why = if (h.cmaLow) "La memoria de video está baja (${h.cmaFreeKb / 1024} MB libres)."
-            else "El deco lleva ${cl.deco.shelf.util.DeviceHealth.uptimeText(h.uptimeMs)} encendido."
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Reiniciar recomendado")
-                .setMessage("$why\n\nPara evitar errores de reproducción en Netflix o Movistar, reinicia el deco: " +
-                    "desenchúfalo 10 segundos o usa Ajustes > Sistema > Reiniciar.")
-                .setPositiveButton("Entendido", null)
-                .show()
+        val h = healthSnapshot()
+        val snoozed = cl.deco.shelf.util.DeviceHealth.snoozed(System.currentTimeMillis(), prefs.healthSnoozeUntil)
+        topBar.setRestartHint(h.restartRecommended && !snoozed) { openHealth() }
+    }
+
+    /** Aviso, MENU sobre el aviso o Ajustes > Info: panel propio de Salud del deco. */
+    override fun openHealth() {
+        // Desde Ajustes, prevFocus ya guarda el foco del home; desde el aviso se guarda el foco actual
+        if (settings.isOpen) closeSettings() else prevFocus = currentFocus
+        blockContent(true)
+        health.open()
+    }
+
+    private fun closeHealth() {
+        health.close()
+        blockContent(false)
+        prevFocus?.requestFocus()
+        if (currentFocus == null || !currentFocus!!.isShown) focusFirst() // p. ej. el aviso se ocultó con "Recordarme más tarde"
+    }
+
+    /** Suelta las cachés propias: LRU de tiles y, fuera de la grilla, el bitmap blur (se regenera al abrir la grilla). */
+    private fun trimCaches() {
+        loader.trim()
+        if (state != HomeState.GRID && blurBmp != null) {
+            blurView.setImageDrawable(null); blurBmp?.recycle(); blurBmp = null
         }
     }
 
@@ -1413,6 +1447,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             if (k == KeyEvent.KEYCODE_BACK) { if (down && !settings.back()) closeSettings(); return true }
             return super.dispatchKeyEvent(e)
         }
+        if (health.isOpen) {
+            if (k == KeyEvent.KEYCODE_BACK) { if (down && !health.back()) closeHealth(); return true }
+            if (k == KeyEvent.KEYCODE_MENU) return true
+            return super.dispatchKeyEvent(e)
+        }
         if (menu.visibility == View.VISIBLE) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down) closeMenu(); return true }
             return super.dispatchKeyEvent(e)
@@ -1435,6 +1474,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 }
             }
         }
+        if (k == KeyEvent.KEYCODE_MENU && down && topBar.healthFocused()) { openHealth(); return true }
         if (k == KeyEvent.KEYCODE_MENU && down) {
             val slot = focusedSlot()
             val en = if (slot != null) adapter.entryAt(slot) else null
