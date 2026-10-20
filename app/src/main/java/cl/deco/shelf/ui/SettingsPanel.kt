@@ -47,6 +47,8 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         addView(list, ViewGroup.LayoutParams(-1, -2))
     }
     private val stack = ArrayList<Page>()
+    /** Fila enfocada de cada página al entrar a una subpágina, para volver al mismo lugar con BACK. */
+    private val focusStack = ArrayList<Int>()
     private val focusBgs = ArrayList<GradientDrawable>()
     private val sections = ArrayList<TextView>()
     private val slots = HashMap<Row.Slot, LinearLayout>()
@@ -71,7 +73,7 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
     fun currentTitle() = stack.lastOrNull()?.title.orEmpty()
 
     fun open(root: Page) {
-        stack.clear()
+        stack.clear(); focusStack.clear()
         alpha = 0f
         visibility = VISIBLE
         animate().alpha(1f).setDuration(180).start()
@@ -82,12 +84,13 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         hideIme()
         animate().cancel()
         visibility = GONE
-        stack.clear()
+        stack.clear(); focusStack.clear()
         list.removeAllViews()
     }
 
     fun push(p: Page) {
         hideIme()
+        if (stack.isNotEmpty()) focusStack.add(findFocus()?.let { rowIndexOf(it) } ?: -1)
         stack.add(p)
         build(p)
     }
@@ -97,7 +100,7 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         hideIme()
         if (stack.size <= 1) return false
         stack.removeAt(stack.size - 1)
-        build(stack.last())
+        build(stack.last(), focusStack.removeLastOrNull() ?: -1)
         return true
     }
 
