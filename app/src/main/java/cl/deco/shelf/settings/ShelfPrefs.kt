@@ -18,6 +18,8 @@ class ShelfPrefs(context: Context) {
     var bgBrightness: Int get() = int(BG_BRIGHT, 100).coerceIn(60, 100); set(v) = put(BG_BRIGHT, v)
     /** 0 = ninguno (por defecto, sin generar el bitmap), 1 = bajo, 2 = medio, 3 = alto. */
     var blurLevel: Int get() = int(BLUR_LEVEL, 0).coerceIn(0, 3); set(v) = put(BLUR_LEVEL, v)
+    /** Atenúa el fondo 20% extra entre el atardecer y el amanecer (Open-Meteo). */
+    var nightDim: Boolean get() = bool(NIGHT_DIM, true); set(v) = put(NIGHT_DIM, v)
     var dynamicColors: Boolean get() = bool(DYN_COLORS, true); set(v) = put(DYN_COLORS, v)
     // Modo arte del home
     var artEnabled: Boolean get() = bool(ART_ON, true); set(v) = put(ART_ON, v)
@@ -76,6 +78,7 @@ class ShelfPrefs(context: Context) {
     companion object {
         const val BG_BRIGHTNESS = "bg_brightness"; const val BLUR_LEVEL = "blur_level"; const val DYNAMIC_COLORS = "dyn_colors"
         private const val BG_BRIGHT = BG_BRIGHTNESS; private const val DYN_COLORS = DYNAMIC_COLORS
+        const val NIGHT_DIM = "night_dim"
         const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
         const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
@@ -87,7 +90,7 @@ class ShelfPrefs(context: Context) {
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
-            BG_INTERVAL, BG_ONLINE, BG_BRIGHT, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
+            BG_INTERVAL, BG_ONLINE, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )

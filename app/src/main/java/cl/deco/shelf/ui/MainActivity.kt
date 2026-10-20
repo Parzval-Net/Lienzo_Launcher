@@ -42,6 +42,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import cl.deco.shelf.Graph
+import cl.deco.shelf.guard.CrashLog
+import cl.deco.shelf.guard.SafeActivity
 import cl.deco.shelf.apps.AppEntry
 import cl.deco.shelf.apps.AppRepository
 import cl.deco.shelf.apps.BitmapUtil
@@ -50,6 +52,7 @@ import cl.deco.shelf.apps.IconOverrides
 import cl.deco.shelf.apps.ImageLoader
 import cl.deco.shelf.data.art.Artwork
 import cl.deco.shelf.data.holidays.Holiday
+import cl.deco.shelf.data.weather.SunDim
 import cl.deco.shelf.data.weather.Weather
 import cl.deco.shelf.shelf.TopShelfItem
 import cl.deco.shelf.util.Blur
@@ -74,7 +77,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var content: FrameLayout
     private lateinit var artView: ImageView
     private lateinit var blurView: ImageView
-    private lateinit var dimView: View
     private lateinit var gridFade: View
     private lateinit var gridName: android.widget.TextView
     private lateinit var gridHeader: android.widget.TextView
@@ -108,6 +110,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private val ioArt = newExecutor()
 
     private var started = false
+    /** true cuando onCreate terminó de armar la UI; antes (modo seguro, finish() temprano o una excepción) ningún callback toca las vistas. */
+    private var ready = false
     private var allApps: List<AppEntry> = emptyList()
     private var weather: Weather? = null
     private var lastArt = 0L
@@ -143,6 +147,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Modo seguro: 3 crashes en 5 min. Se cede el home a una Activity mínima en el proceso :guard
+        val tg = android.os.SystemClock.elapsedRealtime()
+        CrashLog.absorbExits(this)
+        Log.i("Shelf", "guard: ${android.os.SystemClock.elapsedRealtime() - tg} ms")
+        if (CrashLog.safeMode(this)) { SafeActivity.launch(this); finish(); return }
         graph = Graph.from(this)
         repo = AppRepository(this)
         store = FavoritesStore(this)
@@ -164,9 +173,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         adapter = AppAdapter(loader, dockGeo, gridGeo, radius, this)
 
         val root = FrameLayout(this)
-        root.background = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF181B26.toInt(), 0xFF0A0A10.toInt()),
-        )
+        // Sin obra aún (primer inicio sin descargas): degradado de la paleta neutra, nunca negro; cede el paso a la primera obra con crossfade
+        val base = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF232B40.toInt(), 0xFF141824.toInt(), 0xFF0B0D14.toInt()))
+        val glow = GradientDrawable().apply {
+            gradientType = GradientDrawable.RADIAL_GRADIENT
+            gradientRadius = screenH * 1.1f
+            setGradientCenter(0.5f, 1.05f)
+            colors = intArrayOf(Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0x2E), Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0))
+        }
+        root.background = android.graphics.drawable.LayerDrawable(arrayOf(base, glow))
         window.setBackgroundDrawable(null)
         rootView = root
         content = FrameLayout(this)
@@ -175,10 +190,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Fondo: obra nítida a sangre; versión blur + oscurecido solo con la grilla abierta
         artView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         blurView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
-        dimView = View(this).apply { setBackgroundColor(0xFF000000.toInt()); alpha = 0f }
         content.addView(artView, ViewGroup.LayoutParams(-1, -1))
         content.addView(blurView, ViewGroup.LayoutParams(-1, -1))
-        content.addView(dimView, ViewGroup.LayoutParams(-1, -1))
 
         // Grilla de todas las apps: oculta abajo, sube con DPAD_DOWN
         gridRv = ShelfRecycler(this).apply {
@@ -196,9 +209,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             translationY = screenH.toFloat()
         }
         // Ancho = columnas reales (se ajusta en rebuild) para centrar la grilla con el mismo eje que el dock
-        content.addView(gridRv, FrameLayout.LayoutParams(dp(GRID_COLS * cellDp + 16), screenH, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        content.addView(gridRv, FrameLayout.LayoutParams(dp(GRID_COLS * cellDp + 16), screenH, Gravity.TOP or Gravity.START))
         // Fila "Continuar viendo" (Watch Next de todas las apps), sobre "Todas las apps"
         contRv = ContinueRow(this, loader, { pkg -> allApps.firstOrNull { it.component.packageName == pkg } }) { launchItem(it) }
+        // Ancho completo: sangra hasta el borde derecho; el margen seguro (96 px) va como padding en la propia fila
         content.addView(contRv, FrameLayout.LayoutParams(-1, dp(146), Gravity.TOP).apply { topMargin = dp(126) })
         contHeader = tv(this, 20f, Ui.TEXT, "sans-serif-medium").apply {
             text = "Continuar viendo"
@@ -297,16 +311,19 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             prefs.edit().putBoolean("perm_asked", true).apply()
             requestPermissions(arrayOf(PERM_TV), 1)
         }
+        ready = true
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (!ready) return
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) reloadApps()
         if (settings.isOpen) settings.rebuild()
     }
 
     override fun onStart() {
         super.onStart()
+        if (!ready) return
         started = true
         lienzoVisible = true
         if (state == HomeState.ART_MODE) applyState(stateBeforeArt, animate = false)
@@ -324,6 +341,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ClockScheduler.scheduleAll(this) // reprograma temporizadores, alarmas y apagado nocturno
         nightActive = NightMode.refresh(this)
         updateClockStatus()
+        scheduleSun()
         restoreLastArt()
         val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
         if (rotate) lastArt = System.currentTimeMillis()
@@ -333,6 +351,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     override fun onStop() {
+        if (!ready) { super.onStop(); return }
         started = false
         lienzoVisible = false
         stopAt = System.currentTimeMillis()
@@ -350,6 +369,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (!ready) return
+        if (CrashLog.safeMode(this)) { SafeActivity.launch(this); return }
         if (AlarmService.ringing) AlarmService.stop(this) // HOME también detiene alarma o temporizador
         // HOME con el launcher ya visible: cerrar overlays y volver al dock
         if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
@@ -363,6 +384,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        if (!ready) return
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             // Shelf ya no está visible: soltar fondo blur y cache de íconos (se recargan en onStart)
             blurView.setImageDrawable(null)
@@ -372,6 +394,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     override fun onDestroy() {
+        if (!ready) { super.onDestroy(); return } // salió a modo seguro (o falló) antes de armar la UI
         Theme.listeners.remove(themeListener)
         ioData.shutdownNow()
         ioShelf.shutdownNow()
@@ -408,7 +431,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ioData.execute {
             val w = try { graph.weather.get(false) } catch (_: Throwable) { null }
             main.post {
-                if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w) }
+                if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w); scheduleSun() }
                 // Sin datos (red lenta o caída): reintenta en ~1 min en vez de esperar el ciclo completo
                 else if (w == null) lastWeather = System.currentTimeMillis() - WEATHER_MS + 60_000L
             }
@@ -463,6 +486,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val art = a
             main.post {
                 if (!started || art == null || bmp == null) { bmp?.recycle(); blur?.recycle() } else applyArt(art, bmp, blur, pal)
+                // Sin ninguna obra local (descarga pausada o primer inicio): reintenta en 30 s hasta que exista la primera
+                if (started && art == null && artBmp == null) main.postDelayed({ if (started && artBmp == null) loadArt(true) }, 30_000L)
             }
             // repone cache para las próximas rotaciones
             if (art != null) try { graph.art.prefetch(2) } catch (_: Throwable) {}
@@ -562,8 +587,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (old == null) {
             artView.setImageDrawable(newD)
             if (artPlayer == null) {
-                artView.alpha = 1f
-                rootView.background = null // la obra opaca cubre todo: sin capa de fondo bajo ella
+                // Primera obra: crossfade desde el degradado; después se retira la capa de fondo (la obra opaca cubre todo)
+                artView.animate().cancel()
+                artView.alpha = 0f
+                artView.animate().alpha(1f).setDuration(700).setInterpolator(Ui.DECEL).start()
+                main.postDelayed({ if (artBmp != null && artPlayer == null) rootView.background = null }, 900)
             }
         } else {
             val td = TransitionDrawable(arrayOf(BitmapDrawable(resources, old), newD))
@@ -592,8 +620,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val d = Theme.dark
         val tint = android.graphics.Color.rgb((android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt())
         scrimBg.colors = intArrayOf(Theme.withAlpha(tint, 0), Theme.withAlpha(tint, 0x66), Theme.withAlpha(tint, 0x66))
-        dimView.setBackgroundColor(android.graphics.Color.rgb(
-            (android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt()))
         topBar.setAccent(Theme.accent, Theme.light)
     }
 
@@ -626,7 +652,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ioData.execute {
             val apps = repo.load()
             // Watch Next: una sola pasada al iniciar y al cambiar paquetes
+            val t0 = android.os.SystemClock.elapsedRealtime()
             try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
+            Log.i("Shelf", "preload TvProvider: ${android.os.SystemClock.elapsedRealtime() - t0} ms (${apps.size} apps)")
             main.post { if (started) { allApps = apps; rebuild() } }
         }
     }
@@ -671,20 +699,19 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
     }
 
-    /** Columnas = min(7, apps) y ancho a medida, para centrar la grilla en el mismo eje que el dock. */
+    /** Columnas = min(7, apps). Grilla, encabezados y "Continuar viendo" parten del mismo margen seguro izquierdo (96 px). */
     private fun layoutGrid(count: Int) {
         val cols = count.coerceIn(1, GRID_COLS)
         (gridRv.layoutManager as GridLayoutManager).spanCount = cols
         val lp = gridRv.layoutParams as FrameLayout.LayoutParams
         val w = dp(cols * cellDp + 16)
-        if (lp.width != w) { lp.width = w; gridRv.layoutParams = lp }
-        // El encabezado se alinea con el borde izquierdo de los tiles de la grilla
-        (gridHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = (resources.displayMetrics.widthPixels - w) / 2 + dp(8 + 6)
+        // El borde del primer tile (padding de la grilla 8 dp + padX 6 dp) cae exactamente en el margen seguro
+        val gl = SAFE_LEFT - dp(8 + 6)
+        if (lp.width != w || lp.leftMargin != gl) { lp.width = w; lp.leftMargin = gl; gridRv.layoutParams = lp }
+        (gridHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = SAFE_LEFT
         gridHeader.requestLayout()
-        val left = (resources.displayMetrics.widthPixels - w) / 2 + dp(8 + 6)
-        (contHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = left
-        (contRv.layoutParams as FrameLayout.LayoutParams).leftMargin = left - dp(6)
-        contHeader.requestLayout(); contRv.requestLayout()
+        (contHeader.layoutParams as FrameLayout.LayoutParams).leftMargin = SAFE_LEFT
+        contHeader.requestLayout()
     }
 
     /** Slot del tile enfocado (favorita o grilla), o null si el foco está fuera (barra superior, Top Shelf). */
@@ -758,9 +785,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Capas a pantalla completa con alpha 0 pasan a INVISIBLE: la GPU ni las considera
         val blurOn = grid && prefs.blurLevel > 0 && blurBmp != null
         set(blurView, if (blurOn) 1f else 0f, 0f, if (blurOn) View.VISIBLE else View.INVISIBLE)
-        // Brillo del fondo: scrim negro uniforme
-        val dimA = 1f - prefs.bgBrightness / 100f
-        set(dimView, dimA, 0f, if (dimA <= 0.001f) View.INVISIBLE else View.VISIBLE)
+        // Brillo del fondo: filtro de color sobre la propia obra (sin capa a pantalla completa extra para la GPU)
+        applyDim(animate = false)
         // Scrim en degradado solo detrás de la grilla: 0% en y=220 a 45% en y=520
         set(gridScrim, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         set(gridFade, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
@@ -786,6 +812,50 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             shelfView.clear()
             shelfPkg = null
         }
+    }
+
+    // ---------- Brillo del fondo y atenuación nocturna ----------
+
+    private var night = false
+    private var dimFactor = -1f
+    private var dimAnim: android.animation.ValueAnimator? = null
+    private val sunRun = Runnable { scheduleSun() }
+
+    private fun dimTarget() = prefs.bgBrightness / 100f * (if (night && prefs.nightDim) NIGHT_FACTOR else 1f)
+
+    /** Multiplica el color de la obra (y del blur) por el factor de brillo; con 100% no hay filtro y no cuesta nada. */
+    private fun setDimFactor(f: Float) {
+        dimFactor = f
+        val c = (f * 255f).toInt().coerceIn(0, 255)
+        val filter = if (f >= 0.999f) null else android.graphics.LightingColorFilter(android.graphics.Color.rgb(c, c, c), 0)
+        artView.colorFilter = filter
+        blurView.colorFilter = filter
+    }
+
+    private fun applyDim(animate: Boolean) {
+        val to = dimTarget()
+        dimAnim?.cancel()
+        if (!animate || dimFactor < 0f || !started) { setDimFactor(to); return }
+        dimAnim = android.animation.ValueAnimator.ofFloat(dimFactor, to).apply {
+            duration = 2500L
+            addUpdateListener { setDimFactor(it.animatedValue as Float) }
+            start()
+        }
+    }
+
+    /**
+     * Día/noche según el atardecer y el amanecer de Open-Meteo (los mismos datos del clima). Una sola alarma calculada
+     * (postDelayed hasta el próximo evento solar), sin ciclos periódicos; la transición es suave solo al cruzar la hora.
+     */
+    private fun scheduleSun() {
+        main.removeCallbacks(sunRun)
+        val st = weather?.let { SunDim.state(it.days, System.currentTimeMillis()) } ?: return
+        val changed = st.night != night
+        night = st.night
+        Theme.night = night && prefs.nightDim
+        applyTheme()
+        if (changed || dimFactor < 0f) applyDim(animate = changed)
+        st.nextChange?.let { main.postDelayed(sunRun, (it - System.currentTimeMillis()).coerceAtLeast(1000L) + 1000L) }
     }
 
     private fun openGrid(focusSlot: Int = AppAdapter.GRID) {
@@ -1017,7 +1087,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun changed(key: String) {
         when (key) {
             ShelfPrefs.BG_ONLINE -> { lastArt = System.currentTimeMillis(); loadArt(true) }
-            ShelfPrefs.BG_BRIGHTNESS -> applyState(state, animate = false)
+            ShelfPrefs.BG_BRIGHTNESS -> applyDim(animate = true)
+            ShelfPrefs.NIGHT_DIM -> { scheduleSun(); applyDim(animate = true) }
             ShelfPrefs.BLUR_LEVEL -> {
                 if (prefs.blurLevel == 0) {
                     // Ninguno: se suelta el bitmap blur
@@ -1291,6 +1362,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     // ---------- Teclas ----------
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        if (!ready) return super.dispatchKeyEvent(e)
         val down = e.action == KeyEvent.ACTION_DOWN
         val k = e.keyCode
         scheduleArtMode()
@@ -1365,7 +1437,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             }
             if (k == KeyEvent.KEYCODE_DPAD_UP && gridOpen && slot != null && slot - AppAdapter.GRID < (gridRv.layoutManager as GridLayoutManager).spanCount) {
                 // primera fila: sube a "Continuar viendo" si existe; si no, cierra la grilla
-                if (contHas && contRv.childCount > 0) { contRv.getChildAt(0).requestFocus(); return true }
+                if (contHas && contRv.childCount > 0) { contRv.firstVisible()?.requestFocus(); return true }
                 if (adapter.favCount > 0) { closeGrid(); return true }
             }
         }
@@ -1382,8 +1454,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         const val TILE_W = 224
         const val TILE_H = 126
         const val GRID_COLS = 7
+        /** Margen seguro izquierdo: 96 px a 1080p. */
+        val SAFE_LEFT get() = 96
         val BLUR_RADII = intArrayOf(0, 10, 20, 32)
         const val ART_VIDEO_DELAY_MS = 45_000L
+        const val NIGHT_FACTOR = 0.8f // 20% adicional de atenuación sobre el ajuste del usuario
         const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L
         const val PERM_TV = "android.permission.READ_TV_LISTINGS"

@@ -40,11 +40,33 @@ class ContinueRow(
         itemAnimator = null
         clipToPadding = false
         clipChildren = false
+        // Margen seguro de 96 px a ambos lados; el borde del primer card cae en el margen (descuenta padX de la celda)
+        setPadding(MainActivity.SAFE_LEFT - padX, 0, MainActivity.SAFE_LEFT, 0)
         overScrollMode = OVER_SCROLL_NEVER
         isFocusable = false
         setItemViewCacheSize(4)
         adapter = CardAdapter()
         visibility = INVISIBLE
+    }
+
+    /** Primera tarjeta completamente visible (no la oculta tras el margen izquierdo). */
+    fun firstVisible(): View? {
+        for (i in 0 until childCount) { val c = getChildAt(i); if (c.left >= paddingStart - padX) return c }
+        return getChildAt(0)
+    }
+
+    /**
+     * Desplazamiento con ancla fija: la tarjeta enfocada queda en la posición 0 (primera) o en la 1 (resto), nunca centrada,
+     * así la anterior sigue visible a la izquierda y la última visible a la derecha queda cortada por el borde.
+     */
+    override fun requestChildRectangleOnScreen(child: View, rect: android.graphics.Rect, immediate: Boolean): Boolean {
+        val pos = getChildAdapterPosition(child)
+        if (pos < 0) return super.requestChildRectangleOnScreen(child, rect, immediate)
+        val step = cardW + 2 * padX
+        val target = paddingStart + (if (pos >= 1) step else 0)
+        val dx = child.left - target
+        if (dx != 0) { if (immediate) scrollBy(dx, 0) else smoothScrollBy(dx, 0, Ui.DECEL, 180) }
+        return dx != 0
     }
 
     fun setItems(list: List<TvProviderShelf.Continue>) {
@@ -67,11 +89,6 @@ class ContinueRow(
             // Sello de la app: ícono pequeño abajo a la derecha, radio 4 y sombra suave
             val badge = ImageView(c).apply {
                 scaleType = ImageView.ScaleType.FIT_XY
-                elevation = c.dpf(3f)
-                outlineProvider = object : ViewOutlineProvider() {
-                    override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, c.dpf(4f)) }
-                }
-                clipToOutline = true
             }
             cell.content.addView(badge, FrameLayout.LayoutParams(c.dp(28), c.dp(16), Gravity.BOTTOM or Gravity.END).apply { rightMargin = c.dp(6); bottomMargin = c.dp(8) })
             // Barra de avance de 3 px en el borde inferior

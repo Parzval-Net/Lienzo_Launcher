@@ -23,8 +23,17 @@ object Theme {
     private var anim: ValueAnimator? = null
     private val ev = ArgbEvaluator()
 
-    /** Dock tintado: color oscuro al 28% de alpha. */
-    fun dockTint() = (dark and 0xFFFFFF) or 0x47000000
+    /** Atenuación nocturna activa: el panel se aclara un poco para no hundirse en el fondo más oscuro. */
+    @JvmField var night = false
+
+    /** Dock tintado: color oscuro al 28% de alpha; de noche mezclado 14% con blanco y 34% de alpha. */
+    fun dockTint(): Int {
+        if (!night) return (dark and 0xFFFFFF) or 0x47000000
+        val r = (Color.red(dark) * 0.86f + 255 * 0.14f).toInt()
+        val g = (Color.green(dark) * 0.86f + 255 * 0.14f).toInt()
+        val b = (Color.blue(dark) * 0.86f + 255 * 0.14f).toInt()
+        return Color.argb(0x57, r, g, b)
+    }
 
     fun neutral() = Palette(NEUTRAL_ACCENT, NEUTRAL_LIGHT, NEUTRAL_DARK)
 

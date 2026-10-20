@@ -30,8 +30,8 @@ open class FocusCell(
 
     val content = FrameLayout(ctx)
     val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_XY }
-    private val halo = View(ctx)
-    private val gloss = View(ctx)
+    private val halo = FxView(ctx)
+    private val gloss = FxView(ctx)
     private val parallax = ctx.dpf(5f)
     private val ring: Drawable = GradientDrawable().apply {
         setColor(0)
@@ -139,4 +139,9 @@ object HaloBitmaps {
     }
 
     fun clear() { map.clear() }
+}
+
+/** Vista de efecto (halo, brillo): sin renderizado superpuesto, así animar su alpha no abre una capa fuera de pantalla en la GPU. */
+class FxView(ctx: Context) : View(ctx) {
+    override fun hasOverlappingRendering() = false
 }
