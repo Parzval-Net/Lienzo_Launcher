@@ -350,6 +350,17 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         scheduleArtMode()
     }
 
+    override fun onPause() {
+        if (ready) releaseVideoForPlayback()
+        super.onPause()
+    }
+
+    /** Prioridad a la reproducción: suelta el decodificador del modo arte de inmediato, sin animación. */
+    private fun releaseVideoForPlayback() {
+        if (artMode) applyState(stateBeforeArt, animate = false)
+        stopArtVideo(animate = false)
+    }
+
     override fun onStop() {
         if (!ready) { super.onStop(); return }
         started = false
@@ -890,6 +901,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             adapter.newKeys = rest
             adapter.refreshSlot(adapter.slotOf(e.key, false))
         }
+        releaseVideoForPlayback()
         try { startActivity(repo.launchIntent(e)) } catch (_: Exception) {
             Toast.makeText(this, "No se pudo abrir ${e.label}", Toast.LENGTH_SHORT).show()
         }
@@ -951,6 +963,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private fun launchItem(it: TopShelfItem) {
         val uri = it.intentUri ?: return
+        releaseVideoForPlayback()
         try {
             startActivity(Intent.parseUri(uri, Intent.URI_INTENT_SCHEME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: Exception) {

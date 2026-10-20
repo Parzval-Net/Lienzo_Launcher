@@ -85,6 +85,13 @@ class ArtDreamService : DreamService() {
         if (videoFile() != null) startVideo() else loadNext()
     }
 
+    // Al despertar se suelta el decodificador antes de que la app siguiente reproduzca.
+    override fun onDreamingStopped() {
+        main.removeCallbacksAndMessages(null)
+        releasePlayer()
+        super.onDreamingStopped()
+    }
+
     override fun onDetachedFromWindow() {
         attached = false
         main.removeCallbacksAndMessages(null)
