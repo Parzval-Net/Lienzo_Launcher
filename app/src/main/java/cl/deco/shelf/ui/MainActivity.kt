@@ -1298,14 +1298,19 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val h = healthSnapshot()
             if (h.needsConfirm) {
                 // Primera lectura baja: se sella la evaluación (tope de 6 h) y se repite a los 20 s antes de contarla
-                healthStore.save(st.copy(lastEvalMs = now, lastUptimeMs = up))
+                st = st.copy(lastEvalMs = now, lastUptimeMs = up)
+                healthStore.save(st)
+                topBar.setRestartHint(HealthNotice.visible(st, now, t)) { openHealth() } // mientras se confirma, el chip refleja el estado vigente
+                Log.i("Shelf", "salud: lectura baja, se confirma en ${cl.deco.shelf.util.DeviceHealth.CONFIRM_MS / 1000} s")
                 main.postDelayed({ evaluateHealth(confirming = true) }, cl.deco.shelf.util.DeviceHealth.CONFIRM_MS)
                 return
             }
             st = HealthNotice.onEvaluation(st, now, h.cmaFreeKb, h.cmaTotalKb, h.uptimeMs, t)
         } else st = st.copy(lastUptimeMs = up)
         healthStore.save(st)
-        topBar.setRestartHint(!blocked && HealthNotice.visible(st, now, t)) { openHealth() }
+        val show = !blocked && HealthNotice.visible(st, now, t)
+        Log.i("Shelf", "salud: confirmando=$confirming bloqueado=$blocked bajas=${st.lowCount} chip=$show ultimoAviso=${st.lastNoticeMs}")
+        topBar.setRestartHint(show) { openHealth() }
     }
 
     /** "Recordarme más tarde": oculta el aviso y no vuelve antes de 24 h. */
