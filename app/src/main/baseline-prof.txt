@@ -1,0 +1,48 @@
+# Baseline profile de Lienzo (cl.deco.shelf): solo el camino de arranque en frío y de foco en el home.
+# Se suma al de las librerías (recyclerview, profileinstaller). H = caliente, S = arranque, P = post arranque.
+# Acotado a propósito: quedan fuera los paneles que se abren a demanda (Ajustes, Salud, Reloj, Importar, Menú, Hoy) y
+# AlarmService/AlarmActivity/AlarmCard, que no corren al abrir ni al navegar el dock y la grilla.
+
+# Aplicación y ajustes
+HSPLcl/deco/shelf/App**;->**(**)**
+Lcl/deco/shelf/App;
+Lcl/deco/shelf/Graph;
+HSPLcl/deco/shelf/settings/**;->**(**)**
+
+# ui: Activity, dock y grilla (adaptador, celdas con foco, recycler), barra superior, Top Shelf y Continuar viendo, tema
+HSPLcl/deco/shelf/ui/MainActivity**;->**(**)**
+HSPLcl/deco/shelf/ui/AppAdapter**;->**(**)**
+HSPLcl/deco/shelf/ui/CellGeo;->**(**)**
+HSPLcl/deco/shelf/ui/FocusCell**;->**(**)**
+HSPLcl/deco/shelf/ui/FxView**;->**(**)**
+HSPLcl/deco/shelf/ui/HaloBitmaps**;->**(**)**
+HSPLcl/deco/shelf/ui/ShelfRecycler**;->**(**)**
+HSPLcl/deco/shelf/ui/TopBar**;->**(**)**
+HSPLcl/deco/shelf/ui/TopShelfView**;->**(**)**
+HSPLcl/deco/shelf/ui/ContinueRow**;->**(**)**
+HSPLcl/deco/shelf/ui/Theme**;->**(**)**
+HSPLcl/deco/shelf/ui/Ui**;->**(**)**
+HSPLcl/deco/shelf/ui/Nav;->**(**)**
+HSPLcl/deco/shelf/ui/Units;->**(**)**
+HSPLcl/deco/shelf/ui/Es;->**(**)**
+HSPLcl/deco/shelf/ui/WeatherIcons;->**(**)**
+Lcl/deco/shelf/ui/MainActivity;
+Lcl/deco/shelf/ui/AppAdapter;
+Lcl/deco/shelf/ui/FocusCell;
+Lcl/deco/shelf/ui/ShelfRecycler;
+Lcl/deco/shelf/ui/TopBar;
+
+# apps: repositorio de apps, favoritas, render y carga de tiles
+HSPLcl/deco/shelf/apps/**;->**(**)**
+Lcl/deco/shelf/apps/AppRepository;
+Lcl/deco/shelf/apps/ImageLoader;
+Lcl/deco/shelf/apps/TileRenderer;
+
+# clock: lo que corre al arrancar (indicadores de la barra, reprogramación, apagado nocturno) y los receivers
+HSPLcl/deco/shelf/clock/Clock**;->**(**)**
+HSPLcl/deco/shelf/clock/TimerItem;->**(**)**
+HSPLcl/deco/shelf/clock/AlarmItem;->**(**)**
+HSPLcl/deco/shelf/clock/NightMode;->**(**)**
+HSPLcl/deco/shelf/clock/Reschedule;->**(**)**
+HSPLcl/deco/shelf/clock/AlarmReceiver;->**(**)**
+HSPLcl/deco/shelf/clock/BootReceiver;->**(**)**
