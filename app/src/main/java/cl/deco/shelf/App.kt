@@ -30,6 +30,8 @@ class App : Application() {
             )
         }
         if (Application.getProcessName() == packageName) {
+            // getSharedPreferences solo dispara la lectura en un hilo propio: cuando MainActivity pide un valor ya está cargado
+            getSharedPreferences("shelf", MODE_PRIVATE)
             installCrashHandler()
             if (BuildConfig.CRASH_TRIGGER) registerCrashTrigger()
         }
