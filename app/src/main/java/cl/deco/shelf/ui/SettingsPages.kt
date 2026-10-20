@@ -156,7 +156,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
                     main.post {
                         if (!panel.isOpen) return@post
                         host.fondosChanged()
-                        panel.back(); panel.push(managePage())
+                        // Se reconstruyen también las opciones de "Mis fondos" (lista de videos y conteos)
+                        panel.back(); panel.back(); panel.push(myBackgroundsPage()); panel.push(managePage())
                     }
                 }
             } else pendingDelete = key
