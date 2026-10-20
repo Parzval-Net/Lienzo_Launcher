@@ -9,14 +9,30 @@ import java.io.File
  * al configurar el decodificador seguro (error -12) hasta reiniciar. Lectura instantánea, sin polling.
  */
 object DeviceHealth {
-    /** Bajo este umbral, medido en el home sin video, se recomienda reiniciar. */
-    const val CMA_LOW_KB = 150L * 1024
+    /**
+     * Bajo este umbral de CmaFree, medido en el home, se recomienda reiniciar.
+     *
+     * Criterio (medido en el deco DIW585, Android 12, CmaTotal 544 MB, 18 h encendido, reproducción correcta en Netflix,
+     * Movistar y YouTube): CmaFree no mide fragmentación sino cuánto de la CMA no usa el sistema para página caché
+     * (memoria movible que el kernel desaloja al pedir CMA contigua). En un home sano oscila entre 77 y 130 MB, con o sin
+     * apps de video en caché (Netflix ~125 MB y YouTube ~170 MB de RSS no cambian la tendencia) y deriva unos MB por minuto.
+     * Con 150 MB el aviso salía siempre (falso positivo permanente). Se fija en 48 MB, ~40% bajo el mínimo sano medido,
+     * y [CONFIRM_MS] exige que la lectura baja se repita 20 s después, para no avisar por el valor transitorio de los
+     * segundos posteriores a cerrar un video. Los 7 días encendido siguen siendo el otro disparador.
+     * Lienzo no puede ver el RSS de otras apps (Android 12), así que la recomendación no distingue apps en caché.
+     */
+    const val CMA_LOW_KB = 48L * 1024
+
+    /** Una lectura baja de CMA se confirma con otra tras este tiempo antes de avisar. */
+    const val CONFIRM_MS = 20_000L
     const val UPTIME_DAYS = 7
 
     data class Snapshot(val cmaFreeKb: Long, val cmaTotalKb: Long, val uptimeMs: Long) {
         val cmaLow get() = cmaTotalKb > 0 && cmaFreeKb in 0 until CMA_LOW_KB
         val longUptime get() = uptimeMs > UPTIME_DAYS * 86_400_000L
         val restartRecommended get() = cmaLow || longUptime
+        /** Solo la CMA baja (sin 7 días de uptime) se confirma con una segunda lectura. */
+        val needsConfirm get() = cmaLow && !longUptime
     }
 
     /** Acción sugerida en el panel: qué botón recibe el foco inicial. */

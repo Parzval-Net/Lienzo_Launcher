@@ -551,6 +551,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             var blur: Bitmap? = null
             var pal: Palette? = null
             if (a != null) {
+                val tDecode = android.os.SystemClock.elapsedRealtime()
                 // Blur y paleta salen de la obra limpia; el scrim inferior se hornea después (una capa menos en GPU)
                 var tmpBlur: Bitmap? = null
                 var tmpPal: Palette? = null
@@ -562,6 +563,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                     }
                 } catch (_: Throwable) { null }
                 blur = tmpBlur; pal = tmpPal
+                Log.i("Shelf", "loadArt: decodificar, paleta y scrim ${android.os.SystemClock.elapsedRealtime() - tDecode} ms (rotar=$rotate)")
             }
             val art = a
             main.post {
@@ -1269,9 +1271,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         return if (BuildConfig.FORCE_HEALTH) h.copy(uptimeMs = 8 * 86_400_000L) else h
     }
 
-    private val checkHealth = Runnable {
-        if (!started || artPlayer != null) return@Runnable
+    private val checkHealth = Runnable { evaluateHealth(confirmed = false) }
+
+    /** Con CMA baja (y sin 7 días de uptime) la primera lectura no avisa: se repite tras DeviceHealth.CONFIRM_MS. */
+    private fun evaluateHealth(confirmed: Boolean) {
+        if (!started || artPlayer != null) return
         val h = healthSnapshot()
+        if (h.needsConfirm && !confirmed) { main.postDelayed({ evaluateHealth(confirmed = true) }, cl.deco.shelf.util.DeviceHealth.CONFIRM_MS); return }
         val snoozed = cl.deco.shelf.util.DeviceHealth.snoozed(System.currentTimeMillis(), prefs.healthSnoozeUntil)
         topBar.setRestartHint(h.restartRecommended && !snoozed) { openHealth() }
     }
