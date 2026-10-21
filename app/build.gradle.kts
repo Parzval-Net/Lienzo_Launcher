@@ -31,6 +31,8 @@ android {
         buildConfigField("boolean", "FORCE_HEALTH", project.hasProperty("lienzoForceHealth").toString())
         // Solo con -PlienzoForceOffline: el home se comporta como sin red (sin apagar el WiFi del deco). El release normal NO lo trae.
         buildConfigField("boolean", "FORCE_OFFLINE", project.hasProperty("lienzoForceOffline").toString())
+        // Solo con -PlienzoTvDump: vuelca Watch Next y canales preview al logcat (tag ShelfTvDump) para diagnosticar. El release normal NO lo trae.
+        buildConfigField("boolean", "TV_DUMP", project.hasProperty("lienzoTvDump").toString())
     }
 
     buildFeatures { buildConfig = true }

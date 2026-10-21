@@ -743,6 +743,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val t0 = android.os.SystemClock.elapsedRealtime()
             try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
             Log.i("Shelf", "preload TvProvider: ${android.os.SystemClock.elapsedRealtime() - t0} ms (${apps.size} apps)")
+            if (BuildConfig.TV_DUMP) cl.deco.shelf.shelf.TvDump.run(applicationContext)
             main.post { if (started) { allApps = apps; rebuild() } }
         }
     }
