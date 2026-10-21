@@ -35,6 +35,10 @@ interface SettingsHost {
     fun importFromUsb()
     /** Cambió el contenido de Mis fondos (borrado) o la fuente: recargar el fondo si corresponde. */
     fun fondosChanged()
+    /** "Buscar actualizaciones": consulta GitHub ahora y, si hay versión nueva, abre el panel de actualización. */
+    fun checkUpdates()
+    /** Texto de estado de la última búsqueda (para Ajustes > Info). */
+    fun updateStatus(): String
 }
 
 /** Construye las páginas del panel de ajustes a partir de ShelfPrefs. */
@@ -96,10 +100,13 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Memoria (PSS actual)") { host.pss() },
         Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
         Row.Act("Salud del deco", { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) "Reinicio recomendado" else "En orden" }) { host.openHealth() },
+        Row.Act("Buscar actualizaciones", { host.updateStatus() }) { host.checkUpdates() },
+        choice("Actualizaciones automáticas", ShelfPrefs.UPDATE_AUTO, listOf("Buscar y avisar", "Desactivadas"), listOf(true, false), { p.updateAuto }, { p.updateAuto = it }),
         Row.Info("Último aviso") { cl.deco.shelf.util.HealthNoticeStore(p.sp).lastNoticeText(Es.english) },
         Row.Info("Memoria de video (CMA)") { cl.deco.shelf.util.DeviceHealth.cmaText(cl.deco.shelf.util.DeviceHealth.read()) },
         Row.Info("Encendido hace") { cl.deco.shelf.util.DeviceHealth.uptimeText(cl.deco.shelf.util.DeviceHealth.read().uptimeMs) },
-        Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; clima Open-Meteo; feriados Nager.Date; idea del watchdog: Free My TV (MIT)" },
+        Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; feriados Nager.Date; idea del watchdog: Free My TV (MIT)" },
+        Row.Info("Clima") { "Weather data by Open-Meteo.com (open-meteo.com), licencia CC BY 4.0" },
         Row.Act("Exportar configuración") { lastBackup = host.exportBackup(); panel.rebuild() },
         Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
         Row.Act("Restaurar configuración") { panel.push(restorePage()) },

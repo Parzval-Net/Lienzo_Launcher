@@ -63,6 +63,11 @@ import cl.deco.shelf.util.NetworkWatcher
 import cl.deco.shelf.util.HealthNotice
 import cl.deco.shelf.util.HealthNoticeStore
 import cl.deco.shelf.util.MemoryCleaner
+import cl.deco.shelf.update.UpdateChecker
+import cl.deco.shelf.update.UpdateInfo
+import cl.deco.shelf.update.UpdatePanel
+import cl.deco.shelf.update.UpdateRules
+import cl.deco.shelf.update.UpdateStore
 import cl.deco.shelf.data.art.ArtProgress
 import java.time.LocalDate
 import java.time.LocalTime
@@ -104,6 +109,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var settings: SettingsPanel
     private lateinit var health: HealthPanel
     private lateinit var importPanel: ImportPanel
+    private lateinit var updatePanel: UpdatePanel
     private var pendingImport = false
     private lateinit var settingsPages: SettingsPages
     private lateinit var dockBg: GradientDrawable
@@ -301,6 +307,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onSnooze = { dismissHealthNotice(); closeHealth() }
             onOpenAndroidSettings = { QuickAccess.launch(this@MainActivity, QuickAccess.items.last()) }
         }
+        updatePanel = UpdatePanel(this).apply {
+            onSnooze = { dismissUpdateNotice(); closeUpdate() }
+            onClose = { closeUpdate() }
+        }
         importPanel = ImportPanel(this).apply {
             onClose = { closeImport() }
             onImported = { fondosChanged(); settingsPages.refreshFondos() }
@@ -321,6 +331,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         root.addView(settings, ViewGroup.LayoutParams(-1, -1))
         root.addView(health, ViewGroup.LayoutParams(-1, -1))
         root.addView(importPanel, ViewGroup.LayoutParams(-1, -1))
+        root.addView(updatePanel, ViewGroup.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(16) })
         setContentView(root)
         // El foco decide el estado visual: barra superior vs dock
@@ -375,6 +386,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         checkLowSpace()
         // Salud del deco: se mide unos segundos después de volver, cuando la app anterior ya soltó su memoria de video
         main.postDelayed(checkHealth, 4000)
+        // Actualizaciones: al volver al home, como máximo cada 24 h, después de la medición de salud
+        main.postDelayed(checkUpdate, 6000)
+        updatePanel.onHostStart()
         // Asistente de primer inicio: una sola vez; después, desde Ajustes
         if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
         updateClockStatus() // alarmas y apagado nocturno ya se reprograman en App.onCreate, BootReceiver y al cambiar ajustes
@@ -410,6 +424,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
+        if (updatePanel.isOpen && !updatePanel.keepAcrossStop) closeUpdate()
         if (artMode) applyState(stateBeforeArt, animate = false)
         stopArtVideo(animate = false)
         pendingFree?.run()
@@ -429,6 +444,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
+        if (updatePanel.isOpen) closeUpdate()
         endMove()
         if (state != HomeState.DOCK) applyState(HomeState.DOCK)
         focusFirst()
@@ -453,6 +469,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ioShelf.shutdownNow()
         ioArt.shutdownNow()
         loader.shutdown()
+        updatePanel.close()
         super.onDestroy()
     }
 
@@ -1124,7 +1141,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun enterArtMode() {
-        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || importPanel.isOpen) return
+        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen) return
         if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
         stateBeforeArt = state
         applyState(HomeState.ART_MODE)
@@ -1336,6 +1353,105 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         blockContent(false)
         prevFocus?.requestFocus()
         if (currentFocus == null || !currentFocus!!.isShown) focusFirst() // p. ej. el aviso se ocultó con "Recordarme más tarde"
+    }
+
+    // ---------- Actualizaciones (GitHub) ----------
+
+    private val updateStore by lazy { UpdateStore(this) }
+    private val updateChecker by lazy { UpdateChecker(this, updateStore) }
+    private var updateChecking = false
+    private val updateTiming = UpdateRules.Timing.NORMAL
+    private val checkUpdate = Runnable { evaluateUpdate() }
+
+    /**
+     * Aviso "Actualización vX disponible", mismas reglas antifatiga que Salud del deco (ver UpdateRules): la búsqueda solo ocurre al
+     * volver al home, como máximo cada 24 h, con la opción activada, con red y sin reproducción ni modo arte; el chip se oculta solo
+     * a las 12 h y "Más tarde" lo silencia 24 h. Sin servicios ni alarmas.
+     */
+    private fun evaluateUpdate() {
+        if (!started) return
+        val now = System.currentTimeMillis()
+        val blocked = artPlayer != null || artMode || MemoryCleaner.playbackActive(this)
+        var st = UpdateRules.afterInstalled(updateStore.load(), updateChecker.installedCode())
+        if (!prefs.updateAuto) { topBar.setUpdateHint(null) {}; updateStore.save(st); return }
+        val online = netWatcher?.online ?: true
+        if (online && UpdateRules.canCheck(st, now, updateTiming, blocked, auto = true) && !updateChecking) {
+            updateStore.save(st)
+            runUpdateCheck(manual = false)
+            return
+        }
+        updateStore.save(st)
+        showUpdateChip(st, now, blocked)
+    }
+
+    private fun showUpdateChip(st: UpdateRules.State, now: Long, blocked: Boolean) {
+        val info = updateStore.info
+        val show = !blocked && prefs.updateAuto && info != null && UpdateRules.visible(st, now, updateTiming)
+        if (show && info != null) topBar.setUpdateHint(info.chipText()) { openUpdate(info) } else topBar.setUpdateHint(null) {}
+    }
+
+    /** Búsqueda en el hilo de datos; [manual] omite los límites de frecuencia y avisa el resultado. */
+    private fun runUpdateCheck(manual: Boolean) {
+        if (updateChecking) return
+        updateChecking = true
+        ioData.execute {
+            val out = updateChecker.check()
+            main.post {
+                updateChecking = false
+                if (!ready) return@post
+                val now = System.currentTimeMillis()
+                var st = updateStore.load()
+                val failed = out is UpdateChecker.Outcome.Failed
+                if (!failed) {
+                    val code = (out as? UpdateChecker.Outcome.Available)?.info?.versionCode ?: 0L
+                    st = UpdateRules.onCheck(st, now, updateTiming, code)
+                } else st = st.copy(lastCheckMs = now) // un fallo también cuenta: no se reintenta antes de 24 h (la búsqueda manual siempre está)
+                updateStore.save(st)
+                updateStore.status = when (out) {
+                    is UpdateChecker.Outcome.Available -> "${UpdateRules.displayVersion(out.info.versionName)} disponible: OK para instalar"
+                    is UpdateChecker.Outcome.UpToDate -> out.text
+                    is UpdateChecker.Outcome.Failed -> out.text
+                }
+                if (manual) {
+                    if (settings.isOpen) settings.rebuild()
+                    if (out is UpdateChecker.Outcome.Available) { if (started) openUpdate(out.info) }
+                    else Toast.makeText(this, updateStore.status, Toast.LENGTH_SHORT).show()
+                } else if (started) {
+                    showUpdateChip(st, now, artPlayer != null || artMode || MemoryCleaner.playbackActive(this))
+                }
+            }
+        }
+    }
+
+    override fun checkUpdates() {
+        val known = updateStore.info
+        if (known != null && UpdateRules.isApplicable(known, updateChecker.installedCode(), android.os.Build.VERSION.SDK_INT) && updateStore.load().availableCode > 0) {
+            openUpdate(known); return
+        }
+        Toast.makeText(this, "Buscando actualizaciones...", Toast.LENGTH_SHORT).show()
+        runUpdateCheck(manual = true)
+    }
+
+    override fun updateStatus(): String = if (updateChecking) "Buscando..." else updateStore.status.ifEmpty { "Nunca" }
+
+    private fun dismissUpdateNotice() {
+        updateStore.save(UpdateRules.onDismissed(updateStore.load(), System.currentTimeMillis(), updateTiming.cooldownMs))
+        topBar.setUpdateHint(null) {}
+    }
+
+    private fun openUpdate(info: UpdateInfo) {
+        updateStore.save(UpdateRules.onOpened(updateStore.load()))
+        topBar.setUpdateHint(null) {}
+        if (settings.isOpen) closeSettings() else prevFocus = currentFocus
+        blockContent(true)
+        updatePanel.open(info)
+    }
+
+    private fun closeUpdate() {
+        updatePanel.close()
+        blockContent(false)
+        prevFocus?.requestFocus()
+        if (currentFocus == null || !currentFocus!!.isShown) focusFirst()
     }
 
     /** Suelta las cachés propias: LRU de tiles y, fuera de la grilla, el bitmap blur (se regenera al abrir la grilla). */
@@ -1590,6 +1706,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         if (health.isOpen) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down && !health.back()) closeHealth(); return true }
+            if (k == KeyEvent.KEYCODE_MENU) return true
+            return super.dispatchKeyEvent(e)
+        }
+        if (updatePanel.isOpen) {
+            if (k == KeyEvent.KEYCODE_BACK) { if (down && !updatePanel.back()) closeUpdate(); return true }
             if (k == KeyEvent.KEYCODE_MENU) return true
             return super.dispatchKeyEvent(e)
         }

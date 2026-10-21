@@ -59,6 +59,8 @@ class ShelfPrefs(context: Context) {
     var fahrenheit: Boolean get() = bool(FAHRENHEIT, false); set(v) = put(FAHRENHEIT, v)
     var english: Boolean get() = bool(ENGLISH, false); set(v) = put(ENGLISH, v)
     var sundayFirst: Boolean get() = bool(SUNDAY_FIRST, false); set(v) = put(SUNDAY_FIRST, v)
+    /** Actualizaciones automáticas: true = buscar y avisar (por defecto), false = desactivadas (solo manual desde Info). */
+    var updateAuto: Boolean get() = bool(UPDATE_AUTO, true); set(v) = put(UPDATE_AUTO, v)
 
     fun setCity(name: String, lat: Double, lon: Double, tz: String) {
         sp.edit().putString(CITY_NAME, name)
@@ -95,11 +97,12 @@ class ShelfPrefs(context: Context) {
         const val NIGHT_ON = "night_on"; const val NIGHT_FROM = "night_from"; const val NIGHT_TO = "night_to"; const val NIGHT_IDLE = "night_idle"
         const val CITY_NAME = "city_name"; const val CITY_LAT = "city_lat"; const val CITY_LON = "city_lon"; const val CITY_TZ = "city_tz"
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
+        const val UPDATE_AUTO = "update_auto"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
             BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
-            FAHRENHEIT, ENGLISH, SUNDAY_FIRST, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
+            FAHRENHEIT, ENGLISH, SUNDAY_FIRST, UPDATE_AUTO, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )
     }
 }

@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Actualizador: instala el APK verificado con PackageInstaller; Android siempre pide confirmar y autorizar "instalar apps desconocidas" -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Apagado nocturno: se concede por adb (pm grant), no es un permiso de usuario -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 

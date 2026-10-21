@@ -58,10 +58,28 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
     fun setRestartHint(on: Boolean, onClick: () -> Unit) {
         healthChip.visibility = if (on) VISIBLE else GONE
         healthChip.setOnClickListener { onClick() }
+        renderUpdate()
     }
     fun setLowSpace(on: Boolean, onClick: () -> Unit) {
         lowChip.visibility = if (on) VISIBLE else GONE
         lowChip.setOnClickListener { onClick() }
+    }
+    /** Aviso discreto "Actualización vX disponible": enfocable, abre el panel de actualización. */
+    private val updateChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_android).apply {
+        isFocusable = true; isClickable = true
+        setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6))
+        background = noticeBg(ctx)
+    }
+    private var updateText: String? = null
+    /** Con el aviso de reinicio visible no se muestra el de actualización (caben mal juntos en la barra). */
+    private fun renderUpdate() {
+        updateChip.visibility = if (updateText != null && healthChip.visibility != VISIBLE) VISIBLE else GONE
+    }
+    fun setUpdateHint(text: String?, onClick: () -> Unit) {
+        updateText = text
+        if (text != null) updateChip.text = text
+        updateChip.setOnClickListener { onClick() }
+        renderUpdate()
     }
     private val status = LinearLayout(ctx).apply {
         gravity = Gravity.CENTER_VERTICAL
@@ -130,9 +148,10 @@ class TopBar(ctx: Context, onClock: () -> Unit, onWeather: () -> Unit, onWifi: (
             addView(artChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = ctx.dp(10) })
             addView(lowChip)
             addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
+            addView(updateChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ctx.dp(10) })
         }, LayoutParams(-2, -2, Gravity.CENTER))
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        // Accesos directos junto al clima (como en AT4K y Monet): Wi-Fi y Ajustes
+        // Accesos directos junto al clima: Wi-Fi y Ajustes
         fun action(res: Int, desc: String, f: () -> Unit) = android.widget.ImageView(ctx).apply {
             setImageResource(res); setColorFilter(Ui.TEXT)
             contentDescription = desc
