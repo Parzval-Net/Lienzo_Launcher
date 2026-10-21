@@ -2,6 +2,9 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.1.1 (2026-10-21)
+- Primera actualización probada por el actualizador integrado.
+
 ## 1.1.0 (2026-10-21)
 - Actualizador seguro desde GitHub Releases. Sin servicios residentes: consulta `releases/latest` (ETag y User-Agent) solo al volver al home, como máximo una vez cada 24 h, nunca con reproducción activa ni en modo arte. También manual en Ajustes > Info > "Buscar actualizaciones".
 - Aviso discreto "Actualización vX disponible" en la barra superior, con las mismas reglas antifatiga de Salud del deco: se oculta solo a las 12 h, "Más tarde" lo silencia 24 h y no vuelve antes de 24 h.
