@@ -1,8 +1,30 @@
+# Compilación
 build/
 .gradle/
-local.properties
+.kotlin/
 *.apk
+*.aab
+dist/
+
+# IDE y sistema
 .idea/
+*.iml
+.DS_Store
+captures/
+*.hprof
+
+# Local y secretos: la firma se hace solo en el equipo del mantenedor
+local.properties
 keystore.properties
 *.jks
 *.keystore
+*.p12
+*.pem
+CONTRASENA*
+firma/
+.env
+.env.*
+
+# Material interno que no se publica
+re/
+.claude/

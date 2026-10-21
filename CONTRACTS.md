@@ -1,8 +1,7 @@
 # Shelf: contratos y reglas para agentes
 
-Launcher Android TV liviano estilo tvOS para el deco Entel DIW585.
+Launcher Android TV liviano estilo tvOS para el deco DIW585.
 Hardware: 4x Cortex-A53 1.5 GHz, armeabi-v7a, Mali-450 (GLES 2.0), 2 GB RAM low_ram, Android 12, 1080p density 320.
-Spec de diseño: ../launcher-spec.md (tiles 5:3, no 16:10). Referencia visual: ../re/at4k-screens/home2.png (solo inspiración, no copiar).
 
 ## Reglas
 - Solo Android Views + RecyclerView. Sin Compose, Leanback, Glide, OkHttp, coroutines ni nuevas dependencias sin justificar.
