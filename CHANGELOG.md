@@ -2,6 +2,9 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.1.3 (2026-10-21)
+- Validación del reabrir automático: primera actualización hecha desde una versión que ya incluye esa función.
+
 ## 1.1.2 (2026-10-21)
 - Lienzo se reabre solo al terminar una actualización iniciada desde el actualizador integrado (antes el deco quedaba en el launcher anterior). No ocurre con instalaciones por ADB.
 
