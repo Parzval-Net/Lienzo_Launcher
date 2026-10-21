@@ -66,6 +66,7 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
             Log.w(TAG, "preload preview: $e"); null
         }
         chCands = previews?.continueItems.orEmpty()
+        Log.i(TAG, "TvProvider: watch_next=${wn.candidates.size}, canales 'seguir viendo'=${chCands.size}, apps con preview=${previews?.byPkg?.count { it.value.isNotEmpty() } ?: 0}")
         for (pkg in pkgs) put(pkg, merge(wn.byPkg[pkg].orEmpty(), previews?.byPkg?.get(pkg).orEmpty()))
     }
 
