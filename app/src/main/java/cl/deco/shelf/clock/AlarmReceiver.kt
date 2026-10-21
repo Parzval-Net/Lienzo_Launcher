@@ -39,5 +39,22 @@ class BootReceiver : BroadcastReceiver() {
         // La zona por defecto de la JVM se actualiza antes de entregar el broadcast; se refresca por si acaso
         if (i.action == Reschedule.TIMEZONE) java.util.TimeZone.setDefault(null)
         Reschedule.onEvent(i.action, { ClockScheduler.scheduleAll(ctx) }, { NightMode.evaluate(ctx) })
+        if (i.action == Reschedule.PACKAGE_REPLACED) reopenAfterUpdate(ctx)
+    }
+
+    /**
+     * Tras una actualización iniciada desde Lienzo, el sistema vuelve al launcher anterior: se reabre Lienzo.
+     * Solo si la inició el actualizador integrado (no una instalación por adb) y dentro de la ventana de 10 min.
+     * Android 12 permite este inicio desde segundo plano porque Lienzo es el home (y tiene "mostrar sobre otras apps").
+     */
+    private fun reopenAfterUpdate(ctx: Context) {
+        val store = cl.deco.shelf.update.UpdateStore(ctx)
+        val started = store.installStartedMs
+        store.installStartedMs = 0L
+        if (!cl.deco.shelf.update.UpdateRules.shouldReopen(started, System.currentTimeMillis())) return
+        runCatching {
+            ctx.startActivity(Intent(ctx, cl.deco.shelf.ui.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+        }.onFailure { android.util.Log.w("Shelf", "no se pudo reabrir tras actualizar: $it") }
     }
 }

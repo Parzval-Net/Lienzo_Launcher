@@ -170,4 +170,11 @@ object UpdateRules {
 
     /** Ya se instaló esa versión (o una mayor): se borra el aviso. */
     fun afterInstalled(s: State, installedCode: Long) = if (s.availableCode in 1..installedCode) s.copy(availableCode = 0L, shownMs = 0L) else s
+
+    /** Ventana para reabrir Lienzo tras una actualización iniciada por el actualizador integrado. */
+    const val REOPEN_WINDOW_MS = 10L * 60_000L
+
+    /** True si la actualización la inició Lienzo hace menos de [REOPEN_WINDOW_MS] (y no es un dato inválido del reloj). */
+    fun shouldReopen(installStartedMs: Long, now: Long): Boolean =
+        installStartedMs > 0L && now >= installStartedMs && now - installStartedMs <= REOPEN_WINDOW_MS
 }

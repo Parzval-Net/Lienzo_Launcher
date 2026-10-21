@@ -26,4 +26,7 @@ class UpdateStore(ctx: Context) {
 
     /** Texto de la última búsqueda para Ajustes > Info ("Al día", "Sin versiones publicadas", "Sin conexión"...). */
     var status: String get() = sp.getString("status", "") ?: ""; set(v) { sp.edit().putString("status", v).apply() }
+
+    /** Marca de tiempo de una instalación iniciada por el actualizador integrado (0 = ninguna). */
+    var installStartedMs: Long get() = sp.getLong("install_started", 0L); set(v) { sp.edit().putLong("install_started", v).commit() }
 }

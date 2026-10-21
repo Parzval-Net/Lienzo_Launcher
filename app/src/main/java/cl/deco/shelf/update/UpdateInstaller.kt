@@ -183,6 +183,7 @@ class UpdateInstaller(ctx: Context, private val ui: Listener) {
                 }
             }
             val pending = PendingIntent.getBroadcast(app, id, Intent(action).setPackage(app.packageName), PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            UpdateStore(app).installStartedMs = System.currentTimeMillis() // para reabrir Lienzo tras la actualización
             s.commit(pending.intentSender)
         }
     }
