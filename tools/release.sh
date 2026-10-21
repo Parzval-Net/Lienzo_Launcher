@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 die() { echo "ERROR: $*" >&2; exit 1; }
 say() { echo "== $*"; }
-run() { if [ "$DRY" -eq 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
+run() { if [ "$DRY" -eq 1 ]; then printf '[dry-run]'; printf ' %q' "$@"; echo; else "$@"; fi; }
 
 for c in git gh python3; do command -v "$c" >/dev/null 2>&1 || die "Falta '$c' en el PATH"; done
 
