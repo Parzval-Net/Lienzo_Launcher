@@ -46,14 +46,24 @@ class KeyService : AccessibilityService() {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) Log.i(TAG, "sin asignar: key ${event.keyCode} scan ${event.scanCode}")
             return false
         }
+        // Modo arte: mantener presionado abre el video apenas se cumple el tiempo (con las repeticiones del control) o al soltar
+        val held = event.eventTime - event.downTime >= LONG_MS
+        if (action == KeyMap.ART && event.action == KeyEvent.ACTION_DOWN) {
+            if (event.repeatCount == 0) longFired = false
+            else if (held && !longFired) { longFired = true; KeyMap.run(this, action, long = true) }
+        }
         if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
             Log.i(TAG, "key ${event.keyCode} -> $action")
-            KeyMap.run(this, action)
+            if (action != KeyMap.ART) KeyMap.run(this, action)
+            else if (!longFired) KeyMap.run(this, action, long = held)
+            longFired = false
         }
         return true
     }
 
-    private companion object { const val TAG = "KeyService" }
+    private var longFired = false
+
+    private companion object { const val TAG = "KeyService"; const val LONG_MS = 600L }
 }
 
 /**

@@ -451,13 +451,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             true
         }
         cl.deco.shelf.service.KeyMap.ACTION_ART_MODE -> {
+            val video = i.getBooleanExtra(cl.deco.shelf.service.KeyMap.EXTRA_ART_VIDEO, false)
             // Pedido explícito con un botón: entra aunque el modo arte automático esté desactivado en Ajustes
-            main.postDelayed({
-                if (!started || artMode) return@postDelayed
-                if (state != HomeState.DOCK && state != HomeState.TOPBAR) applyState(HomeState.DOCK, animate = false)
-                stateBeforeArt = HomeState.DOCK
-                applyState(HomeState.ART_MODE)
-            }, delay)
+            main.postDelayed({ if (started) artButton(video) }, delay)
             true
         }
         cl.deco.shelf.service.KeyMap.ACTION_INPUT_CONNECTED -> {
@@ -530,7 +526,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         menu.showList("Ajustes", opts)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Botón de Modo arte con Lienzo al frente: KeyService entrega la acción directo (startActivity pausaría y sacaría del modo arte)
+        if (ready) cl.deco.shelf.service.KeyMap.foreground = { handleRemoteAction(it, 0L) }
+    }
+
     override fun onPause() {
+        cl.deco.shelf.service.KeyMap.foreground = null
         if (ready) releaseVideoForPlayback()
         super.onPause()
     }
@@ -1339,12 +1342,35 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private val artVideoRun = Runnable { startArtVideo() }
 
     /**
+     * Botón de Modo arte (Perfil en TCL). Corta: entra con la obra o, ya dentro, pasa a la siguiente (si había video vuelve
+     * a la obra). Mantenida: entra directo al video; si el video ya corre, vuelve a la obra. Elegir una obra a mano
+     * reinicia la espera del video automático para que no la tape enseguida.
+     */
+    private fun artButton(video: Boolean) {
+        if (!artMode) {
+            if (state != HomeState.DOCK && state != HomeState.TOPBAR) applyState(HomeState.DOCK, animate = false)
+            stateBeforeArt = HomeState.DOCK
+            applyState(HomeState.ART_MODE)
+            if (video) { main.removeCallbacks(artVideoRun); startArtVideo(force = true) }
+            return
+        }
+        main.removeCallbacks(artVideoRun)
+        if (video) {
+            if (artPlayer != null || artSurface != null) stopArtVideo(true) else startArtVideo(force = true)
+            return
+        }
+        stopArtVideo(true)
+        nextArt()
+        if (prefs.artVideo) main.postDelayed(artVideoRun, ART_VIDEO_DELAY_MS)
+    }
+
+    /**
      * Video detrás del fondo: SurfaceView en el índice 0 de content (la obra queda encima) y MediaPlayer en loop sin audio.
      * Al primer frame real se funde la obra de alpha 1 a 0 en 1200 ms. Sin video o con el ajuste apagado, el modo arte
      * queda como siempre.
      */
-    private fun startArtVideo() {
-        if (state != HomeState.ART_MODE || artPlayer != null || !started || !prefs.artVideo) return
+    private fun startArtVideo(force: Boolean = false) {
+        if (state != HomeState.ART_MODE || artPlayer != null || artSurface != null || !started || !(prefs.artVideo || force)) return
         val file = VideoLibrary.pick(this, prefs) ?: return // Monet, video propio o rotación de todos (ver ajustes: Mis fondos)
         val sv = SurfaceView(this)
         artSurface = sv

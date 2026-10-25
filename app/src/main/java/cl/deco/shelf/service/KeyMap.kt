@@ -128,7 +128,15 @@ object KeyMap {
         ?.let { "Botón $it" } ?: "Botón $code"
 
     /** App de TV en vivo (botón TV y la opción "TV en vivo" de Entradas): por defecto Movistar TV si está instalada. */
-    fun liveTvApp(ctx: Context): String? = sp(ctx).getString(PREF_LIVETV, null) ?: DEFAULT_LIVETV.takeIf { installed(ctx, it) }
+    /** App elegida; si no hay, Movistar TV y luego la app de TV en vivo del fabricante (lista de OmarchyTV, MIT). */
+    fun liveTvApp(ctx: Context): String? = sp(ctx).getString(PREF_LIVETV, null)
+        ?: (listOf(DEFAULT_LIVETV) + BRAND_LIVETV).firstOrNull { installed(ctx, it) }
+
+    /** Apps de TV en vivo por marca: Sony, Sharp, Google TV, AOSP, DTVKit, TCL, Hisense, Philips y Xiaomi/MediaTek. */
+    private val BRAND_LIVETV = listOf(
+        "com.sony.dtv.tvx", "jp.co.sharp.av.android.aquostvapp", "com.google.android.tv", "com.android.tv",
+        "org.dtvkit.inputsource", "com.tcl.tv", "com.hisense.tv.livetv", "com.philips.tv.tvapp", "com.mediatek.wwtv.tvcenter",
+    )
 
     fun setLiveTvApp(ctx: Context, pkg: String?) { sp(ctx).edit().apply { if (pkg == null) remove(PREF_LIVETV) else putString(PREF_LIVETV, pkg) }.apply() }
 
@@ -167,14 +175,19 @@ object KeyMap {
 
     // ---- Ejecución ----
 
-    /** Ejecuta [action] para una tecla soltada. */
-    fun run(ctx: Context, action: String) {
+    /** Ejecuta [action] para una tecla soltada. [long]: pulsación mantenida (en Modo arte, el video). */
+    fun run(ctx: Context, action: String, long: Boolean = false) {
         when {
             action == INPUTS -> openLienzo(ctx, ACTION_OPEN_INPUTS)
             // Menú para elegir: Ajustes de Lienzo, ajustes rápidos del televisor o ajustes completos del sistema
             action == SETTINGS -> openLienzo(ctx, ACTION_OPEN_SETTINGS)
             action == APPS -> openLienzo(ctx, ACTION_OPEN_APPS)
-            action == ART -> openLienzo(ctx, ACTION_ART_MODE)
+            // Corta: entra con una obra o, ya en modo arte, pasa a la siguiente. Mantenida: video (o vuelve a la obra)
+            action == ART -> {
+                val i = Intent(ACTION_ART_MODE).setClassName(ctx, "cl.deco.shelf.ui.MainActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra(EXTRA_ART_VIDEO, long)
+                foreground?.invoke(i) ?: start(ctx, i)
+            }
             action == LIVETV -> liveTvApp(ctx)?.let { launch(ctx, it) }
             action.startsWith("app:") -> launch(ctx, action.removePrefix("app:"))
         }
@@ -184,6 +197,13 @@ object KeyMap {
     const val ACTION_OPEN_SETTINGS = "cl.deco.shelf.OPEN_SETTINGS"
     const val ACTION_OPEN_APPS = "cl.deco.shelf.OPEN_APPS"
     const val ACTION_ART_MODE = "cl.deco.shelf.ART_MODE"
+    const val EXTRA_ART_VIDEO = "art_video"
+
+    /**
+     * Lienzo al frente (mismo proceso, hilo principal): recibe la acción directo. Con startActivity Android pausaría la
+     * Activity y onPause la sacaría del modo arte, así que la segunda pulsación no podría pasar a la obra siguiente.
+     */
+    @Volatile var foreground: ((Intent) -> Boolean)? = null
     /** Un HDMI pasó de vacío a cable puesto (HdmiWatcher): Lienzo muestra el aviso para cambiar a esa entrada. */
     const val ACTION_INPUT_CONNECTED = "cl.deco.shelf.INPUT_CONNECTED"
     const val EXTRA_INPUT_ID = "input_id"

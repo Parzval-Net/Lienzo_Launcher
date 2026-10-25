@@ -5,22 +5,44 @@ Este proyecto usa ideas, datos y obras de terceros. Atribuciones:
 
 1. Free My TV (MIT) - https://github.com/simbasjungles/free-my-tv
    Lienzo toma de este proyecto la idea del watchdog de crashes (modo seguro tras fallos repetidos) y inspiración para el diseño.
-   El código de Lienzo está escrito de forma independiente; no se copió código de Free My TV.
+   El watchdog está escrito de forma independiente. Excepción: el cliente ADB local
+   (app/src/main/java/cl/deco/shelf/service/LocalAdb.kt) es una traducción a Kotlin de app/src/io/freemytv/Adb.java,
+   tomada a través de OmarchyTV (punto 2), y se distribuye bajo la licencia MIT reproducida abajo.
 
-2. Obras de arte - Wikimedia Commons
+2. OmarchyTV (MIT) - https://gitlab.com/piermark/omarchytv
+   De aquí viene el puerto de LocalAdb y la lista de apps de TV en vivo por marca (KeyMap.BRAND_LIVETV).
+
+   MIT License
+   Copyright (c) 2026 Free My TV contributors
+   Copyright (c) 2026 Gathin
+   Copyright (c) 2026 Marco Porro (OmarchyTV)
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+   files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
+   modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software
+   is furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+   LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+   IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+3. Obras de arte - Wikimedia Commons
    La colección curada de 117 obras está en dominio público (licencias PD-Art, PD-old o CC0, según cada archivo). La app las descarga
    desde upload.wikimedia.org. Cada obra, su autor, museo y licencia figuran en app/src/main/assets/art_index.json, con el enlace a su
    página de Commons (campo "src"). https://commons.wikimedia.org/
 
-3. Open-Meteo - https://open-meteo.com/
+4. Open-Meteo - https://open-meteo.com/
    Weather data by Open-Meteo.com. Los datos de la API se ofrecen bajo la licencia Creative Commons Atribución 4.0 Internacional
    (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). El uso gratuito de la API es solo para fines no comerciales.
    Lienzo muestra la atribución en Ajustes > Info. Fuente: README de https://github.com/open-meteo/open-meteo (sección "Data License").
 
-4. Nager.Date - https://github.com/nager/Nager.Date (licencia MIT)
+5. Nager.Date - https://github.com/nager/Nager.Date (licencia MIT)
    Feriados públicos por país y región mediante su API REST (date.nager.at).
 
-5. Dependencias
+6. Dependencias
    - AndroidX RecyclerView (Apache License 2.0), https://developer.android.com/jetpack/androidx/releases/recyclerview
    - Kotlin standard library (Apache License 2.0)
    - Solo para tests: JUnit 4 (EPL 1.0) y org.json (dominio público)

@@ -2,30 +2,32 @@
 
 **Lienzo** es un launcher liviano para Android TV y Google TV (televisores y decos): una obra de arte de dominio público como fondo, tus apps favoritas en un dock, "Continuar viendo", Entradas (HDMI, AV, TV en vivo), botones del control asignables a cualquier app, reloj con alarma y temporizador, clima y feriados. Paquete `cl.deco.shelf`, licencia MIT.
 
-> **English summary.** Lienzo is a lightweight Android TV launcher (Android 12+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), clock, alarms and timers, weather and public holidays, a screensaver with video, a crash watchdog (safe mode) and a device health notice. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub. Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are signed locally with `tools/release.sh` (no keys in CI). UI language: Spanish (Chile) with partial English date formats. Tested on a single device (DIW585, Android 12).
+> **English summary.** Lienzo is a lightweight Android TV launcher (Android 11+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork (or a dynamic colour glow) as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), TV inputs with an HDMI hot-plug notice, fully remappable remote buttons, clock, alarms and timers, weather and public holidays, a screensaver with video, a crash watchdog (safe mode) and a device health notice. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub. Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are built and signed by GitHub Actions from encrypted repository secrets when a `vX.Y.Z` tag is pushed (or locally with `tools/release.sh`). UI language: Spanish (Chile) with partial English date formats. Tested on a DIW585 set-top box (Android 12) and a TCL Google TV (Android 11).
 
 ## Capturas
 
 | | |
 |---|---|
 | ![Home](docs/screenshots/01-home.jpg) Home con el dock | ![Top Shelf](docs/screenshots/02-topshelf.jpg) Top Shelf |
-| ![Grilla](docs/screenshots/03-grilla.jpg) Continuar viendo y todas las apps | ![Modo arte](docs/screenshots/09-modo-arte.jpg) Modo arte |
+| ![Grilla](docs/screenshots/03-grilla.jpg) Continuar viendo y todas las apps | ![Entradas](docs/screenshots/12-entradas.jpg) Entradas con estado real |
 | ![Reloj](docs/screenshots/04-reloj.jpg) Calendario y feriados | ![Clima](docs/screenshots/06-clima.jpg) Pronóstico de 7 días |
-| ![Ajustes](docs/screenshots/07-ajustes.jpg) Ajustes | ![Info](docs/screenshots/10-info.jpg) Info y salud del equipo |
 | ![Temporizador](docs/screenshots/05-temporizador.jpg) Temporizador | ![Alarma](docs/screenshots/05b-alarma.jpg) Alarma |
-| ![Ubicación](docs/screenshots/08-ubicacion.jpg) Ubicación y región | ![Accesos](docs/screenshots/11-accesos.jpg) Menú de app y accesos rápidos |
+| ![Menú de ajustes](docs/screenshots/11-menu-ajustes.jpg) Botón Ajustes: Lienzo, televisor o sistema | ![Ajustes](docs/screenshots/07-ajustes.jpg) Ajustes de Lienzo |
+| ![Control remoto](docs/screenshots/10-control.jpg) Control remoto asignable | ![Ubicación](docs/screenshots/08-ubicacion.jpg) Ubicación y región |
+| ![Modo arte](docs/screenshots/09-modo-arte.jpg) Modo arte | |
 
-Las capturas tienen desenfocados los íconos de apps y el historial de reproducción.
+Capturas en un televisor TCL con Google TV. Tienen desenfocados los íconos de apps, el historial de reproducción y el nombre de la red Wi-Fi.
 
 ## Funciones
 
 - Home con 4 a 7 apps favoritas, íconos adaptados u originales, renombrar, ocultar, mover y desinstalar.
-- Entradas del televisor (HDMI con nombre personalizado y estado de señal, AV, TV en vivo) desde la barra superior o el botón Entradas del control.
-- Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes o TV en vivo. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas.
+- Entradas del televisor (HDMI con nombre personalizado, estado "Conectado" real y nombre HDMI-CEC del equipo, AV, TV en vivo) desde la barra superior o el botón Entradas del control. Aviso al enchufar un equipo en un HDMI, con cualquier app en pantalla.
+- Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes, TV en vivo, Todas las apps o Modo arte. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas. En el botón de Modo arte, una pulsación corta pasa a la obra siguiente y mantenerlo abre el video.
 - Top Shelf y "Continuar viendo" (Watch Next y canales de vista previa, vía `READ_TV_LISTINGS`).
-- Fondo de obras de dominio público (117 obras de Wikimedia Commons, incluidas 57 liberadas como CC0 por The Met y la National Gallery of Art), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra.
+- Fondo de obras de dominio público (117 obras de Wikimedia Commons, incluidas 57 liberadas como CC0 por The Met y la National Gallery of Art), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra. O "Color dinámico": fondo oscuro con un resplandor del color de la app enfocada.
 - Mis fondos: importa tus imágenes y videos desde un pendrive USB (sin red, sin ADB).
 - Modo arte y protector de pantalla con video.
+- Configuración sin PC: permisos, servicio de botones, inicio y protector con la depuración por red del propio equipo.
 - Reloj, calendario con feriados (por país y región), temporizador y alarma.
 - Clima de 7 días con Open-Meteo.
 - Modo seguro: un watchdog de crashes arranca en modo mínimo tras 3 fallos en 5 minutos.
@@ -60,6 +62,10 @@ adb shell settings put secure enabled_accessibility_services cl.deco.shelf/cl.de
 En televisores TCL, los botones Netflix, Prime Video, YouTube, TCL Channel (Kino TV), Guard (Downloader), Web (Web Video Caster) y TCL Home (Play Store) se reasignan con el servicio de accesibilidad de Lienzo. Sin `APP_AUTO_START` el sistema deja el servicio habilitado pero detenido; Ajustes > Control remoto muestra el estado.
 
 Después abre Lienzo: el asistente de primer inicio guía la elección de Lienzo como pantalla de inicio. Al terminar, desactiva la depuración por red si no la usas.
+
+### Sin PC
+
+Si instalaste el APK con otra app (Downloader, USB), Lienzo puede ejecutar esos mismos comandos contra el propio equipo: activa la depuración por red en las opciones de desarrollador y entra a Ajustes > Mantenimiento e información > Configuración sin PC. La TV pregunta "¿Permitir depuración por USB?": marca "Permitir siempre" y elige Permitir. Desde ahí se conceden los permisos, se activa el servicio de botones, se fija Lienzo como inicio y protector, o se vuelve al launcher original. Lienzo solo ejecuta esos comandos fijos (cliente ADB local portado de Free My TV y OmarchyTV, MIT; ver NOTICE).
 
 ### Sin ADB
 
@@ -107,7 +113,9 @@ Huella SHA-256 del certificado de release: `7B:EA:3F:BF:E0:CF:1A:F9:D1:E4:58:DE:
 - Sin analítica, sin cuentas, sin servidores ni puertos abiertos.
 - La red se usa solo para: Open-Meteo (clima y búsqueda de ciudades), Nager.Date (feriados), Wikimedia (obras de arte) y GitHub (actualizaciones: `api.github.com`, `github.com` y su CDN de releases). Si desactivas "Actualizaciones automáticas", GitHub solo se consulta cuando lo pides.
 - Configuración, favoritas y fondos importados quedan en el almacenamiento de la app.
-- Permisos: `INTERNET`, `ACCESS_NETWORK_STATE`, `READ_TV_LISTINGS` y `READ_EPG_DATA` (Continuar viendo), alarmas y arranque, `READ_EXTERNAL_STORAGE` (solo Android 12, para Mis fondos), `REQUEST_INSTALL_PACKAGES` (actualizador) y los opcionales concedidos por ADB (`WRITE_SECURE_SETTINGS`, `SYSTEM_ALERT_WINDOW`).
+- Permisos: `INTERNET`, `ACCESS_NETWORK_STATE`, `READ_TV_LISTINGS` y `READ_EPG_DATA` (Continuar viendo), alarmas y arranque, `READ_EXTERNAL_STORAGE` (solo Android 12, para Mis fondos), `REQUEST_INSTALL_PACKAGES` (actualizador), `REQUEST_DELETE_PACKAGES` (desinstalar desde el menú de una app) y los opcionales concedidos por ADB o por Configuración sin PC (`WRITE_SECURE_SETTINGS`, `SYSTEM_ALERT_WINDOW`).
+- Servicio de accesibilidad opcional: solo recibe teclas del control (no lee la pantalla) y vigila el estado de los HDMI con la API pública de TV.
+- Configuración sin PC se conecta únicamente a `127.0.0.1:5555` (el ADB del propio equipo) y solo cuando lo pides; la llave RSA queda en el almacenamiento privado de la app.
 
 ## Compilar desde el código
 
@@ -122,7 +130,7 @@ El APK sale en `app/build/outputs/apk/`. Solo Android Views y RecyclerView: sin 
 
 ### Firmar uno mismo
 
-La clave de este proyecto no está en el repositorio ni en CI. Para firmar tus propias compilaciones:
+La clave de este proyecto no está en el repositorio: vive cifrada en los secretos de GitHub Actions y en el respaldo del mantenedor. Para firmar tus propias compilaciones:
 
 ```sh
 keytool -genkeypair -v -keystore mi-clave.jks -alias lienzo -keyalg RSA -keysize 4096 -validity 10000
@@ -141,20 +149,32 @@ Con eso `assembleRelease` firma con tu clave. Toda actualización futura de tu c
 
 ### Publicar un release (mantenedor)
 
-Con el árbol limpio, el commit en `origin/main` y `keystore.properties` local:
+Desde cualquier equipo con acceso al repositorio, con el commit ya en `main`:
 
 ```sh
-tools/release.sh --dry-run   # compila, firma, verifica y genera dist/vX.Y.Z sin publicar
-tools/release.sh             # crea el tag vX.Y.Z y el release con APK, version.json y SHA256SUMS
+git tag -a v1.2.0 -m "Lienzo 1.2.0"
+git push origin v1.2.0
 ```
 
-Las notas salen de la sección de la versión en `CHANGELOG.md`. La versión sale de `app/build.gradle.kts` (`versionName` y `versionCode`).
+El workflow `.github/workflows/release.yml` valida que el tag coincida con `versionName` y apunte a `main`, corre los tests, compila y firma con la keystore de los secretos, verifica la firma (rechaza la de debug y exige la huella de `LIENZO_CERT_SHA256`), el paquete y la versión, y crea el release con APK, `version.json` y `SHA256SUMS`. También se puede crear el tag desde la web de GitHub (Releases > Draft a new release > Choose a tag). Las notas salen de la sección de la versión en `CHANGELOG.md`.
+
+Configuración única del repositorio (Settings > Secrets and variables > Actions):
+
+| Nombre | Tipo | Contenido |
+|---|---|---|
+| `LIENZO_KEYSTORE_BASE64` | Secreto | La keystore en base64 |
+| `LIENZO_KEYSTORE_PASSWORD` | Secreto | `storePassword` de `keystore.properties` |
+| `LIENZO_KEY_ALIAS` | Secreto | `keyAlias` |
+| `LIENZO_KEY_PASSWORD` | Secreto | `keyPassword` |
+| `LIENZO_CERT_SHA256` | Variable | Huella SHA-256 del certificado de release (la de "Verificar la firma de un release") |
+
+Alternativa local, con el árbol limpio y `keystore.properties` en la raíz: `tools/release.sh --dry-run` y luego `tools/release.sh`.
 
 ## Limitaciones conocidas
 
-- Probado en un solo equipo (DIW585, Android 12, 2 GB de RAM). Otros equipos y Android 13 o superior no están verificados; Mis fondos está soportado solo en Android 12.
+- Probado en dos equipos: decodificador DIW585 (Android 12, 2 GB de RAM) y televisor TCL con Google TV (Android 11). Otros equipos y Android 13 o superior no están verificados; la importación de Mis fondos se verificó en Android 12.
 - Idioma de la interfaz: español de Chile; el inglés alcanza solo a fechas y unidades.
-- El apagado nocturno de pantalla y la alarma sobre otras apps requieren ADB.
+- El apagado nocturno de pantalla y la alarma sobre otras apps requieren ADB o Configuración sin PC (depuración por red activa).
 - Android 12 no permite a una app cerrar otras: "Liberar cachés" solo vacía las cachés de Lienzo; si la memoria de video sigue baja, hay que reiniciar el equipo.
 - El video de fondo no se distribuye; se usan tus propios videos (H.264 o H.265, hasta 1080p y 60 fps).
 - Open-Meteo gratuito es para uso no comercial.
@@ -163,4 +183,4 @@ Las notas salen de la sección de la versión en `CHANGELOG.md`. La versión sal
 
 ## Créditos y licencia
 
-MIT, ver [LICENSE](LICENSE). Atribuciones en [NOTICE](NOTICE): Free My TV (MIT), obras de dominio público vía Wikimedia Commons, Open-Meteo (CC BY 4.0) y Nager.Date (MIT). Historial de versiones en [CHANGELOG.md](CHANGELOG.md).
+MIT, ver [LICENSE](LICENSE). Atribuciones en [NOTICE](NOTICE): Free My TV y OmarchyTV (MIT), obras de dominio público vía Wikimedia Commons, Open-Meteo (CC BY 4.0) y Nager.Date (MIT). Historial de versiones en [CHANGELOG.md](CHANGELOG.md).

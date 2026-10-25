@@ -99,11 +99,14 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         rows += Row.Info("Servicio de botones") {
             when {
                 KeyMap.serviceRunning(ctx) -> "Activo"
-                KeyMap.serviceEnabled(ctx) -> "Habilitado pero detenido por el sistema. En TCL: adb shell cmd appops set cl.deco.shelf APP_AUTO_START allow, y desactivar y activar Lienzo en Accesibilidad"
-                else -> "Inactivo: actívalo en Accesibilidad > Lienzo"
+                KeyMap.serviceEnabled(ctx) -> "Habilitado pero detenido por el sistema (en TCL falta el permiso de arranque)"
+                else -> "Inactivo"
             }
         }
-        if (!KeyMap.serviceRunning(ctx)) rows += Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        if (!KeyMap.serviceRunning(ctx)) {
+            rows += Row.Act("Activar sin PC", { "Con la depuración por red del equipo" }) { panel.push(setupPage()) }
+            rows += Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
         rows += Row.Section("Asignar")
         rows += Row.Act("Asignar un botón", { "Presiona el botón y elige qué hace" }) { panel.push(learnPage()) }
         rows += Row.Act("App de TV en vivo", { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: "Sin app (función original)" }) { panel.push(liveTvPage()) }
@@ -240,14 +243,56 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         },
     ))
 
-    fun powerAndSystemPage(): Page = Page("Sistema y energía", listOf(
+    fun powerAndSystemPage(): Page = Page("Sistema y energía", listOfNotNull(
         Row.Section("Apagado nocturno"),
         toggle("Apagado por inactividad", ShelfPrefs.NIGHT_ON, "Activado", "Desactivado", { p.nightOn }, { p.nightOn = it }),
         Row.Choice("Desde", halfHours, { (p.nightFromMin / 30).coerceIn(0, 47) }, { p.nightFromMin = it * 30; host.changed(ShelfPrefs.NIGHT_FROM) }),
         Row.Choice("Hasta", halfHours, { (p.nightToMin / 30).coerceIn(0, 47) }, { p.nightToMin = it * 30; host.changed(ShelfPrefs.NIGHT_TO) }),
         choice("Inactividad", ShelfPrefs.NIGHT_IDLE, listOf("30 min", "60 min", "90 min", "120 min"), listOf(30, 60, 90, 120), { p.nightIdleMin }, { p.nightIdleMin = it }),
-        Row.Info("Permiso") { if (NightMode.hasPermission(ctx)) "Concedido" else "Falta: adb shell pm grant cl.deco.shelf android.permission.WRITE_SECURE_SETTINGS" },
+        Row.Info("Permiso") { if (NightMode.hasPermission(ctx)) "Concedido" else "Falta el permiso de ajustes seguros" },
+        if (NightMode.hasPermission(ctx)) null else Row.Act("Conceder sin PC", { "Con la depuración por red del equipo" }) { panel.push(setupPage()) },
     ))
+
+    // ---- Configuración sin PC (ADB local) ----
+
+    private var setupStatus = ""
+    private var setupBusy = false
+    private var confirmStock = false
+
+    /** Lo que antes pedía adb desde un computador: permisos, servicio de botones, inicio/protector y volver al original. */
+    fun setupPage(): Page = Page("Configuración sin PC", listOf(
+        Row.Section("Estado"),
+        Row.Info("Permisos") {
+            val ok = listOf("android.permission.READ_TV_LISTINGS", "android.permission.WRITE_SECURE_SETTINGS")
+                .count { ctx.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+            if (ok == 2) "Concedidos" else "Faltan ${2 - ok} de 2"
+        },
+        Row.Info("Servicio de botones") { if (KeyMap.serviceRunning(ctx)) "Activo" else "Inactivo" },
+        Row.Info("Resultado") { setupStatus.ifEmpty { "Sin ejecutar" } },
+        Row.Section("Acciones"),
+        Row.Act("Conceder permisos y activar botones", { "Top Shelf, apagado nocturno, alarma y control" }) {
+            runSetup { cl.deco.shelf.service.SelfSetup.permissionsAndKeys(ctx, it) }
+        },
+        Row.Act("Usar Lienzo como inicio y protector") { runSetup { cl.deco.shelf.service.SelfSetup.makeDefault(ctx, it) } },
+        Row.Act("Volver al launcher original", { if (confirmStock) "OK de nuevo para confirmar" else "Lienzo queda instalado" }) {
+            if (!confirmStock) { confirmStock = true; panel.rebuild() }
+            else { confirmStock = false; runSetup { cl.deco.shelf.service.SelfSetup.restoreStock(ctx, it) } }
+        },
+        Row.Info("Requisito") { "Depuración por red (o USB) activa en Opciones de desarrollador. La primera vez la TV pregunta \"¿Permitir depuración por USB?\": marca \"Permitir siempre\" y elige Permitir." },
+        Row.Info("Seguridad") { "Lienzo solo ejecuta estos comandos fijos. Si no usas la depuración, desactívala al terminar: deja el equipo abierto a la red local." },
+    ), onShow = { confirmStock = false })
+
+    /** Ejecuta un paso de SelfSetup en segundo plano y muestra el avance en la fila Resultado. */
+    private fun runSetup(task: (() -> Unit) -> String) {
+        if (setupBusy) return
+        setupBusy = true
+        setupStatus = "Conectando…"
+        panel.rebuild()
+        io.execute {
+            val r = task { main.post { setupStatus = "En la TV marca \"Permitir siempre\" y elige Permitir (hasta 60 s)"; panel.rebuild() } }
+            main.post { setupBusy = false; setupStatus = r; panel.rebuild() }
+        }
+    }
 
     fun aboutAndMaintenancePage(): Page = Page("Mantenimiento e información", listOf(
         // Memoria de video, RAM, tiempo encendido y "Liberar cachés" viven en el panel Salud (antes se repetían aquí)
@@ -263,9 +308,10 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
         Row.Act("Restaurar configuración") { panel.push(restorePage()) },
         Row.Act("Asistente de configuración") { panel.push(wizard()) },
+        Row.Act("Configuración sin PC", { if (cl.deco.shelf.service.SelfSetup.needed(ctx)) "Permisos o botones pendientes" else "Todo concedido" }) { panel.push(setupPage()) },
         Row.Section("Acerca de Lienzo"),
         Row.Info("Versión") { version },
-        Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; feriados Nager.Date; watchdog: Free My TV (MIT)" },
+        Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; feriados Nager.Date; watchdog y ADB local: Free My TV y OmarchyTV (MIT)" },
         Row.Info("Clima") { "Weather data by Open-Meteo.com, licencia CC BY 4.0" },
     ))
 

@@ -1,0 +1,143 @@
+# Publica un release firmado al subir un tag vX.Y.Z (desde cualquier equipo o desde la web de GitHub).
+# Mismo flujo que tools/release.sh, pero la keystore vive cifrada en los secretos del repositorio:
+#   LIENZO_KEYSTORE_BASE64, LIENZO_KEYSTORE_PASSWORD, LIENZO_KEY_ALIAS, LIENZO_KEY_PASSWORD
+# y, como resguardo, la variable LIENZO_CERT_SHA256 (huella del certificado esperado): si no coincide, no se publica.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Versión, CHANGELOG y rama
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          GRADLE=app/build.gradle.kts
+          VERSION="$(sed -n 's/^ *versionName *= *"\(.*\)".*/\1/p' "$GRADLE" | head -1)"
+          CODE="$(sed -n 's/^ *versionCode *= *\([0-9][0-9]*\).*/\1/p' "$GRADLE" | head -1)"
+          MINSDK="$(sed -n 's/^ *minSdk *= *\([0-9][0-9]*\).*/\1/p' "$GRADLE" | head -1)"
+          [ "$TAG" = "v$VERSION" ] || { echo "::error::El tag $TAG no coincide con versionName $VERSION"; exit 1; }
+          git fetch -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::El tag no apunta a un commit de main"; exit 1; }
+          awk -v v="$VERSION" '
+            /^## / { on = ($0 ~ "^## \\[?" v "([^0-9.]|$)"); next }
+            on { print }
+          ' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || { echo "::error::CHANGELOG.md no tiene sección '## $VERSION'"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "minsdk=$MINSDK" >> "$GITHUB_OUTPUT"
+
+      - name: Keystore desde secretos
+        env:
+          KS_B64: ${{ secrets.LIENZO_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.LIENZO_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIENZO_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.LIENZO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in KS_B64 KS_PASS KEY_ALIAS KEY_PASS; do
+            [ -n "${!v}" ] || { echo "::error::Falta el secreto correspondiente a $v"; exit 1; }
+          done
+          umask 077
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/lienzo.keystore"
+          # keystore.properties (fuera de git) es lo que lee app/build.gradle.kts para firmar
+          {
+            echo "storeFile=$RUNNER_TEMP/lienzo.keystore"
+            echo "storePassword=$KS_PASS"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASS"
+          } > keystore.properties
+
+      - name: Tests y compilación firmada
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --console=plain
+
+      - name: Verificar firma y paquete
+        id: verify
+        env:
+          EXPECTED_CERT: ${{ vars.LIENZO_CERT_SHA256 }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          CODE: ${{ steps.meta.outputs.code }}
+          MINSDK: ${{ steps.meta.outputs.minsdk }}
+        run: |
+          set -euo pipefail
+          BUILT=app/build/outputs/apk/release/app-release.apk
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BT/apksigner" verify --verbose --min-sdk-version "$MINSDK" "$BUILT" | sed -n '1,6p'
+          CERT_OUT="$("$BT/apksigner" verify --print-certs "$BUILT")"
+          if echo "$CERT_OUT" | grep -qi "Android Debug"; then echo "::error::APK firmado con la clave de debug"; exit 1; fi
+          CERT_SHA="$(echo "$CERT_OUT" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+          echo "Certificado de firma SHA-256: $CERT_SHA"
+          if [ -n "${EXPECTED_CERT:-}" ]; then
+            [ "$(echo "$CERT_SHA" | tr 'A-F' 'a-f' | tr -d ':')" = "$(echo "$EXPECTED_CERT" | tr 'A-F' 'a-f' | tr -d ': ')" ] \
+              || { echo "::error::El certificado no coincide con LIENZO_CERT_SHA256: las instalaciones existentes no aceptarían esta actualización"; exit 1; }
+          else
+            echo "::warning::Sin la variable LIENZO_CERT_SHA256 no se comprueba que la llave sea la de siempre"
+          fi
+          BADGE="$("$BT/aapt2" dump badging "$BUILT" | head -1)"
+          echo "$BADGE" | grep -q "name='cl.deco.shelf'" || { echo "::error::El APK no es cl.deco.shelf"; exit 1; }
+          echo "$BADGE" | grep -q "versionCode='$CODE'" || { echo "::error::versionCode distinto de $CODE"; exit 1; }
+          echo "$BADGE" | grep -q "versionName='$VERSION'" || { echo "::error::versionName distinto de $VERSION"; exit 1; }
+
+      - name: Artefactos (APK, version.json, SHA256SUMS)
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          CODE: ${{ steps.meta.outputs.code }}
+          MINSDK: ${{ steps.meta.outputs.minsdk }}
+        run: |
+          set -euo pipefail
+          OUT="dist/v$VERSION"; mkdir -p "$OUT"
+          APK="$OUT/Lienzo-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          python3 - "$OUT/version.json" "$CODE" "$VERSION" "$SHA" "$MINSDK" "$RUNNER_TEMP/notes.md" <<'PY'
+          import json, re, sys
+          out, code, name, sha, minsdk, notes_path = sys.argv[1:]
+          lines = [re.sub(r'^[-*]\s*', '', l.strip()) for l in open(notes_path, encoding='utf-8') if l.strip()]
+          notes = ''
+          for l in lines:  # resumen corto (tope 600 caracteres); el detalle va en las notas del release
+              if len(notes) + len(l) + 3 > 600: break
+              notes += ('' if not notes else ' | ') + l
+          json.dump({"versionCode": int(code), "versionName": name, "sha256": sha, "minSdk": int(minsdk), "notes": notes},
+                    open(out, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+          open(out, 'a').write('\n')
+          PY
+          ( cd "$OUT" && sha256sum "Lienzo-$VERSION.apk" version.json > SHA256SUMS )
+          cat "$OUT/version.json"
+
+      - name: Crear release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="dist/v$VERSION"
+          gh release create "v$VERSION" "$OUT/Lienzo-$VERSION.apk" "$OUT/version.json" "$OUT/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY" --title "Lienzo $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+
+      - name: Borrar keystore del runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/lienzo.keystore" keystore.properties

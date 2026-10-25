@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publica un release de Lienzo desde el Mac del mantenedor. La firma ocurre SOLO aquí, con keystore.properties local.
+# Publica un release de Lienzo desde el equipo del mantenedor, con keystore.properties local. Alternativa a la vía
+# habitual: subir el tag vX.Y.Z y dejar que .github/workflows/release.yml firme con los secretos del repositorio.
 #
 # Uso: tools/release.sh [--dry-run] [--help]
 #   --dry-run  compila, firma y verifica; genera los archivos en dist/ e imprime los comandos de git y gh sin ejecutarlos
