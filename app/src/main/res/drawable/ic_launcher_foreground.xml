@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono adaptativo, capa frontal: el marco del banner escalado para entrar completo también en la máscara circular (72 de 108). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.72" android:scaleY="0.72" android:translateX="3.6" android:translateY="-10.8">
+        <!-- marco dorado -->
+        <path android:fillColor="#33000000" android:pathData="M42,56h56a8,8 0 0 1 8,8v56a8,8 0 0 1 -8,8h-56a8,8 0 0 1 -8,-8v-56a8,8 0 0 1 8,-8z" />
+        <path android:pathData="M42,54h56a8,8 0 0 1 8,8v56a8,8 0 0 1 -8,8h-56a8,8 0 0 1 -8,-8v-56a8,8 0 0 1 8,-8z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="34" android:startY="54" android:endX="106" android:endY="126"
+                    android:startColor="#FFF6DDA0" android:centerColor="#FFD9A85A" android:endColor="#FF9C6A2C" />
+            </aapt:attr>
+        </path>
+        <!-- obra: cielo de atardecer, sol, colinas y agua -->
+        <group>
+            <clip-path android:pathData="M42,62H98V118H42Z" />
+            <path android:pathData="M42,62H98V118H42Z">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="linear" android:startX="70" android:startY="62" android:endX="70" android:endY="104"
+                        android:startColor="#FF27365A" android:centerColor="#FF8A5A78" android:endColor="#FFF0A56A" />
+                </aapt:attr>
+            </path>
+            <path android:fillColor="#FFFFE2AE" android:pathData="M76,99m-10,0a10,10 0 1 1 20,0a10,10 0 1 1 -20,0" />
+            <path android:fillColor="#FF56688C" android:pathData="M42,101C51,94 60,97 67,100C77,94 88,93 98,98V118H42Z" />
+            <path android:pathData="M42,106H98V118H42Z">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="linear" android:startX="70" android:startY="106" android:endX="70" android:endY="118"
+                        android:startColor="#FF33466B" android:endColor="#FF1B263C" />
+                </aapt:attr>
+            </path>
+            <path android:fillColor="#FF1A2438" android:pathData="M42,104C50,100 59,102 66,107L66,118H42Z" />
+            <path android:strokeColor="#CCFFD59A" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M70,109.5H82M72.5,113H79.5M74.5,116H77.5" />
+        </group>
+        <!-- filete interior del marco -->
+        <path android:strokeColor="#FF7A5226" android:strokeWidth="1.2" android:fillColor="#00000000" android:pathData="M41.4,61.4H98.6V118.6H41.4Z" />    </group>
+</vector>

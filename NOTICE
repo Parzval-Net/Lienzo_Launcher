@@ -42,7 +42,12 @@ Este proyecto usa ideas, datos y obras de terceros. Atribuciones:
 5. Nager.Date - https://github.com/nager/Nager.Date (licencia MIT)
    Feriados públicos por país y región mediante su API REST (date.nager.at).
 
-6. Dependencias
+6. DM Serif Display (SIL Open Font License 1.1) - https://github.com/google/fonts/tree/main/ofl/dmserifdisplay
+   Copyright 2014-2018 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. Copyright 2019 Google LLC.
+   El nombre "Lienzo" del banner (app/src/main/res/drawable/banner.xml) está dibujado con esta fuente y convertido a trazos;
+   la fuente no se distribuye. Licencia: https://openfontlicense.org
+
+7. Dependencias
    - AndroidX RecyclerView (Apache License 2.0), https://developer.android.com/jetpack/androidx/releases/recyclerview
    - Kotlin standard library (Apache License 2.0)
    - Solo para tests: JUnit 4 (EPL 1.0) y org.json (dominio público)

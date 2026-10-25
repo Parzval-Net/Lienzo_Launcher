@@ -1,26 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Banner e ícono de Lienzo (16:9): bastidor con esquina doblada sobre degradado de óleo, de ocre a terracota oscuro. Solo símbolo. -->
+<!-- Banner de Lienzo (16:9): marco dorado con un paisaje al atardecer y el nombre en DM Serif Display (SIL OFL 1.1, ver NOTICE)
+     convertido a trazos, sobre el fondo pizarra del estilo de vidrio de la app. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="320dp" android:height="180dp"
     android:viewportWidth="320" android:viewportHeight="180">
     <path android:pathData="M0,0h320v180h-320z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="320" android:endY="180"
+                    android:startColor="#FF151B28" android:endColor="#FF2C3854" />
+            </aapt:attr>    </path>
+    <!-- resplandor cálido detrás del marco -->
+    <path android:pathData="M0,0h320v180h-320z">
         <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="320" android:endY="180"
-                android:startColor="#FFD9A441" android:endColor="#FF5E2618" />
+            <gradient android:type="radial" android:centerX="70" android:centerY="92" android:gradientRadius="150"
+                android:startColor="#40F0A56A" android:endColor="#00F0A56A" />
         </aapt:attr>
     </path>
-    <!-- sombra suave del lienzo -->
-    <path android:fillColor="#40000000" android:pathData="M108,46H190L218,74V150H108Z" />
-    <!-- lienzo con esquina doblada -->
-    <path android:fillColor="#FFF3E9D2" android:pathData="M104,38H190L216,64V142H104Z" />
-    <path android:fillColor="#FFCDB88F" android:pathData="M190,38L216,64H190Z" />
-    <!-- marco fino interior -->
-    <path android:strokeColor="#FFB08A4A" android:strokeWidth="1.6" android:fillColor="#00000000"
-        android:pathData="M113,47H186L207,68V133H113Z" />
-    <!-- pincelada -->
-    <path android:strokeColor="#FFA5472A" android:strokeWidth="5" android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M126,112C140,90 156,126 172,104S192,96 198,102" />
-    <path android:strokeColor="#FFD9A441" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M126,96C138,84 150,98 164,88" />
+    <group>
+        <!-- marco dorado -->
+        <path android:fillColor="#33000000" android:pathData="M42,56h56a8,8 0 0 1 8,8v56a8,8 0 0 1 -8,8h-56a8,8 0 0 1 -8,-8v-56a8,8 0 0 1 8,-8z" />
+        <path android:pathData="M42,54h56a8,8 0 0 1 8,8v56a8,8 0 0 1 -8,8h-56a8,8 0 0 1 -8,-8v-56a8,8 0 0 1 8,-8z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="34" android:startY="54" android:endX="106" android:endY="126"
+                    android:startColor="#FFF6DDA0" android:centerColor="#FFD9A85A" android:endColor="#FF9C6A2C" />
+            </aapt:attr>
+        </path>
+        <!-- obra: cielo de atardecer, sol, colinas y agua -->
+        <group>
+            <clip-path android:pathData="M42,62H98V118H42Z" />
+            <path android:pathData="M42,62H98V118H42Z">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="linear" android:startX="70" android:startY="62" android:endX="70" android:endY="104"
+                        android:startColor="#FF27365A" android:centerColor="#FF8A5A78" android:endColor="#FFF0A56A" />
+                </aapt:attr>
+            </path>
+            <path android:fillColor="#FFFFE2AE" android:pathData="M76,99m-10,0a10,10 0 1 1 20,0a10,10 0 1 1 -20,0" />
+            <path android:fillColor="#FF56688C" android:pathData="M42,101C51,94 60,97 67,100C77,94 88,93 98,98V118H42Z" />
+            <path android:pathData="M42,106H98V118H42Z">
+                <aapt:attr name="android:fillColor">
+                    <gradient android:type="linear" android:startX="70" android:startY="106" android:endX="70" android:endY="118"
+                        android:startColor="#FF33466B" android:endColor="#FF1B263C" />
+                </aapt:attr>
+            </path>
+            <path android:fillColor="#FF1A2438" android:pathData="M42,104C50,100 59,102 66,107L66,118H42Z" />
+            <path android:strokeColor="#CCFFD59A" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M70,109.5H82M72.5,113H79.5M74.5,116H77.5" />
+        </group>
+        <!-- filete interior del marco -->
+        <path android:strokeColor="#FF7A5226" android:strokeWidth="1.2" android:fillColor="#00000000" android:pathData="M41.4,61.4H98.6V118.6H41.4Z" />    </group>
+    <path android:fillColor="#FFF4EBDD" android:fillType="evenOdd"
+        android:pathData="M121.98,109.9L121.98,109.32L123.19,108.85C124.01,108.54 124.52,108.17 124.73,107.72C124.94,107.28 125.05,106.67 125.05,105.89L125.05,75.62C125.05,74.84 124.93,74.23 124.7,73.76C124.47,73.3 123.97,72.93 123.19,72.66L121.98,72.2L121.98,71.62L136.77,71.62L136.77,72.2L135.72,72.66C134.99,72.93 134.48,73.31 134.21,73.79C133.94,74.27 133.81,74.9 133.81,75.68L133.81,108.74L142.74,108.74C144.17,108.74 145.22,108.39 145.9,107.69C146.58,107 147.23,105.99 147.84,104.68L150.11,99.8L150.69,99.8L150.16,109.9ZM160.14,78.11C158.83,78.11 157.72,77.7 156.81,76.86C155.9,76.03 155.44,74.98 155.44,73.7C155.44,72.39 155.9,71.33 156.81,70.51C157.72,69.7 158.83,69.3 160.14,69.3C161.46,69.3 162.56,69.7 163.45,70.51C164.34,71.33 164.78,72.39 164.78,73.7C164.78,74.98 164.34,76.03 163.45,76.86C162.56,77.7 161.46,78.11 160.14,78.11ZM153.3,109.9L153.3,109.32L154.11,109.08C154.88,108.85 155.42,108.5 155.71,108.04C156,107.58 156.14,106.96 156.14,106.18L156.14,88.03C156.14,87.22 156,86.61 155.71,86.2C155.42,85.8 154.88,85.52 154.11,85.36L153.3,85.19L153.3,84.61L163.91,81.19L164.49,81.77L164.32,90L164.32,106.24C164.32,107.02 164.46,107.63 164.75,108.1C165.04,108.56 165.56,108.91 166.29,109.14L166.87,109.32L166.87,109.9ZM183.97,81.13C186.48,81.13 188.63,81.64 190.41,82.66C192.18,83.69 193.55,85.08 194.49,86.84C195.44,88.6 195.92,90.6 195.92,92.84C195.92,93.27 195.9,93.7 195.86,94.15C195.82,94.59 195.74,94.99 195.63,95.34L178.34,95.34C178.38,99.51 179.12,102.52 180.57,104.36C182.02,106.19 184.18,107.11 187.04,107.11C188.98,107.11 190.54,106.8 191.74,106.18C192.94,105.57 194.06,104.66 195.1,103.46L195.68,103.98C194.49,106.11 192.89,107.77 190.9,108.97C188.91,110.17 186.52,110.77 183.74,110.77C180.99,110.77 178.55,110.18 176.43,109C174.3,107.82 172.64,106.13 171.44,103.92C170.24,101.72 169.64,99.09 169.64,96.03C169.64,92.86 170.34,90.17 171.73,87.94C173.12,85.72 174.91,84.03 177.09,82.87C179.28,81.71 181.57,81.13 183.97,81.13ZM183.79,82.29C182.67,82.29 181.72,82.63 180.92,83.3C180.13,83.98 179.51,85.18 179.07,86.9C178.62,88.62 178.38,91.05 178.34,94.18L188.26,94.18C188.65,89.96 188.49,86.93 187.8,85.07C187.1,83.22 185.77,82.29 183.79,82.29ZM198.81,109.9L198.81,109.32L199.62,109.08C200.97,108.7 201.65,107.75 201.65,106.24L201.65,88.09C201.65,87.24 201.51,86.61 201.24,86.2C200.97,85.8 200.45,85.52 199.68,85.36L198.81,85.13L198.81,84.55L208.72,81.19L209.3,81.77L209.77,85.25C211.12,84.05 212.65,83.06 214.35,82.29C216.05,81.51 217.73,81.13 219.4,81.13C221.95,81.13 223.91,81.82 225.28,83.22C226.66,84.61 227.34,86.73 227.34,89.6L227.34,106.3C227.34,107.81 228.08,108.76 229.55,109.14L230.07,109.32L230.07,109.9L216.38,109.9L216.38,109.32L217.13,109.08C218.49,108.66 219.16,107.71 219.16,106.24L219.16,87.74C219.16,85.27 217.93,84.03 215.45,84.03C213.75,84.03 211.89,84.88 209.88,86.58L209.88,106.3C209.88,107.81 210.56,108.76 211.91,109.14L212.44,109.32L212.44,109.9ZM232.51,109.9L232.51,108.97L248.35,83.16L239.59,83.16C238.58,83.16 237.79,83.43 237.21,83.97C236.63,84.51 236.09,85.23 235.59,86.12L233.5,90L232.92,90L233.32,82L256.52,82L256.52,82.81L241.04,108.74L250.14,108.74C251.38,108.74 252.29,108.45 252.87,107.87C253.45,107.29 253.99,106.49 254.49,105.49L256.52,101.2L257.1,101.2L256.58,109.9ZM273.97,110.77C271.03,110.77 268.48,110.16 266.32,108.94C264.15,107.72 262.48,105.99 261.3,103.75C260.12,101.51 259.53,98.88 259.53,95.86C259.53,92.84 260.16,90.23 261.42,88.03C262.67,85.83 264.39,84.12 266.58,82.93C268.76,81.73 271.23,81.13 273.97,81.13C276.72,81.13 279.17,81.72 281.34,82.9C283.5,84.08 285.21,85.77 286.47,87.97C287.73,90.18 288.36,92.81 288.36,95.86C288.36,98.91 287.77,101.55 286.59,103.78C285.41,106 283.75,107.72 281.6,108.94C279.45,110.16 276.91,110.77 273.97,110.77ZM273.97,109.61C275.33,109.61 276.41,109.22 277.22,108.45C278.03,107.67 278.62,106.3 278.99,104.33C279.36,102.36 279.54,99.57 279.54,95.98C279.54,92.34 279.36,89.54 278.99,87.57C278.62,85.59 278.03,84.22 277.22,83.45C276.41,82.67 275.33,82.29 273.97,82.29C272.62,82.29 271.53,82.67 270.7,83.45C269.86,84.22 269.26,85.59 268.9,87.57C268.53,89.54 268.35,92.34 268.35,95.98C268.35,99.57 268.53,102.36 268.9,104.33C269.26,106.3 269.86,107.67 270.7,108.45C271.53,109.22 272.62,109.61 273.97,109.61Z" />
 </vector>
