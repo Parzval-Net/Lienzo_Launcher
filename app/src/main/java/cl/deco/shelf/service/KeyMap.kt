@@ -82,18 +82,25 @@ object KeyMap {
 
     private fun sp(ctx: Context): SharedPreferences = ctx.applicationContext.getSharedPreferences("shelf", Context.MODE_PRIVATE)
 
-    // Sin caché propia: SharedPreferences ya vive en memoria y así un respaldo restaurado se aplica sin reiniciar el servicio.
-    // Solo se lee para teclas no reservadas (las flechas y OK nunca llegan aquí).
+    // Solo se lee para teclas no reservadas (las flechas y OK nunca llegan aquí). El JSON se parsea una vez y se reusa mientras
+    // el texto guardado no cambie: SharedPreferences devuelve el mismo String, así la comparación cuesta nada, y un respaldo
+    // restaurado se aplica sin reiniciar el servicio.
     fun all(ctx: Context): Map<Int, String> = load(ctx)
+
+    @Volatile private var cachedRaw: String? = null
+    @Volatile private var cachedMap: Map<Int, String> = emptyMap()
 
     private fun load(ctx: Context): Map<Int, String> {
         val raw = sp(ctx).getString(PREF, null) ?: return defaults
-        return try {
+        if (raw == cachedRaw) return cachedMap
+        val m = try {
             val o = JSONObject(raw)
             val saved = o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to o.getString(k) } }.toMap()
             // Valores iniciales nuevos de versiones posteriores se suman; lo que el usuario cambió (incluido NONE) se respeta
             defaults + saved
         } catch (_: Exception) { defaults }
+        cachedMap = m; cachedRaw = raw
+        return m
     }
 
     private fun save(ctx: Context, m: Map<Int, String>) {

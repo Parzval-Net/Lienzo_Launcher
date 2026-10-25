@@ -38,9 +38,23 @@ class KeyService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Android espera la respuesta de este método antes de entregar cada tecla a la app en pantalla: si el hilo principal
+        // de Lienzo se atrasa, se nota en toda la navegación. Se registra cualquier atraso perceptible para poder medirlo.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            val lag = android.os.SystemClock.uptimeMillis() - event.eventTime
+            if (lag > LAG_MS) Log.w(TAG, "tecla ${event.keyCode} llegó con $lag ms de atraso")
+        }
         if (KeyMap.offerToLearner(event)) return true
         if (KeyMap.reservedKey(event.keyCode)) return false
-        val action = KeyMap.actionFor(this, event.keyCode)
+        // La acción se resuelve una vez por pulsación (al bajar): repeticiones y UP reusan el resultado sin volver a consultar
+        // a PackageManager si la app del botón está instalada
+        val code = event.keyCode
+        val action = when {
+            event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 -> KeyMap.actionFor(this, code).also { pressed[code] = it }
+            pressed.containsKey(code) -> pressed[code]
+            else -> KeyMap.actionFor(this, code)
+        }
+        if (event.action == KeyEvent.ACTION_UP) pressed.remove(code)
         if (action == null) {
             // Botones sin asignar: se registran para poder mapearlos (Ajustes > Control remoto > Asignar un botón)
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) Log.i(TAG, "sin asignar: key ${event.keyCode} scan ${event.scanCode}")
@@ -62,8 +76,10 @@ class KeyService : AccessibilityService() {
     }
 
     private var longFired = false
+    /** Acción resuelta al bajar cada tecla, hasta que se suelta. */
+    private val pressed = HashMap<Int, String?>()
 
-    private companion object { const val TAG = "KeyService"; const val LONG_MS = 600L }
+    private companion object { const val TAG = "KeyService"; const val LONG_MS = 600L; const val LAG_MS = 80L }
 }
 
 /**
