@@ -167,7 +167,7 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
             while (c.moveToNext()) {
                 val pkg = c.str(1) ?: continue
                 if (pkg !in pkgs || c.str(3) != TvContract.Channels.TYPE_PREVIEW) continue
-                channels += Ch(c.getLong(0), pkg, !c.isNull(2) && c.getInt(2) == 1, ContinueSelector.isContinueChannel(c.str(4)))
+                channels += Ch(c.getLong(0), pkg, !c.isNull(2) && c.getInt(2) == 1, ContinueSelector.isContinueChannel(c.str(4), pkg))
             }
         }
         if (channels.isEmpty()) return Previews(emptyMap(), emptyList())

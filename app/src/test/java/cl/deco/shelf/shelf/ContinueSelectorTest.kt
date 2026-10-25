@@ -112,4 +112,17 @@ class ContinueSelectorTest {
         }
         assertFalse(ContinueSelector.isContinueChannel(null))
     }
+
+    @Test
+    fun historialDeSmartTubeCuentaComoSeguirViendo() {
+        for (pkg in listOf("org.smarttube.stable", "org.smarttube.beta")) {
+            for (n in listOf("Historial", "History", "Histórico", "Verlauf")) assertTrue("$pkg $n", ContinueSelector.isContinueChannel(n, pkg))
+            for (n in listOf("Recomendados", "Suscripciones", "Subscriptions")) assertFalse("$pkg $n", ContinueSelector.isContinueChannel(n, pkg))
+        }
+        // En otras apps un "Historial" no se toma como Seguir viendo
+        assertFalse(ContinueSelector.isContinueChannel("Historial", "com.netflix.ninja"))
+        assertFalse(ContinueSelector.isContinueChannel("History"))
+        // El nombre genérico sigue funcionando con paquete
+        assertTrue(ContinueSelector.isContinueChannel("Seguir viendo", "com.netflix.ninja"))
+    }
 }

@@ -24,6 +24,7 @@ Formato por versión. El release de GitHub usa la sección de su versión como n
 - Configuración sin PC (Ajustes > Mantenimiento e información): con la depuración por red activa, Lienzo concede sus permisos, activa el servicio de botones (incluido el arranque automático de TCL), se fija como inicio y protector o devuelve el inicio al launcher original, sin computador. Cliente ADB local portado de Free My TV vía OmarchyTV (MIT), solo con comandos fijos. Accesos también desde Control remoto y Sistema y energía cuando falta algo.
 - TV en vivo sin Movistar: el botón TV usa la app de TV en vivo del fabricante (Sony, Sharp, Google TV, DTVKit, TCL, Hisense, Philips, Xiaomi).
 - Android 9 (Xiaomi Mi Box S): `minSdk` 28. Miniaturas, volúmenes de Mis fondos, lectura de formato de video e historial de cierres con alternativas para Android 9 y 10. Configuración sin PC deshabilita el launcher de sistema cuando Android 9 lo prefiere igual, y lo rehabilita al volver. Verificado en una MDZ-22-AB: 34 a 39 MB de PSS.
+- Continuar viendo con SmartTube: su canal "Historial" se toma como "Seguir viendo" (SmartTube no publica Watch Next). Solo para SmartTube; en otras apps un historial no cuenta.
 - Entradas se oculta en boxes de streaming sin HDMI ni AV (antes Pluto TV o Play Películas hacían aparecer "TV en vivo").
 - Actualizador: la confirmación explícita de Android 12 se pedía también en Android 11, donde el método no existe.
 - Video del modo arte: si el video de Monet no está en el equipo se usa el primer video propio (antes no se reproducía nada).

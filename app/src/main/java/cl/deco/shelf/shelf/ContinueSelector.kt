@@ -61,11 +61,20 @@ object ContinueSelector {
             "|\\bweiterschauen\\b|\\bcontinue\\s+a\\s+ver\\b",
     )
 
-    /** ¿El nombre del canal preview corresponde a "Seguir viendo"? Sin distinguir mayúsculas, tildes ni idioma (es/en/pt/fr/de/it). */
-    fun isContinueChannel(displayName: String?): Boolean {
+    /**
+     * ¿El nombre del canal preview corresponde a "Seguir viendo"? Sin distinguir mayúsculas, tildes ni idioma (es/en/pt/fr/de/it).
+     * SmartTube no publica Watch Next (su addWatchNextContinue nunca se llama): su canal "Historial" hace de "Seguir viendo",
+     * solo para sus paquetes; en otras apps un historial puede ser cualquier cosa (compras, búsquedas).
+     */
+    fun isContinueChannel(displayName: String?, pkg: String? = null): Boolean {
         val n = displayName?.let { normalize(it) } ?: return false
-        return CONTINUE_CHANNEL.containsMatchIn(n)
+        if (CONTINUE_CHANNEL.containsMatchIn(n)) return true
+        return pkg in HISTORY_AS_CONTINUE && HISTORY_CHANNEL.containsMatchIn(n)
     }
+
+    /** SmartTube estable y beta (y su id anterior). */
+    private val HISTORY_AS_CONTINUE = setOf("org.smarttube.stable", "org.smarttube.beta", "com.liskovsoft.smarttubetv.beta", "com.teamsmart.videomanager.tv")
+    private val HISTORY_CHANNEL = Regex("\\b(historial|history|historico|historique|verlauf|cronologia)\\b")
 
     private fun normalize(s: String): String =
         Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD)
