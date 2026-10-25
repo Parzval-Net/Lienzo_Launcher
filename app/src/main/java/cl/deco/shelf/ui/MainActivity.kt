@@ -999,7 +999,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val apps = repo.load()
             // Las apps se muestran primero; el TvProvider (lento en frío) no retrasa el dock
             main.post { if (started) { allApps = apps; rebuild() } }
-            // Watch Next: una sola pasada al iniciar y al cambiar paquetes
+            // Watch Next: una sola pasada al iniciar y al cambiar paquetes; nada si el usuario ocultó Top Shelf y Continuar viendo
+            if (!prefs.topShelf && !prefs.continueRow) return@execute
             val t0 = android.os.SystemClock.elapsedRealtime()
             try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
             Log.i("Shelf", "preload TvProvider: ${android.os.SystemClock.elapsedRealtime() - t0} ms (${apps.size} apps)")
@@ -1212,7 +1213,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun openGrid(focusSlot: Int = AppAdapter.GRID) {
         if (gridOpen) return
         // Continuar viendo: lee la lista ya cargada por preload (sin queries nuevas); sin items la fila no aparece
-        val list = try { graph.shelf.continueWatching(12) } catch (_: Throwable) { emptyList() }
+        val list = if (!prefs.continueRow) emptyList() else try { graph.shelf.continueWatching(12) } catch (_: Throwable) { emptyList() }
         contHas = list.isNotEmpty()
         contRv.setItems(list)
         val shift = if (contHas) 144 else 0
@@ -1632,7 +1633,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             }
             ShelfPrefs.DYNAMIC_COLORS -> { Theme.dynamic = prefs.dynamicColors; applyPalette(animate = true) }
             ShelfPrefs.ART_ON, ShelfPrefs.ART_WAIT -> scheduleArtMode()
-            ShelfPrefs.TOP_SHELF -> { shelfView.clear(); shelfPkg = null; main.post(shelfRun) }
+            ShelfPrefs.TOP_SHELF, ShelfPrefs.CONTINUE_ROW -> {
+                shelfView.clear(); shelfPkg = null
+                if (!prefs.continueRow) contRv.setItems(emptyList()) // suelta las imágenes de las tarjetas
+                if (prefs.topShelf || prefs.continueRow) reloadApps() else main.post(shelfRun) // al reactivar se vuelve a leer el TvProvider
+            }
             ShelfPrefs.CLOCK24 -> { main.removeCallbacks(tick); main.post(tick) }
             ShelfPrefs.WEATHER_ON -> {
                 topBar.setWeatherEnabled(prefs.weatherOn)

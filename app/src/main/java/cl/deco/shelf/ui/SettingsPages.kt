@@ -246,8 +246,12 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         toggle("Clima", ShelfPrefs.WEATHER_ON, "Activado", "Desactivado", { p.weatherOn }, { p.weatherOn = it }),
         Row.Act("Ubicación y región", { p.cityName }) { panel.push(locationPage()) },
         Row.Section("Pantalla de inicio"),
-        toggle("Top Shelf", ShelfPrefs.TOP_SHELF, "Activado", "Desactivado", { p.topShelf }, { p.topShelf = it }),
         choice("Favoritas en el dock (máx.)", ShelfPrefs.DOCK_MAX, listOf("4", "5", "6", "7"), listOf(4, 5, 6, 7), { p.dockMax }, { p.dockMax = it }),
+        Row.Section("Contenido de las apps"),
+        // Al cambiar se redibuja la página: el texto de abajo depende de ambos ajustes
+        toggle("Recomendados al enfocar una app", ShelfPrefs.TOP_SHELF, "Mostrar", "Ocultar", { p.topShelf }, { p.topShelf = it; main.post { panel.rebuild() } }),
+        toggle("Continuar viendo (Todas las apps)", ShelfPrefs.CONTINUE_ROW, "Mostrar", "Ocultar", { p.continueRow }, { p.continueRow = it; main.post { panel.rebuild() } }),
+        Row.Info("") { if (!p.topShelf && !p.continueRow) "Con ambos ocultos Lienzo no lee el historial ni las recomendaciones de tus apps." else "Lo que muestran viene de cada app (Netflix, YouTube, Disney+ y otras)." },
     ))
 
     fun appsAndIconsPage(): Page = Page("Apps e íconos", listOf(

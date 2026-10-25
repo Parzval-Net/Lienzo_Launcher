@@ -38,6 +38,8 @@ class ShelfPrefs(context: Context) {
     var dreamIntervalMin: Int get() = int(DREAM_INTERVAL, 3); set(v) = put(DREAM_INTERVAL, v)
     // Top Shelf, reloj, clima, dock
     var topShelf: Boolean get() = bool(TOP_SHELF, true); set(v) = put(TOP_SHELF, v)
+    /** Fila "Continuar viendo" sobre Todas las apps. Con esta y [topShelf] apagadas no se lee el TvProvider. */
+    var continueRow: Boolean get() = bool(CONTINUE_ROW, true); set(v) = put(CONTINUE_ROW, v)
     var clock24: Boolean get() = bool(CLOCK24, true); set(v) = put(CLOCK24, v)
     var weatherOn: Boolean get() = bool(WEATHER_ON, true); set(v) = put(WEATHER_ON, v)
     var dockMax: Int get() = int(DOCK_MAX, 7).coerceIn(4, 7); set(v) = put(DOCK_MAX, v)
@@ -96,7 +98,7 @@ class ShelfPrefs(context: Context) {
         const val BG_DYNAMIC = 3
         const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
-        const val TOP_SHELF = "top_shelf"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"
+        const val TOP_SHELF = "top_shelf"; const val CONTINUE_ROW = "continue_row"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"
         const val DOCK_MAX = "dock_max"; const val ICON_ORIGINAL = "icon_original"
         const val SETUP_DONE = "setup_done"
         const val NIGHT_ON = "night_on"; const val NIGHT_FROM = "night_from"; const val NIGHT_TO = "night_to"; const val NIGHT_IDLE = "night_idle"
@@ -105,7 +107,7 @@ class ShelfPrefs(context: Context) {
         const val UPDATE_AUTO = "update_auto"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
-            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, COLLECTION, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
+            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, COLLECTION, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CONTINUE_ROW, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST, UPDATE_AUTO, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )
