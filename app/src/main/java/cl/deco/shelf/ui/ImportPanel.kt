@@ -123,7 +123,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
 
     private fun load() {
         mode = Mode.LOADING
-        title.text = "Importar desde USB"
+        title.text = "Importar imágenes y videos"
         subtitle.text = ""
         showMessage("Buscando imágenes y videos...", emptyList())
         val g = ++gen
@@ -314,7 +314,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
         if (o.noSpace == null && !o.cancelled && o.images + o.videos == 0 && o.rejected.isEmpty() && o.failed.isEmpty() && o.skipped.isEmpty()) line("No había nada nuevo que importar.", Ui.TEXT2)
         val scroll = ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; overScrollMode = OVER_SCROLL_NEVER; isFocusable = false; addView(col, ViewGroup.LayoutParams(-1, -2)) }
         val done = PageUi.chip(ctx, "Listo", 120) { back(); onClose() }
-        val again = PageUi.chip(ctx, "Importar más", 150) { selected.clear(); load(); title.text = "Importar desde USB" }
+        val again = PageUi.chip(ctx, "Importar más", 150) { selected.clear(); load(); title.text = "Importar imágenes y videos" }
         val row = LinearLayout(ctx).apply { gravity = Gravity.END }
         row.addView(again); row.addView(done)
         val outer = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }

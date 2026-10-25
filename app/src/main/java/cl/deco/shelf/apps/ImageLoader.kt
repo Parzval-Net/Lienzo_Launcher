@@ -52,16 +52,28 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
 
     fun cachedUri(uri: String, cw: Int, ch: Int): Bitmap? = cache.get(uriCacheKey(uri, cw, ch))
 
-    /** Imagen de tarjeta (cover recortada, esquinas redondeadas y scrim inferior) descargada/decodificada en background. */
-    fun loadUri(uri: String, cw: Int, ch: Int, onLoaded: (Bitmap?) -> Unit) {
+    /** Pedidos en curso por clave: una misma imagen pedida dos veces (Top Shelf y Continuar viendo) se descarga una sola vez. */
+    private val inflight = HashMap<String, MutableList<(Bitmap?) -> Unit>>()
+
+    /**
+     * Imagen de tarjeta (cover recortada, esquinas redondeadas y scrim inferior) descargada/decodificada en background.
+     * [wanted] se evalúa en el hilo de trabajo justo antes de ir a la red: si la tarjeta ya no se muestra (el foco pasó a otra
+     * app) la descarga se omite y la cola no se llena de pedidos viejos.
+     */
+    fun loadUri(uri: String, cw: Int, ch: Int, wanted: () -> Boolean = { true }, onLoaded: (Bitmap?) -> Unit) {
         val key = uriCacheKey(uri, cw, ch)
+        synchronized(inflight) {
+            inflight[key]?.let { it += onLoaded; return }
+            inflight[key] = mutableListOf(onLoaded)
+        }
         pool.execute {
-            val bmp = cache.get(key) ?: try {
+            val bmp = cache.get(key) ?: if (!wanted()) null else try {
                 readBytes(uri)?.let { BitmapUtil.decodeBytes(it, cw, ch) }?.let { src ->
                     roundedCover(src, cw, ch, radius, scrim = true).also { src.recycle(); cache.put(key, it) }
                 }
             } catch (e: Throwable) { null }
-            main.post { onLoaded(bmp) }
+            val cbs = synchronized(inflight) { inflight.remove(key) }.orEmpty()
+            main.post { for (cb in cbs) cb(bmp) }
         }
     }
 

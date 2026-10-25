@@ -23,6 +23,41 @@ object Ui {
     val DECEL: android.view.animation.Interpolator = android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)
 }
 
+/**
+ * Estilo común de paneles (estilo tvOS, el mismo del desplegable de Entradas): tarjeta de vidrio translúcido con borde claro
+ * y foco blanco con texto oscuro. Lo usan Entradas, menús, Ajustes, Clima y Reloj para que todo se vea igual.
+ */
+object Glass {
+    const val CARD = 0xE63A4354.toInt()
+    const val STROKE = 0x59FFFFFF
+    const val FOCUS = 0xF2FFFFFF.toInt()
+    const val FOCUS_TEXT = 0xFF2A2F3A.toInt()
+    const val SELECTED = 0x38FFFFFF
+    const val IDLE = 0x1FFFFFFF
+    /** Fondo detrás de los paneles: oscurece la obra sin taparla. */
+    const val SCRIM = 0xCC0B0D14.toInt()
+
+    fun card(ctx: Context, radius: Float = 22f) = android.graphics.drawable.GradientDrawable().apply {
+        setColor(CARD); cornerRadius = ctx.dpf(radius); setStroke(ctx.dp(1), STROKE)
+    }
+
+    /** Fondo enfocable: blanco con foco, vidrio claro seleccionado/activado y [idle] en reposo (0 = transparente). */
+    fun bg(ctx: Context, radius: Float = 14f, idle: Int = IDLE) = android.graphics.drawable.StateListDrawable().apply {
+        fun round(c: Int) = android.graphics.drawable.GradientDrawable().apply { setColor(c); cornerRadius = ctx.dpf(radius) }
+        addState(intArrayOf(android.R.attr.state_focused), round(FOCUS))
+        addState(intArrayOf(android.R.attr.state_selected), round(SELECTED))
+        addState(intArrayOf(android.R.attr.state_activated), round(SELECTED))
+        addState(intArrayOf(), if (idle == 0) android.graphics.drawable.ColorDrawable(0) else round(idle))
+    }
+
+    /** Color de texto que pasa a oscuro cuando la fila (o la propia vista) tiene foco. */
+    fun fg(normal: Int = Ui.TEXT) = android.content.res.ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(FOCUS_TEXT, normal))
+
+    /** Texto dentro de una fila enfocable: hereda el foco del padre y se oscurece sobre el blanco. */
+    fun inRow(t: TextView, normal: Int = Ui.TEXT): TextView = t.apply { isDuplicateParentStateEnabled = true; setTextColor(fg(normal)) }
+}
+
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
 fun Context.dpf(v: Float): Float = v * resources.displayMetrics.density
 
@@ -71,7 +106,7 @@ object Es {
     }
 
     fun fecha(d: LocalDate) = if (english) "${dias[d.dayOfWeek.value - 1]}, ${meses[d.monthValue - 1]} ${d.dayOfMonth}"
-    else "${dias[d.dayOfWeek.value - 1]} ${d.dayOfMonth} de ${meses[d.monthValue - 1]}"
+    else "${dias[d.dayOfWeek.value - 1].replaceFirstChar { it.uppercase() }}, ${d.dayOfMonth} de ${meses[d.monthValue - 1]}"
     fun corta(d: LocalDate) = if (english) "${diasCorto[d.dayOfWeek.value - 1]} ${meses[d.monthValue - 1].take(3)} ${d.dayOfMonth}"
     else "${diasCorto[d.dayOfWeek.value - 1]} ${d.dayOfMonth} ${meses[d.monthValue - 1].take(3)}"
     fun mes(m: Int, y: Int) = "${meses[m - 1].replaceFirstChar { it.uppercase() }} $y"

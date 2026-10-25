@@ -46,12 +46,12 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
 
     init {
         visibility = GONE
-        setBackgroundColor(0xF50B0B10.toInt())
+        setBackgroundColor(Glass.SCRIM)
         isClickable = true
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(ctx.dp(22), ctx.dp(18), ctx.dp(22), ctx.dp(14))
-            background = GradientDrawable().apply { setColor(0x22FFFFFF); cornerRadius = ctx.dpf(20f) }
+            background = Glass.card(ctx)
         }
         card.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(6) })
         card.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -92,7 +92,7 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         val ctx = context
         body.removeAllViews()
         if (howTo) { buildHowTo(); return }
-        title.text = "Salud del deco"
+        title.text = "Salud del equipo"
         val s = snapshot()
         val ram = DeviceHealth.readRam(ctx)
         val reco = DeviceHealth.recommend(s, ram.availKb, ram.totalKb, freed)
@@ -156,9 +156,9 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(ctx.dp(12), 0, ctx.dp(12), 0)
             isFocusable = true; isClickable = true
-            background = PageUi.focusBg(ctx)
-            addView(tv(ctx, 16f, Ui.TEXT).apply { this.text = text; maxLines = 1 }, LinearLayout.LayoutParams(-2, -2))
-            addView(tv(ctx, 14f, Ui.TEXT2).apply { this.text = detail; gravity = Gravity.END; maxLines = 1 }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12) })
+            background = Glass.bg(ctx, 14f, 0)
+            addView(Glass.inRow(tv(ctx, 16f).apply { this.text = text; maxLines = 1 }), LinearLayout.LayoutParams(-2, -2))
+            addView(Glass.inRow(tv(ctx, 14f).apply { this.text = detail; gravity = Gravity.END; maxLines = 1 }, Ui.TEXT2), LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12) })
             setOnClickListener { onClick() }
         }
     }

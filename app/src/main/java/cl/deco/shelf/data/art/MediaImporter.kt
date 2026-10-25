@@ -179,7 +179,9 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             if (!it.isVideo) {
                 if (it.key in doneKeys) skipped += it.name else images += it
             } else {
-                if (existingVideos[it.name] == it.size) { skipped += it.name; return@forEachIndexed }
+                // Se compara con el nombre ya saneado (así se guardó): antes "Clip (1).MP4" nunca coincidía y se copiaba otra vez
+                val stored = ImportMath.safeFileName(it.name, emptySet())
+                if (existingVideos[stored] == it.size || existingVideos[it.name] == it.size) { skipped += it.name; return@forEachIndexed }
                 when (val v = validateVideo(it)) {
                     is VideoRules.Verdict.Ok -> videos += it
                     is VideoRules.Verdict.Rejected -> rejected += it.name to v.message
@@ -237,7 +239,9 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalStateException("no es una imagen")
         val rot = ImportMath.exifRotation(orientation)
         val (ow, oh) = if (rot % 180 == 90) bounds.outHeight to bounds.outWidth else bounds.outWidth to bounds.outHeight
-        var sample = ImportMath.sampleSize(ow, oh)
+        // Verticales y cuadradas solo llenan el passe-partout (alto <= 1080): pedir 1920x1080 en ambos ejes las decodificaba
+        // completas (una foto de 12 MP vertical son ~48 MB, más otro tanto al rotar) y en un equipo de 2 GB terminaba en OOM
+        var sample = if (ImportMath.needsMat(ow, oh)) ImportMath.sampleSize(ow, oh, 1, ArtCatalog.OUT_H) else ImportMath.sampleSize(ow, oh)
         var bmp: Bitmap? = null
         for (attempt in 0 until 3) {
             try {
@@ -249,7 +253,13 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
         }
         var src = bmp ?: throw IllegalStateException("decodificación fallida")
         if (rot != 0) {
-            val rotated = Bitmap.createBitmap(src, 0, 0, src.width, src.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
+            val m = Matrix().apply { postRotate(rot.toFloat()) }
+            val rotated = try {
+                Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+            } catch (_: OutOfMemoryError) {
+                // Sin memoria para la copia rotada: se rota a la mitad de tamaño (sigue sobrando para 1080p)
+                Bitmap.createBitmap(src, 0, 0, src.width, src.height, m.apply { postScale(0.5f, 0.5f) }, true)
+            }
             if (rotated !== src) src.recycle()
             src = rotated
         }

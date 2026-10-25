@@ -38,7 +38,11 @@ class Page(val title: String, val rows: List<Row>, val onShow: (() -> Unit)? = n
  */
 class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
 
-    private val title = tv(ctx, 22f, Ui.TEXT, "sans-serif-medium")
+    private val title = tv(ctx, 22f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+    /** Ruta de páginas ("Ajustes › Pantalla y fondos"): con varias subpáginas se sabe dónde se está y adónde vuelve BACK. */
+    private val crumb = tv(ctx, 13f, Ui.TEXT2).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.START; visibility = GONE }
+    private val footer = tv(ctx, 13f, Ui.TEXT2).apply { gravity = Gravity.CENTER; alpha = 0.8f }
+    private val themeListener: () -> Unit = { refreshAccent() }
     private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private val scroll = ScrollView(ctx).apply {
         isVerticalScrollBarEnabled = false
@@ -56,27 +60,36 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
 
     init {
         visibility = GONE
-        setBackgroundColor(0xF50B0B10.toInt())
+        setBackgroundColor(Glass.SCRIM)
         isClickable = true
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(ctx.dp(22), ctx.dp(18), ctx.dp(22), ctx.dp(14))
-            background = GradientDrawable().apply { setColor(0x22FFFFFF); cornerRadius = ctx.dpf(20f) }
+            // Vidrio casi opaco: con tanto texto la barra superior no debe transparentarse detrás
+            background = Glass.card(ctx).apply { setColor(0xF23A4354.toInt()) }
         }
+        card.addView(crumb, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(2) })
         card.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(8) })
         card.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        addView(card, LayoutParams(ctx.dp(640), ctx.dp(470), Gravity.CENTER))
-        Theme.listeners.add { refreshAccent() }
+        card.addView(View(ctx).apply { setBackgroundColor(0x22FFFFFF) }, LinearLayout.LayoutParams(-1, 1).apply { topMargin = ctx.dp(8) })
+        card.addView(footer, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8) })
+        addView(card, LayoutParams(ctx.dp(680), ctx.dp(480), Gravity.CENTER))
     }
+
+    // El listener vive solo mientras el panel está en pantalla: con recreate() la Activity anterior no queda retenida por Theme
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); Theme.listeners.add(themeListener); refreshAccent() }
+    override fun onDetachedFromWindow() { Theme.listeners.remove(themeListener); super.onDetachedFromWindow() }
 
     val isOpen get() = visibility == VISIBLE
     fun currentTitle() = stack.lastOrNull()?.title.orEmpty()
 
     fun open(root: Page) {
         stack.clear(); focusStack.clear()
+        animate().cancel()
         alpha = 0f
         visibility = VISIBLE
-        animate().alpha(1f).setDuration(180).start()
+        // Capa de hardware durante el fundido: el panel se compone una vez y la GPU solo mezcla su alpha (60 fps en Mali-450)
+        animate().alpha(1f).setDuration(180).withLayer().start()
         push(root)
     }
 
@@ -104,6 +117,14 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         return true
     }
 
+    /** Reemplaza la página actual por [p] (filas recalculadas), manteniendo la fila enfocada y la pila. */
+    fun replace(p: Page) {
+        if (stack.isEmpty()) { push(p); return }
+        val f = findFocus()
+        stack[stack.size - 1] = p
+        build(p, if (f != null) rowIndexOf(f) else -1)
+    }
+
     /** Reconstruye la página actual (tras cambiar valores que afectan a otras filas). */
     fun rebuild() {
         val f = findFocus()
@@ -127,6 +148,15 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
 
     private fun build(p: Page, focusIdx: Int = -1) {
         title.text = p.title
+        if (stack.size > 1) { crumb.text = stack.dropLast(1).joinToString("  ›  ") { it.title }; crumb.visibility = VISIBLE }
+        else crumb.visibility = GONE
+        val hasChoice = p.rows.any { it is Row.Choice }
+        footer.text = when {
+            hasChoice && stack.size > 1 -> "‹ ›  cambia el valor     OK  selecciona     BACK  vuelve"
+            hasChoice -> "‹ ›  cambia el valor     OK  selecciona     BACK  cierra"
+            stack.size > 1 -> "OK  selecciona     BACK  vuelve"
+            else -> "OK  selecciona     BACK  cierra"
+        }
         list.removeAllViews()
         focusBgs.clear(); sections.clear(); slots.clear()
         for (r in p.rows) addRow(list, r)
@@ -152,23 +182,14 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         return null
     }
 
-    private fun rowBg(): GradientDrawable {
-        val bg = GradientDrawable().apply { setColor(Theme.withAlpha(Theme.accent, 0x99)); cornerRadius = context.dpf(10f) }
-        focusBgs.add(bg)
-        return bg
-    }
-
+    /** Fila enfocable con el estilo común: blanco con foco y textos (vía [Glass.inRow]) oscuros sobre el blanco. */
     private fun focusable(v: View) {
         v.isFocusable = true
         v.isClickable = true
-        v.background = android.graphics.drawable.StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_focused), rowBg())
-            addState(intArrayOf(), ColorDrawable(0))
-        }
+        v.background = Glass.bg(context, 14f, 0)
     }
 
     private fun refreshAccent() {
-        for (b in focusBgs) b.setColor(Theme.withAlpha(Theme.accent, 0x99))
         for (s in sections) s.setTextColor(Theme.light)
     }
 
@@ -180,18 +201,17 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
                 sections.add(this)
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(14); bottomMargin = ctx.dp(4); leftMargin = ctx.dp(8) })
             is Row.Choice -> {
-                val value = tv(ctx, 16f, Ui.TEXT2).apply { gravity = Gravity.END }
+                val value = Glass.inRow(tv(ctx, 16f).apply { gravity = Gravity.END })
                 val row = LinearLayout(ctx).apply {
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(ctx.dp(12), 0, ctx.dp(12), 0)
                 }
                 focusable(row)
-                row.addView(tv(ctx, 16f, Ui.TEXT).apply { text = r.label }, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(Glass.inRow(tv(ctx, 16f).apply { text = r.label }), LinearLayout.LayoutParams(0, -2, 1f))
                 row.addView(value, LinearLayout.LayoutParams(-2, -2))
                 fun show() {
                     val i = r.get().coerceIn(0, r.options.size - 1)
                     value.text = "‹  ${r.options[i]}  ›"
-                    value.setTextColor(Ui.TEXT)
                 }
                 fun step(d: Int) {
                     val n = r.options.size
@@ -210,10 +230,10 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
                 parent.addView(row, LinearLayout.LayoutParams(-1, ctx.dp(44)))
             }
             is Row.Act -> {
-                val value = tv(ctx, 15f, Ui.TEXT2).apply { gravity = Gravity.END; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+                val value = Glass.inRow(tv(ctx, 15f).apply { gravity = Gravity.END; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, Ui.TEXT2)
                 val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ctx.dp(12), 0, ctx.dp(12), 0) }
                 focusable(row)
-                row.addView(tv(ctx, 16f, Ui.TEXT).apply { text = r.label; maxLines = 1 }, LinearLayout.LayoutParams(-2, -2))
+                row.addView(Glass.inRow(tv(ctx, 16f).apply { text = r.label; maxLines = 1 }), LinearLayout.LayoutParams(-2, -2))
                 value.text = r.detail()
                 row.addView(value, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12) })
                 row.setOnClickListener { r.run(); value.text = r.detail() }
@@ -222,8 +242,8 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
             is Row.Info -> {
                 val row = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(ctx.dp(12), ctx.dp(6), ctx.dp(12), ctx.dp(6)) }
                 focusable(row)
-                row.addView(tv(ctx, 13f, Ui.TEXT2).apply { text = r.label })
-                row.addView(tv(ctx, 15f, Ui.TEXT).apply { text = r.text(); setLineSpacing(0f, 1.1f) })
+                row.addView(Glass.inRow(tv(ctx, 13f).apply { text = r.label }, Ui.TEXT2))
+                row.addView(Glass.inRow(tv(ctx, 15f).apply { text = r.text(); setLineSpacing(0f, 1.1f) }))
                 row.isClickable = false
                 parent.addView(row, LinearLayout.LayoutParams(-1, -2))
             }

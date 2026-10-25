@@ -98,6 +98,37 @@ open class FocusCell(
         content.foreground = if (on) ring else null
     }
 
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+            event.startTracking()
+            return true
+        }
+        if (keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+            return performLongClick()
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (event.isTracking && !event.isCanceled) {
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+                performClick()
+                return true
+            }
+        }
+        if (keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+            return performLongClick()
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
     /** Estado limpio al reciclar la vista. */
     fun resetFx() {
         animate().cancel()

@@ -1,6 +1,6 @@
 # Lienzo
 
-**Lienzo** es un launcher liviano para Android TV: una obra de arte de dominio público como fondo, tus apps favoritas en un dock, "Continuar viendo", reloj con alarma y temporizador, clima y feriados. Paquete `cl.deco.shelf`, licencia MIT.
+**Lienzo** es un launcher liviano para Android TV y Google TV (televisores y decos): una obra de arte de dominio público como fondo, tus apps favoritas en un dock, "Continuar viendo", Entradas (HDMI, AV, TV en vivo), botones del control asignables a cualquier app, reloj con alarma y temporizador, clima y feriados. Paquete `cl.deco.shelf`, licencia MIT.
 
 > **English summary.** Lienzo is a lightweight Android TV launcher (Android 12+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), clock, alarms and timers, weather and public holidays, a screensaver with video, a crash watchdog (safe mode) and a device health notice. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub. Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are signed locally with `tools/release.sh` (no keys in CI). UI language: Spanish (Chile) with partial English date formats. Tested on a single device (DIW585, Android 12).
 
@@ -19,7 +19,9 @@ Las capturas tienen desenfocados los íconos de apps y el historial de reproducc
 
 ## Funciones
 
-- Home con apps favoritas, íconos adaptados u originales, renombrar, ocultar y mover.
+- Home con 4 a 7 apps favoritas, íconos adaptados u originales, renombrar, ocultar, mover y desinstalar.
+- Entradas del televisor (HDMI con nombre personalizado y estado de señal, AV, TV en vivo) desde la barra superior o el botón Entradas del control.
+- Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes o TV en vivo. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas.
 - Top Shelf y "Continuar viendo" (Watch Next y canales de vista previa, vía `READ_TV_LISTINGS`).
 - Fondo de obras de dominio público (60 obras de Wikimedia Commons), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra.
 - Mis fondos: importa tus imágenes y videos desde un pendrive USB (sin red, sin ADB).
@@ -34,7 +36,7 @@ Las capturas tienen desenfocados los íconos de apps y el historial de reproducc
 
 ## Requisitos
 
-- Android TV 12 o superior (`minSdk` 31). Probado solo en un decodificador DIW585 con Android 12. Otros equipos no están verificados.
+- Android TV 11 o superior (`minSdk` 30). Probado en un decodificador DIW585 (Android 12) y en un televisor TCL con Google TV (Android 11). Otros equipos no están verificados.
 - Para el modo sin ADB, un explorador de archivos o una app de descarga en el equipo.
 
 ## Instalación
@@ -51,7 +53,11 @@ adb install -r -g Lienzo-X.Y.Z.apk
 adb shell pm grant cl.deco.shelf android.permission.READ_TV_LISTINGS
 adb shell pm grant cl.deco.shelf android.permission.WRITE_SECURE_SETTINGS   # apagado nocturno de pantalla
 adb shell appops set cl.deco.shelf SYSTEM_ALERT_WINDOW allow                # alarma sobre otras apps
+adb shell cmd appops set cl.deco.shelf APP_AUTO_START allow                  # TCL: permite que arranque el servicio de botones del control
+adb shell settings put secure enabled_accessibility_services cl.deco.shelf/cl.deco.shelf.service.KeyService
 ```
+
+En televisores TCL, los botones Netflix, Prime Video, YouTube, TCL Channel (Kino TV), Guard (Downloader), Web (Web Video Caster) y TCL Home (Play Store) se reasignan con el servicio de accesibilidad de Lienzo. Sin `APP_AUTO_START` el sistema deja el servicio habilitado pero detenido; Ajustes > Control remoto muestra el estado.
 
 Después abre Lienzo: el asistente de primer inicio guía la elección de Lienzo como pantalla de inicio. Al terminar, desactiva la depuración por red si no la usas.
 

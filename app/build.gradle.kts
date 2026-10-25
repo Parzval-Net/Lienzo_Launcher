@@ -19,10 +19,10 @@ android {
 
     defaultConfig {
         applicationId = "cl.deco.shelf"
-        minSdk = 31
+        minSdk = 30
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.1.3"
+        versionCode = 7
+        versionName = "1.2.0"
         // Solo con -PlienzoCrashTrigger: gatillo de crash para probar el modo seguro. El release normal NO lo trae.
         val trigger = project.hasProperty("lienzoCrashTrigger")
         buildConfigField("boolean", "CRASH_TRIGGER", trigger.toString())
@@ -76,7 +76,7 @@ android {
 }
 
 kotlin {
-    jvmToolchain(21)
+    // Sin jvmToolchain: compila con el JDK que corre Gradle (17 o 21, como el CI) y apunta a bytecode 17 igual que compileOptions
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
 

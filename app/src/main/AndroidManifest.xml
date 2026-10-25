@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
 
@@ -15,6 +18,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Actualizador: instala el APK verificado con PackageInstaller; Android siempre pide confirmar y autorizar "instalar apps desconocidas" -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- "Desinstalar app" del menú: sin este permiso el instalador del sistema descarta ACTION_DELETE en silencio (Android 9+) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Apagado nocturno: se concede por adb (pm grant), no es un permiso de usuario -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
@@ -30,6 +35,39 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <!-- Entradas: app de TV en vivo (canales de TvContract), visores genéricos a descartar y panel de entradas del sistema -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" android:mimeType="vnd.android.cursor.item/channel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" android:mimeType="application/octet-stream" />
+        </intent>
+        <!-- Accesos rápidos del sistema (Wi-Fi, Bluetooth, imagen, sonido, almacenamiento) y Ajustes de Android TV -->
+        <package android:name="com.android.tv.settings" />
+        <intent><action android:name="android.settings.SETTINGS" /></intent>
+        <intent><action android:name="android.settings.WIFI_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.BLUETOOTH_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.DISPLAY_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.SOUND_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.INTERNAL_STORAGE_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.ACCESSIBILITY_SETTINGS" /></intent>
+        <intent>
+            <action android:name="com.android.tv.action.VIEW_INPUTS" />
+        </intent>
+        <intent>
+            <action android:name="android.media.tv.TvInputService" />
+        </intent>
+        <!-- Panel de ajustes rápidos del fabricante (TCL) para el botón Ajustes y la sección Televisor -->
+        <intent>
+            <action android:name="com.tcl.settings.action.QUICKSETTINGS" />
+        </intent>
+        <!-- Botones del control asignables a cualquier app con ícono (TV o móvil) -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
@@ -90,6 +128,18 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.Shelf" />
+
+        <service
+            android:name=".service.KeyService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/key_service_config" />
+        </service>
 
         <service
             android:name=".dream.ArtDreamService"

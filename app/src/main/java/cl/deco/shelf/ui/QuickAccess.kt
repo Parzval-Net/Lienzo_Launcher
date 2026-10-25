@@ -29,6 +29,17 @@ object QuickAccess {
 
     val storage get() = items[4]
 
+    /** Panel rápido del fabricante (TCL: brillo, modo de imagen y sonido, temporizador, Bluetooth, red) sobre la app actual. */
+    const val ACTION_TCL_QUICK = "com.tcl.settings.action.QUICKSETTINGS"
+
+    fun tvQuick(ctx: Context): Intent? = Intent(ACTION_TCL_QUICK).takeIf {
+        ctx.packageManager.resolveActivity(it, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) != null
+    }
+
+    /** Ajustes de imagen del televisor (TCL: com.tcl.settings/.PictureActivity vía DISPLAY_SETTINGS). */
+    val picture get() = items[2]
+    val sound get() = items[3]
+
     fun launch(ctx: Context, item: Item) {
         val pm = ctx.packageManager
         val i = (item.candidates + Intent(Settings.ACTION_SETTINGS)).firstOrNull {

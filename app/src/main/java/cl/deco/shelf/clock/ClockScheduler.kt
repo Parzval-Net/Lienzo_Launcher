@@ -27,7 +27,8 @@ object ClockScheduler {
     private fun set(ctx: Context, at: Long, p: PendingIntent) {
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         try {
-            if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p)
+            val canExact = android.os.Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
+            if (canExact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p)
             else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p) // sin permiso exacto: aproximado
         } catch (e: SecurityException) { Log.w(TAG, "alarma: $e") }
     }

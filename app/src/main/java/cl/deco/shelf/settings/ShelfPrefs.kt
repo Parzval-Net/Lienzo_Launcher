@@ -36,7 +36,7 @@ class ShelfPrefs(context: Context) {
     var topShelf: Boolean get() = bool(TOP_SHELF, true); set(v) = put(TOP_SHELF, v)
     var clock24: Boolean get() = bool(CLOCK24, true); set(v) = put(CLOCK24, v)
     var weatherOn: Boolean get() = bool(WEATHER_ON, true); set(v) = put(WEATHER_ON, v)
-    var dockMax: Int get() = int(DOCK_MAX, 7).coerceIn(5, 8); set(v) = put(DOCK_MAX, v)
+    var dockMax: Int get() = int(DOCK_MAX, 7).coerceIn(4, 7); set(v) = put(DOCK_MAX, v)
     /** true = íconos originales sin procesar; false = adaptados (por defecto). */
     var iconOriginal: Boolean get() = bool(ICON_ORIGINAL, false); set(v) = put(ICON_ORIGINAL, v)
     // Apagado nocturno (minutos desde las 00:00)

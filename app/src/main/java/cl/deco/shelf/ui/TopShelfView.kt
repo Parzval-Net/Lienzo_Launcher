@@ -50,6 +50,8 @@ class TopShelfView(
         alpha = 0f
     }
     private var showingItems = false
+    /** Generación del contenido: las descargas de imágenes de una lista anterior se descartan antes de pedir la red. */
+    @Volatile private var gen = 0
 
     init {
         clipChildren = false
@@ -60,7 +62,9 @@ class TopShelfView(
 
     /** Con contenido de TvProvider: carrusel sobre el dock. */
     fun show(list: List<TopShelfItem>) {
+        if (showingItems && list == items && carousel.visibility == VISIBLE) return // mismo contenido: sin rebind ni salto de scroll
         items.clear(); items.addAll(list)
+        gen++
         carousel.adapter?.notifyDataSetChanged()
         carousel.scrollToPosition(0)
         showingItems = true
@@ -80,8 +84,17 @@ class TopShelfView(
         fade(name, true)
     }
 
+    /** Con tarjetas visibles enfoca la primera completamente visible (UP desde el dock). */
+    fun focusCards(): Boolean {
+        if (!showingItems || carousel.visibility != VISIBLE || carousel.childCount == 0) return false
+        val lm = carousel.layoutManager as LinearLayoutManager
+        val pos = lm.findFirstCompletelyVisibleItemPosition().takeIf { it >= 0 } ?: lm.findFirstVisibleItemPosition()
+        return carousel.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus() ?: false
+    }
+
     /** Oculta ambos (mientras se espera el debounce o con la grilla abierta). */
     fun clear() {
+        gen++
         showingItems = false
         fade(carousel, false)
         fade(name, false)
@@ -142,7 +155,8 @@ class TopShelfView(
                 h.cell.image.setImageBitmap(hit)
             } else {
                 h.cell.image.setImageDrawable(placeholder())
-                loader.loadUri(uri, cardW, cardH) { bmp ->
+                val g = gen
+                loader.loadUri(uri, cardW, cardH, { gen == g }) { bmp ->
                     if (bmp != null && h.cell.tag == uri) h.cell.image.setImageBitmap(bmp)
                 }
             }
@@ -154,8 +168,10 @@ class TopShelfView(
             h.cell.tag = null
         }
 
-        private fun placeholder() = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2E3340.toInt(), 0xFF14161D.toInt()),
-        ).apply { cornerRadius = radius }
+        // Placeholder: estado compartido (newDrawable), sin recrear el degradado en cada bind
+        private val ph by lazy {
+            GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2E3340.toInt(), 0xFF14161D.toInt())).apply { cornerRadius = radius }
+        }
+        private fun placeholder() = ph.constantState?.newDrawable() ?: ph
     }
 }

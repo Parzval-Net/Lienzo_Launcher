@@ -34,15 +34,30 @@ class TvProviderShelf(context: Context) : TopShelfProvider {
         synchronized(cache) {
             cache[packageName]?.let { if (now() - it.at < TTL_MS) return it.items }
         }
+        return refresh(packageName)
+    }
+
+    /**
+     * Lectura de la caché sin tocar el provider (barata, apta para el main thread): items y si siguen vigentes, o null si el
+     * paquete nunca se leyó. Permite pintar el Top Shelf al instante y refrescarlo en segundo plano solo si venció.
+     */
+    fun peek(packageName: String): Pair<List<TopShelfItem>, Boolean>? = synchronized(cache) {
+        cache[packageName]?.let { it.items to (now() - it.at < TTL_MS) }
+    }
+
+    /** Relee Watch Next y preview de [packageName] ignorando el TTL. Bloqueante. */
+    fun refresh(packageName: String): List<TopShelfItem> {
         val items = try {
             val watch = readWatchNext().byPkg[packageName].orEmpty()
             merge(watch, readPreview(packageName))
         } catch (e: SecurityException) {
             logDenied(e)
-            emptyList()
+            put(packageName, emptyList())
+            return emptyList()
         } catch (e: Exception) {
+            // Error transitorio del provider: se conservan las tarjetas que había (antes se cacheaba vacío por 5 min)
             Log.w(TAG, "itemsFor($packageName): $e")
-            emptyList()
+            return synchronized(cache) { cache[packageName]?.items }.orEmpty()
         }
         put(packageName, items)
         return items

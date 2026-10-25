@@ -8,61 +8,93 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.ScrollView
 
-/** Menú contextual simple de una app (Agregar/Quitar favoritas, Mover, Info). */
+/**
+ * Menú contextual de una app (Agregar/Quitar favoritas, Mover, Renombrar, Desinstalar, Info) y listas simples (Entradas,
+ * apps ocultas). El foco usa el acento vigente, igual que Ajustes y las píldoras de la barra superior.
+ */
 class MenuPanel(ctx: Context) : FrameLayout(ctx) {
+
+    /** Opción de lista: texto, detalle opcional a la derecha (p. ej. estado de una entrada) y acción. */
+    class Opt(val label: String, val detail: String? = null, val run: () -> Unit)
 
     private val box = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(ctx.dp(16), ctx.dp(16), ctx.dp(16), ctx.dp(16))
-        background = GradientDrawable().apply { setColor(0xF0202028.toInt()); cornerRadius = ctx.dpf(18f) }
+        setPadding(context.dp(16), context.dp(16), context.dp(16), context.dp(16))
+        background = Glass.card(ctx)
     }
-    private val title = tv(ctx, 18f, Ui.TEXT, "sans-serif-medium")
+    private val title = tv(ctx, 18f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
 
     init {
         visibility = GONE
         setBackgroundColor(0x99000000.toInt())
         isClickable = true
-        addView(box, LayoutParams(ctx.dp(320), -2, Gravity.CENTER))
+        addView(box, LayoutParams(context.dp(380), -2, Gravity.CENTER))
     }
 
-    private fun option(text: String, onClick: () -> Unit): TextView = tv(context, 16f).apply {
-        this.text = text
-        isFocusable = true
-        isClickable = true
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(ctx().dp(14), 0, ctx().dp(14), 0)
-        background = StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_focused),
-                GradientDrawable().apply { setColor(0xFFFFFFFF.toInt()); cornerRadius = ctx().dpf(10f) })
-            addState(intArrayOf(), ColorDrawable(0))
+    /** Opción con el estilo común (foco blanco, texto oscuro); "Desinstalar" usa rojo con texto blanco. */
+    private fun option(text: String, detail: String?, onClick: () -> Unit, highlight: Boolean = false): View {
+        val row = LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = true
+            isClickable = true
+            setPadding(context.dp(14), 0, context.dp(14), 0)
+            background = if (!highlight) Glass.bg(context, 14f, 0) else StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { setColor(0xFFD32F2F.toInt()); cornerRadius = context.dpf(14f) })
+                addState(intArrayOf(), ColorDrawable(0))
+            }
+            setOnClickListener { onClick() }
         }
-        setTextColor(android.content.res.ColorStateList(
-            arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(0xFF111111.toInt(), Ui.TEXT)))
-        setOnClickListener { onClick() }
+        val label = tv(context, 16f).apply { this.text = text; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+        row.addView(if (highlight) label else Glass.inRow(label), LinearLayout.LayoutParams(0, -2, 1f))
+        if (!detail.isNullOrEmpty()) row.addView(Glass.inRow(tv(context, 14f).apply { this.text = detail; maxLines = 1 }, Ui.TEXT2),
+            LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(12) })
+        return row
     }
 
-    private fun ctx() = context
-
-    fun show(label: String, isFav: Boolean, onFav: () -> Unit, onMove: () -> Unit, onInfo: () -> Unit, onHide: () -> Unit, onHidden: () -> Unit, onRename: () -> Unit, onSettings: () -> Unit, onQuick: (QuickAccess.Item) -> Unit) {
+    private fun reset(label: String) {
         box.removeAllViews()
         title.text = label
-        title.maxLines = 1
         box.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = context.dp(10); leftMargin = context.dp(14) })
-        val opts = listOf(
-            option(if (isFav) "Quitar de favoritas" else "Agregar a favoritas", onFav),
-            option("Mover", onMove),
-            option("Renombrar", onRename),
-            option("Info de la app", onInfo),
-            option("Ocultar app", onHide),
-            option("Ver apps ocultas", onHidden),
-            option("Ajustes de Lienzo", onSettings),
+    }
+
+    /** Fundido corto con capa de hardware: la tarjeta se compone una vez, sin capas fuera de pantalla por frame. */
+    private fun reveal(first: View?) {
+        animate().cancel()
+        alpha = 0f
+        visibility = VISIBLE
+        animate().alpha(1f).setDuration(140).withLayer().start()
+        first?.requestFocus()
+    }
+
+    fun show(
+        label: String,
+        isFav: Boolean,
+        onFav: () -> Unit,
+        onMove: () -> Unit,
+        onInfo: () -> Unit,
+        onHide: () -> Unit,
+        onHidden: () -> Unit,
+        onRename: () -> Unit,
+        onUninstall: (() -> Unit)?,
+        onSettings: () -> Unit,
+        onQuick: (QuickAccess.Item) -> Unit,
+    ) {
+        reset(label)
+        val opts = mutableListOf(
+            option(if (isFav) "Quitar de favoritas" else "Agregar a favoritas", null, onFav),
+            option("Mover", null, onMove),
+            option("Renombrar", null, onRename),
+            option("Info de la app", null, onInfo),
+            option("Ocultar app", null, onHide),
+            option("Ver apps ocultas", null, onHidden),
         )
+        if (onUninstall != null) opts.add(option("Desinstalar app", null, onUninstall, highlight = true))
+        opts.add(option("Ajustes de Lienzo", null, onSettings))
         for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(40)))
         addQuickRow(onQuick)
-        visibility = VISIBLE
-        opts[0].requestFocus()
+        reveal(opts[0])
     }
 
     /** Fila de accesos rápidos del sistema (íconos enfocables) y nombre del enfocado. */
@@ -72,13 +104,11 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
         val row = LinearLayout(c).apply { gravity = Gravity.CENTER; setPadding(0, c.dp(8), 0, 0) }
         for (it in QuickAccess.items) {
             val b = android.widget.ImageView(c).apply {
-                setImageResource(it.icon); setColorFilter(Ui.TEXT)
+                setImageResource(it.icon); imageTintList = Glass.fg()
                 setPadding(c.dp(9), c.dp(9), c.dp(9), c.dp(9))
                 isFocusable = true; isClickable = true
-                background = StateListDrawable().apply {
-                    addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { setColor(Theme.withAlpha(Theme.accent, 0xB0)); cornerRadius = c.dpf(10f) })
-                    addState(intArrayOf(), ColorDrawable(0))
-                }
+                contentDescription = it.label
+                background = Glass.bg(c, 14f, 0)
                 setOnFocusChangeListener { _, f -> if (f) name.text = it.label }
                 setOnClickListener { _ -> onQuick(it) }
             }
@@ -88,16 +118,25 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
         box.addView(name, LinearLayout.LayoutParams(-1, -2).apply { topMargin = c.dp(2) })
     }
 
-    /** Lista simple de opciones (p. ej. apps ocultas a restaurar). */
-    fun showList(label: String, options: List<Pair<String, () -> Unit>>) {
-        box.removeAllViews()
-        title.text = label
-        box.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = context.dp(10); leftMargin = context.dp(14) })
-        val views = options.map { (t, a) -> option(t, a) }
-        for (o in views) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(44)))
-        visibility = VISIBLE
-        views.firstOrNull()?.requestFocus()
+    /** Lista simple de opciones (entradas, apps ocultas). Más de [MAX_ROWS] filas se desplazan dentro de la tarjeta. */
+    fun showList(label: String, options: List<Opt>) {
+        reset(label)
+        val views = options.map { o -> option(o.label, o.detail, { o.run() }) }
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        for (v in views) list.addView(v, LinearLayout.LayoutParams(-1, context.dp(44)))
+        if (views.size > MAX_ROWS) {
+            val sv = ScrollView(context).apply {
+                isVerticalScrollBarEnabled = false
+                overScrollMode = OVER_SCROLL_NEVER
+                isFocusable = false
+                addView(list)
+            }
+            box.addView(sv, LinearLayout.LayoutParams(-1, context.dp(44 * MAX_ROWS)))
+        } else box.addView(list, LinearLayout.LayoutParams(-1, -2))
+        reveal(views.firstOrNull())
     }
 
-    fun hide() { visibility = GONE }
+    fun hide() { animate().cancel(); visibility = GONE }
+
+    private companion object { const val MAX_ROWS = 8 }
 }

@@ -47,24 +47,25 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
 
     init {
         visibility = GONE
-        setBackgroundColor(0xF50B0B10.toInt())
+        setBackgroundColor(Glass.SCRIM)
         isClickable = true
 
+        // Tarjetas de vidrio (mismo estilo que Entradas y Ajustes)
         fun card(w: Int) = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(ctx.dp(20), ctx.dp(16), ctx.dp(20), ctx.dp(16))
-            background = GradientDrawable().apply { setColor(0x22FFFFFF); cornerRadius = ctx.dpf(20f) }
+            background = Glass.card(ctx)
             layoutParams = LinearLayout.LayoutParams(ctx.dp(w), -2)
         }
 
         val left = card(430)
-        val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(tv(ctx, 24f, Ui.TEXT2).apply { text = "‹" }, LinearLayout.LayoutParams(ctx.dp(32), -2))
-        head.addView(title.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(tv(ctx, 24f, Ui.TEXT2).apply { text = "›"; gravity = Gravity.END }, LinearLayout.LayoutParams(ctx.dp(32), -2))
+        val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(ctx.dp(6), ctx.dp(4), ctx.dp(6), ctx.dp(4)) }
+        head.addView(Glass.inRow(tv(ctx, 24f).apply { text = "‹" }, Ui.TEXT2), LinearLayout.LayoutParams(ctx.dp(32), -2))
+        head.addView(Glass.inRow(title.apply { gravity = Gravity.CENTER }), LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(Glass.inRow(tv(ctx, 24f).apply { text = "›"; gravity = Gravity.END }, Ui.TEXT2), LinearLayout.LayoutParams(ctx.dp(32), -2))
         // Encabezado enfocable: IZQUIERDA/DERECHA cambian de mes
         head.isFocusable = true
-        head.background = PageUi.focusBg(ctx)
+        head.background = Glass.bg(ctx, 18f)
         head.setOnKeyListener { _, k, e ->
             if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             when (k) { KeyEvent.KEYCODE_DPAD_LEFT -> { shift(-1); true }; KeyEvent.KEYCODE_DPAD_RIGHT -> { shift(1); true }; else -> false }
@@ -226,7 +227,7 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
             val hol = inMonth && holidayOn(d) != null
             c.setTextColor(
                 when {
-                    isToday -> 0xFF111111.toInt()
+                    isToday -> Glass.FOCUS_TEXT
                     inMonth -> Ui.TEXT
                     else -> 0x44FFFFFF
                 },
@@ -270,9 +271,17 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
             fcBox.addView(tv(ctx, 13f, Ui.TEXT2).apply { text = if (Es.english) "No weather data" else "Sin datos de clima" })
             return
         }
-        for (d in days) {
-            val r = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-            val name = if (d.date == today) Es.hoy() else Es.diasCorto[d.date.dayOfWeek.value - 1] + " " + d.date.dayOfMonth
+        for ((i, d) in days.withIndex()) {
+            // Hoy resaltado en vidrio claro (como la entrada activa en Entradas); el resto separado por líneas finas
+            val isToday = d.date == today
+            if (i > 0 && !isToday && days[i - 1].date != today) fcBox.addView(View(ctx).apply { setBackgroundColor(0x26FFFFFF) },
+                LinearLayout.LayoutParams(-1, 1).apply { setMargins(ctx.dp(10), 0, ctx.dp(10), 0) })
+            val r = LinearLayout(ctx).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(ctx.dp(10), 0, ctx.dp(10), 0)
+                if (isToday) background = GradientDrawable().apply { setColor(Glass.SELECTED); cornerRadius = ctx.dpf(14f) }
+            }
+            val name = if (isToday) Es.hoy() else Es.diasCorto[d.date.dayOfWeek.value - 1] + " " + d.date.dayOfMonth
             r.addView(tv(ctx, 14f, Ui.TEXT).apply { text = name }, LinearLayout.LayoutParams(ctx.dp(78), -2))
             r.addView(ImageView(ctx).apply { setImageResource(WeatherIcons.iconFor(d.code)) }, LinearLayout.LayoutParams(ctx.dp(32), ctx.dp(32)))
             r.addView(tv(ctx, 14f, Ui.TEXT).apply {

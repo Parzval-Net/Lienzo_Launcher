@@ -70,6 +70,9 @@ class ContinueRow(
     }
 
     fun setItems(list: List<TvProviderShelf.Continue>) {
+        // Mismo contenido que la apertura anterior: sin rebind (evita trabajo en el hilo UI justo cuando sube la grilla)
+        val same = list.size == items.size && list.indices.all { list[it].pkg == items[it].pkg && list[it].item == items[it].item }
+        if (same) { if (childCount > 0) scrollToPosition(0); return }
         items.clear(); items.addAll(list)
         adapter?.notifyDataSetChanged()
         scrollToPosition(0)
@@ -121,16 +124,19 @@ class ContinueRow(
             h.cell.tag = uri
             h.cell.image.setImageDrawable(GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2E3340.toInt(), 0xFF14161D.toInt())).apply { cornerRadius = radius })
             if (uri != null) {
-                val hit = loader.cachedUri(uri, 320, 180)
+                // Tamaño real de la tarjeta (160x90 dp): 320x180 px a densidad 320, sin escalar en otras densidades
+                val hit = loader.cachedUri(uri, cardW, cardH)
                 if (hit != null) h.cell.image.setImageBitmap(hit)
-                else loader.loadUri(uri, 320, 180) { bmp -> if (bmp != null && h.cell.tag == uri) h.cell.image.setImageBitmap(bmp) }
+                else loader.loadUri(uri, cardW, cardH) { bmp -> if (bmp != null && h.cell.tag == uri) h.cell.image.setImageBitmap(bmp) }
             }
             val app = appFor(c.pkg)
             h.badge.setImageDrawable(null)
+            // El sello se valida con su propia clave (con imageUri nula, dos tarjetas distintas compartían tag=null)
+            h.badge.tag = app?.key
             if (app != null) {
                 val hit = loader.cached(app)
                 if (hit != null) h.badge.setImageBitmap(hit)
-                else loader.load(app) { bmp -> if (h.cell.tag == uri) h.badge.setImageBitmap(bmp) }
+                else loader.load(app) { bmp -> if (h.badge.tag == app.key) h.badge.setImageBitmap(bmp) }
             }
         }
 
@@ -139,6 +145,7 @@ class ContinueRow(
             h.texts.animate().cancel(); h.texts.alpha = 0f
             h.cell.image.setImageDrawable(null)
             h.badge.setImageDrawable(null)
+            h.badge.tag = null
             h.cell.tag = null
         }
     }

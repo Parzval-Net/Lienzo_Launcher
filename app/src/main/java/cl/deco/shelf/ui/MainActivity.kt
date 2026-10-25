@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -33,6 +34,9 @@ import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.net.wifi.WifiManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -104,6 +108,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var shelfView: TopShelfView
     private lateinit var today: TodayPanel
     private lateinit var menu: MenuPanel
+    private lateinit var inputsPopup: InputsPopup
     private lateinit var hint: android.widget.TextView
     private lateinit var prefs: ShelfPrefs
     private lateinit var settings: SettingsPanel
@@ -180,9 +185,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         screenH = resources.displayMetrics.heightPixels
 
         val radius = dpf(12f)
-        // Tiles 16:9 (formato nativo de los banners). 224x126 px con gap de 24 px: 7 tiles ocupan 1712 px.
-        // Con 8 favoritas el tile baja a 196x110 px para que quepan en el dock.
-        tileDp = if (prefs.dockMax >= 8) 98 else 112
+        // Tiles 16:9 (formato nativo de los banners). 224x126 px con gap de 24 px: 7 tiles (el máximo del dock) ocupan 1712 px
+        tileDp = 112
         cellDp = tileDp + 12
         val tileH = tileDp * 9 / 16
         val dockGeo = CellGeo(dp(tileDp), dp(tileH), dp(6), dp(10), dp(10), false)
@@ -291,15 +295,30 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             bottomMargin = dp(39)
         })
 
-        topBar = TopBar(this, { openClock() }, { openWeatherPanel() }, { QuickAccess.launch(this, QuickAccess.items[0]) }, { openSettings() })
-        content.addView(topBar, FrameLayout.LayoutParams(-1, dp(64)).apply {
-            topMargin = dp(18); leftMargin = dp(34); rightMargin = dp(34)
+        topBar = TopBar(
+            this,
+            onClock = { openClock() },
+            onWeather = { openWeatherPanel() },
+            onInputs = { openInputs() },
+            onWifi = { QuickAccess.launch(this, QuickAccess.items[0]) },
+            onSettings = { openSettingsChooser() },
+        )
+        content.addView(topBar, FrameLayout.LayoutParams(-1, dp(76)).apply {
+            topMargin = dp(16); leftMargin = dp(34); rightMargin = dp(34)
         })
 
         // Orden de dibujo: el dock atenuado queda debajo de la grilla; la barra superior encima de todo
         gridRv.bringToFront(); contRv.bringToFront(); contHeader.bringToFront(); gridHeader.bringToFront(); gridName.bringToFront(); gridFade.bringToFront(); topBar.bringToFront()
         today = TodayPanel(this).apply { onNeedYear = { loadHolidays(it) }; setCity(prefs.cityName); onClockChanged = { updateClockStatus() } }
         menu = MenuPanel(this)
+        inputsPopup = InputsPopup(this).apply {
+            onClose = { closeInputs() }
+            onPick = { s ->
+                closeInputs()
+                releaseVideoForPlayback()
+                if (!TvInputs.launch(this@MainActivity, s)) Toast.makeText(this@MainActivity, "No se pudo abrir ${s.label}", Toast.LENGTH_SHORT).show()
+            }
+        }
         settings = SettingsPanel(this)
         health = HealthPanel(this).apply {
             snapshot = { healthSnapshot() }
@@ -328,6 +347,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         root.addView(today, ViewGroup.LayoutParams(-1, -1))
         root.addView(menu, ViewGroup.LayoutParams(-1, -1))
+        root.addView(inputsPopup, ViewGroup.LayoutParams(-1, -1))
         root.addView(settings, ViewGroup.LayoutParams(-1, -1))
         root.addView(health, ViewGroup.LayoutParams(-1, -1))
         root.addView(importPanel, ViewGroup.LayoutParams(-1, -1))
@@ -394,11 +414,51 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         updateClockStatus() // alarmas y apagado nocturno ya se reprograman en App.onCreate, BootReceiver y al cambiar ajustes
         scheduleSun()
         restoreLastArt()
-        val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS)
+        // También rota si el intervalo venció estando fuera: así el tick inmediato no decodifica una segunda obra
+        val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS) ||
+            (lastArt > 0 && System.currentTimeMillis() - lastArt >= prefs.bgIntervalMin * 60_000L)
         if (rotate) lastArt = System.currentTimeMillis()
         loadArt(rotate)
+        topBar.setWifiSsid(getWifiSsid())
+        // Entradas solo si el equipo tiene alguna (TV con HDMI/AV/sintonizador o panel del fabricante); un deco no la muestra
+        ioData.execute {
+            val has = try { TvInputs.sources(this).isNotEmpty() || TvInputs.systemPanel(this) != null } catch (_: Throwable) { true }
+            main.post { if (started) topBar.setInputsAvailable(has) }
+        }
         main.post(tick)
         scheduleArtMode()
+        if (handleRemoteAction(intent, 400L)) intent.action = Intent.ACTION_MAIN // arranque en frío: se consume una sola vez
+    }
+
+    /** Intents de KeyService (botones Entradas y Ajustes del control). */
+    private fun handleRemoteAction(i: Intent?, delay: Long): Boolean = when (i?.action) {
+        ACTION_OPEN_INPUTS -> { main.postDelayed({ if (started) openInputs() }, delay); true }
+        ACTION_OPEN_SETTINGS -> {
+            main.postDelayed({
+                if (!started || settings.isOpen || menu.visibility == View.VISIBLE) return@postDelayed
+                if (state != HomeState.DOCK) applyState(HomeState.DOCK, animate = false)
+                focusFirst()
+                main.postDelayed({ if (started) openSettingsChooser() }, 60) // tras fijar el foco en el dock
+            }, delay)
+            true
+        }
+        else -> false
+    }
+
+    /** Botón Ajustes del control: elegir entre Ajustes de Lienzo, ajustes rápidos del televisor o ajustes del sistema. */
+    private fun openSettingsChooser() {
+        prevFocus = currentFocus
+        blockContent(true)
+        val opts = ArrayList<MenuPanel.Opt>()
+        opts += MenuPanel.Opt("Ajustes de Lienzo") { closeMenu(restore = false); openSettings(keepPrev = true) }
+        QuickAccess.tvQuick(this)?.let { quick ->
+            opts += MenuPanel.Opt("Ajustes rápidos", "Brillo, imagen, sonido") {
+                closeMenu()
+                try { startActivity(quick.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
+            }
+        }
+        opts += MenuPanel.Opt("Ajustes del televisor", "Sistema") { closeMenu(); QuickAccess.launch(this, QuickAccess.items.last()) }
+        menu.showList("Ajustes", opts)
     }
 
     override fun onPause() {
@@ -421,6 +481,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         netWatcher?.stop()
         runCatching { unregisterReceiver(pkgReceiver) }
         if (today.visibility == View.VISIBLE) closeToday()
+        closeInputs(restore = false)
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
@@ -440,12 +501,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (AlarmService.ringing) AlarmService.stop(this) // HOME también detiene alarma o temporizador
         // HOME con el launcher ya visible: cerrar overlays y volver al dock
         if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
+        closeInputs(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
         if (updatePanel.isOpen) closeUpdate()
         endMove()
+        // Botones Entradas y Ajustes del control (KeyService): el home abre directo el desplegable o los ajustes
+        if (handleRemoteAction(intent, 150L)) return
         if (state != HomeState.DOCK) applyState(HomeState.DOCK)
         focusFirst()
         scheduleArtMode()
@@ -484,6 +548,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val now = System.currentTimeMillis()
             val t = LocalTime.now()
             topBar.setTime(Es.hora(t.hour, t.minute, prefs.clock24))
+            topBar.setGreeting(t.hour)
+            topBar.setWifiSsid(getWifiSsid())
             val d = LocalDate.now()
             if (d != lastDate) {
                 lastDate = d
@@ -502,6 +568,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun onNetChanged(on: Boolean) {
         if (!ready || !started) return
         topBar.setOnline(on)
+        topBar.setWifiSsid(getWifiSsid())
         if (on) {
             if (prefs.weatherOn) { lastWeather = System.currentTimeMillis(); refreshWeather() }
             ioArt.execute { try { graph.art.prefetch(1) } catch (_: Throwable) { } ; main.post { pollArtProgress() } }
@@ -559,6 +626,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
     }
 
+    private val artRetry = Runnable { if (started && artBmp == null) loadArt(true) }
+
     private fun loadArt(rotate: Boolean) {
         ioArt.execute {
             var a = if (!rotate) currentArt else null
@@ -571,13 +640,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             var bmp: Bitmap? = null
             var blur: Bitmap? = null
             var pal: Palette? = null
-            if (a != null) {
+            fun decode(art: Artwork) {
                 val tDecode = android.os.SystemClock.elapsedRealtime()
                 // Blur y paleta salen de la obra limpia; el scrim inferior se hornea después (una capa menos en GPU)
                 var tmpBlur: Bitmap? = null
                 var tmpPal: Palette? = null
                 bmp = try {
-                    BitmapUtil.coverFile(a.file.path, 1920, 1080) { b ->
+                    BitmapUtil.coverFile(art.file.path, 1920, 1080) { b ->
                         tmpBlur = makeBlur(b)
                         tmpPal = try { Palette.from(b) } catch (_: Throwable) { null }
                         bakeScrim(b)
@@ -586,11 +655,17 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 blur = tmpBlur; pal = tmpPal
                 Log.i("Shelf", "loadArt: decodificar, paleta y scrim ${android.os.SystemClock.elapsedRealtime() - tDecode} ms (rotar=$rotate)")
             }
+            if (a != null) decode(a)
+            // La obra vigente ya no existe (p. ej. se borró en Mis fondos): se elige otra en vez de quedar sin fondo
+            if (a != null && bmp == null && !rotate) {
+                a = try { graph.art.next() } catch (_: Throwable) { null }
+                if (a != null) decode(a)
+            }
             val art = a
             main.post {
-                if (!started || art == null || bmp == null) { bmp?.recycle(); blur?.recycle() } else applyArt(art, bmp, blur, pal)
-                // Sin ninguna obra local (descarga pausada o primer inicio): reintenta en 30 s hasta que exista la primera
-                if (started && art == null && artBmp == null) main.postDelayed({ if (started && artBmp == null) loadArt(true) }, 30_000L)
+                if (!started || art == null || bmp == null) { bmp?.recycle(); blur?.recycle() } else applyArt(art, bmp!!, blur, pal)
+                // Sin ninguna obra local (descarga pausada o primer inicio): un solo reintento pendiente cada 30 s
+                if (started && art == null && artBmp == null) { main.removeCallbacks(artRetry); main.postDelayed(artRetry, 30_000L) }
             }
             // repone cache para las próximas rotaciones
             if (art != null) try { graph.art.prefetch(2) } catch (_: Throwable) {}
@@ -608,16 +683,21 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ioArt.execute { BitmapUtil.saveJpeg(copy, lastBgFile); copy.recycle() }
     }
 
-    /** Arranque en frío: pinta el último fondo bueno de inmediato y lo toma como obra vigente si no venció. */
+    /**
+     * Arranque en frío y regreso en caliente: pinta el último fondo bueno de inmediato (JPEG ya horneado) mientras loadArt
+     * decodifica la obra completa; así nunca se ve negro al volver al home. En frío además fija la obra vigente si no venció.
+     */
     private fun restoreLastArt() {
-        if (artBmp != null || currentArt != null) return
+        if (artBmp != null) return
         val path = prefs.sp.getString("last_art_path", null) ?: return
         val ts = prefs.sp.getLong("last_art_ts", 0L)
         val f = File(path)
         if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return
-        // La obra vigente se fija ya (loadArt la reutiliza sin rotar); solo el bitmap se pinta de forma asíncrona
-        currentArt = Artwork(prefs.sp.getString("last_art_id", "last") ?: "last", "", "", null, "", f)
-        lastArt = ts // el ciclo de rotación sigue desde el momento en que se eligió esta obra
+        if (currentArt == null) {
+            // La obra vigente se fija ya (loadArt la reutiliza sin rotar); solo el bitmap se pinta de forma asíncrona
+            currentArt = Artwork(prefs.sp.getString("last_art_id", "last") ?: "last", "", "", null, "", f)
+            lastArt = ts // el ciclo de rotación sigue desde el momento en que se eligió esta obra
+        }
         ioArt.execute {
             val b = BitmapUtil.loadJpeg565(lastBgFile)
             main.post {
@@ -667,15 +747,17 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     /** Cambió el nivel de desenfoque: recalcula solo el blur a partir de la obra actual. */
     private fun rebuildBlur() {
         val src = artBmp ?: return
+        // artBmp se recicla en ioArt (ver recycleArt): este hilo único serializa la lectura y el reciclaje, sin use-after-free
         ioArt.execute {
             val b = try { if (src.isRecycled) null else makeBlur(src) } catch (_: Throwable) { null }
             main.post {
-                if (b == null || !started) { b?.recycle(); return@post }
+                // Blur de una obra que ya cambió: se descarta en vez de pisar el de la nueva
+                if (b == null || !started || artBmp !== src) { b?.recycle(); return@post }
                 val old = blurBmp
                 blurBmp = b
                 blurView.setImageBitmap(b)
                 if (old != null) main.postDelayed({ old.recycle() }, 400)
-                if (state == HomeState.GRID) applyState(state, animate = false)
+                if (state == HomeState.GRID) blurView.animate().alpha(1f).setDuration(200).start() // sin cortar la subida de la grilla
             }
         }
     }
@@ -683,7 +765,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun applyArt(a: Artwork, bmp: Bitmap, blur: Bitmap?, pal: Palette? = null) {
         currentArt = a
         palette = pal
-        if (a.id != artId) saveLastArt(a, bmp)
+        // Solo una obra nueva se guarda como último fondo (antes cada regreso al home reescribía el JPEG y reiniciaba la rotación)
+        if (a.id != prefs.sp.getString("last_art_id", null)) saveLastArt(a, bmp)
         applyPalette(animate = artBmp != null)
         val old = artBmp
         val newD = BitmapDrawable(resources, bmp)
@@ -704,7 +787,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             td.startTransition(350)
             main.postDelayed({
                 artView.setImageDrawable(newD)
-                old.recycle()
+                recycleArt(old)
             }, 400)
         }
         val oldBlur = blurBmp
@@ -736,9 +819,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun releaseArt() {
         artView.setImageDrawable(null)
         blurView.setImageDrawable(null)
-        artBmp?.recycle(); artBmp = null
+        artBmp?.let { recycleArt(it) }; artBmp = null
         blurBmp?.recycle(); blurBmp = null
         artId = null
+    }
+
+    /** La obra se recicla en ioArt: si un rebuildBlur la está leyendo, el reciclaje espera a que termine (hilo único). */
+    private fun recycleArt(b: Bitmap) {
+        try { ioArt.execute { b.recycle() } } catch (_: java.util.concurrent.RejectedExecutionException) { b.recycle() }
     }
 
     // ---------- Apps ----------
@@ -756,12 +844,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun reloadApps() {
         ioData.execute {
             val apps = repo.load()
+            // Las apps se muestran primero; el TvProvider (lento en frío) no retrasa el dock
+            main.post { if (started) { allApps = apps; rebuild() } }
             // Watch Next: una sola pasada al iniciar y al cambiar paquetes
             val t0 = android.os.SystemClock.elapsedRealtime()
             try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
             Log.i("Shelf", "preload TvProvider: ${android.os.SystemClock.elapsedRealtime() - t0} ms (${apps.size} apps)")
             if (BuildConfig.TV_DUMP) cl.deco.shelf.shelf.TvDump.run(applicationContext)
-            main.post { if (started) { allApps = apps; rebuild() } }
+            // Con la caché recién llena, el Top Shelf del tile enfocado se pinta sin esperar otro cambio de foco
+            main.post { if (started && pendingPkg != null && state == HomeState.DOCK) { main.removeCallbacks(shelfRun); main.post(shelfRun) } }
         }
     }
 
@@ -972,11 +1063,26 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         contHas = list.isNotEmpty()
         contRv.setItems(list)
         val shift = if (contHas) 144 else 0
-        gridRv.setPadding(dp(8), dp(160 + shift), dp(8), dp(24))
-        (gridHeader.layoutParams as FrameLayout.LayoutParams).topMargin = dp(138 + shift)
-        gridHeader.requestLayout()
+        // Solo se re-mide la grilla si cambió el desplazamiento (con o sin "Continuar viendo")
+        if (gridRv.paddingTop != dp(160 + shift)) {
+            gridRv.setPadding(dp(8), dp(160 + shift), dp(8), dp(24))
+            (gridHeader.layoutParams as FrameLayout.LayoutParams).topMargin = dp(138 + shift)
+            gridHeader.requestLayout()
+        }
         applyState(HomeState.GRID)
         focusAt(focusSlot)
+    }
+
+    /** Vuelve al último tile del dock (acotado a las favoritas actuales); sin favoritas, a la grilla. */
+    private fun focusDock() {
+        if (adapter.favCount > 0) focusAt(lastDockSlot.coerceIn(0, adapter.favCount - 1)) else focusFirst()
+    }
+
+    /** Restaura el foco guardado al cerrar un panel; si esa vista ya no está (dock más chico, app oculta), el primer tile. */
+    private fun restoreFocus() {
+        prevFocus?.requestFocus()
+        val f = currentFocus
+        if (f == null || !f.isShown) focusFirst()
     }
 
     private fun closeGrid(refocus: Boolean = true) {
@@ -1027,21 +1133,41 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val pkg = e.component.packageName
         if (pkg != shelfPkg) { shelfView.clear(); shelfPkg = null }
         pendingPkg = pkg
+        shelfWanted = pkg
         pendingEntry = e
         main.removeCallbacks(shelfRun)
-        main.postDelayed(shelfRun, 300)
+        // Con caché el Top Shelf aparece casi al instante; sin ella se espera un poco más para no consultar el provider por
+        // cada tile que se cruza al navegar rápido
+        val cached = prefs.topShelf && graph.shelf.peek(pkg) != null
+        main.postDelayed(shelfRun, if (cached) SHELF_CACHED_MS else SHELF_QUERY_MS)
     }
 
+    /**
+     * Top Shelf de la app enfocada: pinta lo que haya en caché y relee el provider en segundo plano solo si no hay datos o
+     * vencieron (stale-while-revalidate). Las lecturas de un tile que ya perdió el foco se descartan antes de consultar.
+     */
     private val shelfRun = Runnable {
         val pkg = pendingPkg ?: return@Runnable
+        if (!prefs.topShelf) { shelfPkg = pkg; showAppName(); return@Runnable }
+        val hit = graph.shelf.peek(pkg)
+        if (hit != null) showShelf(pkg, hit.first)
+        if (hit != null && hit.second) return@Runnable
         ioShelf.execute {
-            val items = try { if (prefs.topShelf) graph.shelf.itemsFor(pkg) else emptyList() } catch (e: Throwable) { warnOnce("itemsFor", e); emptyList() }
-            main.post {
-                if (!started || pendingPkg != pkg || gridOpen) return@post
-                shelfPkg = pkg
-                if (items.isNotEmpty()) shelfView.show(items) else showAppName()
-            }
+            if (shelfWanted != pkg) return@execute
+            val items = try { graph.shelf.refresh(pkg) } catch (e: Throwable) { warnOnce("itemsFor", e); emptyList() }
+            main.post { if (hit == null || items != hit.first) showShelf(pkg, items) }
         }
+    }
+
+    /** Hilo de Top Shelf: paquete aún enfocado (copia de pendingPkg visible desde el executor). */
+    @Volatile private var shelfWanted: String? = null
+
+    private fun showShelf(pkg: String, items: List<TopShelfItem>) {
+        if (!started || pendingPkg != pkg || state != HomeState.DOCK) return
+        // Con el foco dentro del carrusel no se reemplazan las tarjetas (perdería el foco)
+        if (currentFocus?.isIn(shelfView) == true) return
+        shelfPkg = pkg
+        if (items.isNotEmpty()) shelfView.show(items) else showAppName()
     }
 
     /** Nombre de la app sobre su tile enfocado. */
@@ -1141,7 +1267,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun enterArtMode() {
-        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen) return
+        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || inputsPopup.isOpen || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen) return
         if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
         stateBeforeArt = state
         applyState(HomeState.ART_MODE)
@@ -1160,6 +1286,56 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!keepPrev) prevFocus = currentFocus
         blockContent(true)
         settings.open(settingsPages.root())
+    }
+
+    private fun getWifiSsid(): String? {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val actNet = cm?.activeNetwork
+            val caps = if (actNet != null) cm.getNetworkCapabilities(actNet) else null
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                return "Ethernet"
+            }
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val info = wm?.connectionInfo
+            var ssid = info?.ssid
+            if (ssid != null) {
+                ssid = ssid.replace("\"", "").trim()
+                if (ssid.isNotEmpty() && !ssid.contains("unknown", ignoreCase = true) && ssid != "0x") {
+                    return ssid
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    /**
+     * Entradas (píldora o botón Input del control): desplegable bajo la píldora con HDMI, AV y TV en vivo. Sin entradas en
+     * TvInputManager se abre el panel del fabricante si existe.
+     */
+    private fun openInputs() {
+        if (inputsPopup.isOpen) return
+        val sources = TvInputs.sources(this)
+        if (sources.isEmpty()) {
+            val panel = TvInputs.systemPanel(this)
+            if (panel != null) try { startActivity(panel.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Exception) {}
+            Toast.makeText(this, "Este equipo no tiene entradas de video", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (artMode) applyState(stateBeforeArt, animate = false)
+        if (state == HomeState.GRID) closeGrid(refocus = false)
+        val anchor = topBar.inputsAnchor() ?: return
+        prevFocus = anchor
+        applyState(HomeState.TOPBAR, animate = false)
+        blockContent(true, dimBar = false) // el desplegable cuelga de la píldora: la barra queda visible
+        inputsPopup.open(anchor, sources)
+    }
+
+    private fun closeInputs(restore: Boolean = true) {
+        if (!inputsPopup.isOpen) return
+        inputsPopup.close()
+        blockContent(false)
+        if (restore) prevFocus?.requestFocus()
     }
 
     private fun openWizard() {
@@ -1208,9 +1384,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun closeSettings() {
+        cl.deco.shelf.service.KeyMap.stopLearning()
         settings.close()
         blockContent(false)
-        prevFocus?.requestFocus()
+        restoreFocus()
     }
 
     /** Renombrar una app: página de ajustes con EditText (teclado del sistema); el nombre persiste por paquete. */
@@ -1248,8 +1425,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             ShelfPrefs.NIGHT_ON, ShelfPrefs.NIGHT_FROM, ShelfPrefs.NIGHT_TO, ShelfPrefs.NIGHT_IDLE -> {
                 NightMode.refresh(this); updateClockStatus()
             }
-            ShelfPrefs.DOCK_MAX -> if ((prefs.dockMax >= 8) != (tileDp == 98)) recreate() else rebuild()
+            ShelfPrefs.DOCK_MAX -> rebuild() // 4 a 7 favoritas: el tile no cambia de tamaño, el dock se centra con las que haya
             ShelfPrefs.ICON_ORIGINAL -> regenerateIcons()
+            ShelfPrefs.UPDATE_AUTO -> if (!prefs.updateAuto) topBar.setUpdateHint(null) {} // el chip no espera al próximo regreso al home
             ShelfPrefs.CITY_NAME -> {
                 today.setCity(prefs.cityName)
                 weather = null; topBar.setWeather(null); today.setWeather(null)
@@ -1454,6 +1632,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (currentFocus == null || !currentFocus!!.isShown) focusFirst()
     }
 
+    override fun freeMemory() {
+        trimCaches()
+        Toast.makeText(this, "Memoria liberada: ${pss()}", Toast.LENGTH_SHORT).show()
+    }
+
     /** Suelta las cachés propias: LRU de tiles y, fuera de la grilla, el bitmap blur (se regenera al abrir la grilla). */
     private fun trimCaches() {
         loader.trim()
@@ -1504,6 +1687,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         dir.mkdirs()
         val all = JSONObject()
         for ((k, v) in prefs.sp.all) {
+            if (runtimeKey(k)) continue
             val o = JSONObject()
             when (v) {
                 is String -> o.put("t", "s").put("v", v)
@@ -1524,6 +1708,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         } catch (e: Exception) { "Error al exportar: ${e.message}" }
     }
 
+    /** Estado del equipo guardado en las mismas prefs: no viaja en respaldos ni se pisa al restaurar. */
+    private fun runtimeKey(k: String) = k.startsWith("hn_") || k.startsWith("last_art_") || k.startsWith("space_") ||
+        k in setOf("night_active", "night_prev", "health_snooze_until", "perm_asked")
+
     override fun backups(): List<File> =
         getExternalFilesDir("backup")?.listFiles { f -> f.name.startsWith("shelf-backup-") && f.extension == "json" }
             ?.sortedByDescending { it.name }.orEmpty()
@@ -1531,8 +1719,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     override fun restoreBackup(f: File) {
         try {
             val all = JSONObject(f.readText()).getJSONObject("prefs")
-            val ed = prefs.sp.edit().clear()
+            // Se borran solo los ajustes: el estado de este equipo (apagado nocturno en curso, salud, espacio, último fondo)
+            // se conserva. Antes un respaldo de día restaurado de noche dejaba el apagado por inactividad activo todo el día
+            val ed = prefs.sp.edit()
+            for (k in prefs.sp.all.keys) if (!runtimeKey(k)) ed.remove(k)
             for (k in all.keys()) {
+                if (runtimeKey(k)) continue
                 val o = all.getJSONObject(k)
                 when (o.getString("t")) {
                     "s" -> ed.putString(k, o.getString("v"))
@@ -1544,14 +1736,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 }
             }
             ed.commit()
+            // Horario nocturno y alarmas restaurados: se reprograman sin esperar un reinicio (App.onCreate no corre con recreate)
+            Thread({ NightMode.refresh(applicationContext); ClockScheduler.rescheduleAll(applicationContext) }, "restore-resched").start()
             recreate() // relee todo desde las prefs restauradas
         } catch (e: Exception) {
             Toast.makeText(this, "Respaldo inválido: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun blockContent(b: Boolean) {
+    /** Bloquea el foco del home bajo un panel; [dimBar] atenúa la barra superior para que no compita con el panel (Entradas no). */
+    private fun blockContent(b: Boolean, dimBar: Boolean = true) {
         content.descendantFocusability = if (b) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
+        if (!artMode) topBar.animate().alpha(if (b && dimBar) 0f else 1f).setDuration(150).start()
     }
 
     /** OK sobre el reloj: panel Reloj (Calendario, Temporizador, Alarma). */
@@ -1571,22 +1767,33 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun closeToday() {
         today.close()
         blockContent(false)
-        prevFocus?.requestFocus()
+        restoreFocus()
     }
 
     private fun openMenu(e: AppEntry, slot: Int) {
         prevFocus = currentFocus
         blockContent(true)
         val fav = adapter.isFav(slot)
+        val isSystem = try {
+            val ai = packageManager.getApplicationInfo(e.component.packageName, 0)
+            (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+        } catch (_: Exception) { false }
+        val uninstallAction: (() -> Unit)? = if (!isSystem && e.component.packageName != packageName) {
+            {
+                closeMenu()
+                try {
+                    val uri = Uri.fromParts("package", e.component.packageName, null)
+                    startActivity(Intent(Intent.ACTION_DELETE, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: Exception) {
+                    Toast.makeText(this, "No se puede desinstalar", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else null
+
         menu.show(
             e.label, fav,
             onFav = { closeMenu(restore = false); toggleFav(e, slot, fav) },
             onMove = { closeMenu(); startMove(slot) },
-            onHide = { closeMenu(restore = false); hideApp(e, slot) },
-            onHidden = { closeMenu(restore = false); openHiddenList() },
-            onRename = { closeMenu(restore = false); openRename(e) },
-            onSettings = { closeMenu(restore = false); openSettings(keepPrev = true) },
-            onQuick = { q -> closeMenu(); QuickAccess.launch(this, q) },
             onInfo = {
                 closeMenu()
                 try {
@@ -1594,13 +1801,19 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                         Uri.fromParts("package", e.component.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } catch (_: Exception) {}
             },
+            onHide = { closeMenu(restore = false); hideApp(e, slot) },
+            onHidden = { closeMenu(restore = false); openHiddenList() },
+            onRename = { closeMenu(restore = false); openRename(e) },
+            onUninstall = uninstallAction,
+            onSettings = { closeMenu(restore = false); openSettings(keepPrev = true) },
+            onQuick = { q -> closeMenu(); QuickAccess.launch(this, q) },
         )
     }
 
     private fun closeMenu(restore: Boolean = true) {
         menu.hide()
         blockContent(false)
-        if (restore) prevFocus?.requestFocus()
+        if (restore) restoreFocus()
     }
 
     private fun toggleFav(e: AppEntry, slot: Int, isFav: Boolean) {
@@ -1630,10 +1843,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun openHiddenList() {
         blockContent(true)
         val hid = allApps.filter { it.key in store.hidden() }
-        val opts: List<Pair<String, () -> Unit>> = if (hid.isEmpty()) {
-            listOf("No hay apps ocultas" to { closeMenu() })
+        val opts = if (hid.isEmpty()) {
+            listOf(MenuPanel.Opt("No hay apps ocultas") { closeMenu() })
         } else {
-            hid.map { a -> "Mostrar ${a.label}" to { closeMenu(restore = false); store.setHidden(store.hidden() - a.key); rebuildThen { if (adapter.favCount > 0) 0 else AppAdapter.GRID } } }
+            hid.map { a -> MenuPanel.Opt("Mostrar ${a.label}") { closeMenu(restore = false); store.setHidden(store.hidden() - a.key); rebuildThen { if (adapter.favCount > 0) 0 else AppAdapter.GRID } } }
         }
         menu.showList("Apps ocultas", opts)
     }
@@ -1641,6 +1854,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun rebuildThen(pos: () -> Int) {
         rebuild(focusSlot = -1)
         main.post { focusAt(pos().coerceAtLeast(0)) }
+        // Si el slot calculado ya no existe (p. ej. se ocultó la última favorita), el foco no queda en el aire
+        main.postDelayed({ val f = currentFocus; if (started && (f == null || !f.isShown)) focusFirst() }, 400)
     }
 
     // ---------- Modo mover ----------
@@ -1714,6 +1929,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             if (k == KeyEvent.KEYCODE_MENU) return true
             return super.dispatchKeyEvent(e)
         }
+        if (inputsPopup.isOpen) {
+            if (k == KeyEvent.KEYCODE_BACK) { if (down) closeInputs(); return true }
+            if (k == KeyEvent.KEYCODE_MENU) return true
+            if (inputsPopup.handleKey(e)) return true
+            return super.dispatchKeyEvent(e)
+        }
         if (menu.visibility == View.VISIBLE) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down) closeMenu(); return true }
             return super.dispatchKeyEvent(e)
@@ -1734,6 +1955,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                     if (down && e.repeatCount == 0) endMove()
                     return true
                 }
+                KeyEvent.KEYCODE_MENU -> return true // el menú contextual sobre el modo mover perdía el reordenamiento en curso
             }
         }
         if (k == KeyEvent.KEYCODE_MENU && down && topBar.healthFocused()) { openHealth(); return true }
@@ -1745,9 +1967,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         if (k == KeyEvent.KEYCODE_BACK) {
             if (down) when (state) {
-                HomeState.GRID -> closeGrid()
-                HomeState.TOPBAR -> focusAt(lastDockSlot)
-                else -> focusFirst()
+                HomeState.GRID -> if (adapter.favCount > 0) closeGrid() // sin dock la grilla es el home: cerrarla dejaba el foco atrapado
+                HomeState.TOPBAR -> focusDock()
+                else -> if (currentFocus?.isIn(shelfView) == true) focusDock() else focusFirst()
             }
             return true
         }
@@ -1757,6 +1979,35 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             if (k == KeyEvent.KEYCODE_DPAD_DOWN && state == HomeState.TOPBAR && adapter.favCount > 0) {
                 focusAt(lastDockSlot.coerceIn(0, adapter.favCount - 1))
                 return true
+            }
+            // Sin favoritas en el dock, DOWN desde la barra superior baja a la grilla
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN && state == HomeState.TOPBAR && adapter.favCount == 0 && adapter.gridCount > 0) {
+                openGrid()
+                return true
+            }
+            val inShelf = currentFocus?.isIn(shelfView) == true
+            // Carrusel del Top Shelf: UP sube a la barra superior, DOWN vuelve al tile del dock que lo abrió
+            if (inShelf && k == KeyEvent.KEYCODE_DPAD_DOWN && adapter.favCount > 0) {
+                focusAt(lastDockSlot.coerceIn(0, adapter.favCount - 1)); return true
+            }
+            if (inShelf && (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                // En los extremos del carrusel el foco no salta a otra zona de la pantalla
+                val dir = if (k == KeyEvent.KEYCODE_DPAD_LEFT) View.FOCUS_LEFT else View.FOCUS_RIGHT
+                val next = currentFocus?.focusSearch(dir) // pasa por RecyclerView: trae tarjetas fuera de pantalla
+                if (next == null || !next.isIn(shelfView)) return true
+            }
+            if (inShelf && k == KeyEvent.KEYCODE_DPAD_UP) {
+                if (topBar.focusInputs()) applyState(HomeState.TOPBAR)
+                return true
+            }
+            // UP desde el dock: primero las tarjetas del Top Shelf si están visibles; si no, la barra superior
+            if (k == KeyEvent.KEYCODE_DPAD_UP && state == HomeState.DOCK && !gridOpen && slot != null && adapter.isFav(slot)) {
+                main.removeCallbacks(shelfRun)
+                if (shelfView.focusCards()) return true
+                if (topBar.focusInputs()) {
+                    applyState(HomeState.TOPBAR)
+                    return true
+                }
             }
             // DOWN desde el dock sube la grilla; UP desde la primera fila la baja
             if (k == KeyEvent.KEYCODE_DPAD_DOWN && !gridOpen && slot != null && adapter.isFav(slot) && adapter.gridCount > 0) {
@@ -1790,7 +2041,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         const val NIGHT_FACTOR = 0.8f // 20% adicional de atenuación sobre el ajuste del usuario
         const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L
+        const val SHELF_CACHED_MS = 120L
+        const val SHELF_QUERY_MS = 300L
         const val PERM_TV = "android.permission.READ_TV_LISTINGS"
         const val REQ_MEDIA = 2
+        /** Intents de KeyService para los botones Entradas y Ajustes del control. */
+        const val ACTION_OPEN_INPUTS = cl.deco.shelf.service.KeyMap.ACTION_OPEN_INPUTS
+        const val ACTION_OPEN_SETTINGS = cl.deco.shelf.service.KeyMap.ACTION_OPEN_SETTINGS
     }
 }

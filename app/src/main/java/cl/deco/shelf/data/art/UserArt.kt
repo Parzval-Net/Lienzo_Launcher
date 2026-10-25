@@ -22,11 +22,22 @@ class UserArt(context: Context) : ArtSource {
     private fun indexFile(d: File) = File(d, "index.json")
 
     private fun readArray(d: File): JSONArray = try {
-        val f = indexFile(d)
-        if (f.exists()) JSONArray(f.readText()) else JSONArray()
+        val f = android.util.AtomicFile(indexFile(d))
+        if (f.baseFile.exists()) JSONArray(String(f.readFully(), Charsets.UTF_8)) else JSONArray()
     } catch (e: Exception) {
-        Log.w(TAG, "index.json inválido: ${e.message}")
-        JSONArray()
+        // Índice dañado (corte de luz a mitad de escritura): se reconstruye desde los JPEG en disco en vez de tratarlo
+        // como vacío, porque la siguiente escritura lo habría guardado así y las importaciones previas quedaban huérfanas
+        Log.w(TAG, "index.json inválido, se reconstruye: ${e.message}")
+        rebuildFromDisk(d)
+    }
+
+    private fun rebuildFromDisk(d: File): JSONArray {
+        val arr = JSONArray()
+        d.listFiles { f -> f.name.startsWith("u") && f.name.endsWith(".jpg") && f.length() > 0 }?.sortedBy { it.name }?.forEach { f ->
+            arr.put(JSONObject().put("id", f.nameWithoutExtension).put("title", f.nameWithoutExtension).put("file", f.name)
+                .put("license", "Archivo propio").put("artist", "Mis fondos").put("bytes", f.length()).put("key", ""))
+        }
+        return arr
     }
 
     /** Obras con su JPEG en disco, en orden de importación. */
@@ -102,10 +113,17 @@ class UserArt(context: Context) : ArtSource {
         write(d, out)
     }
 
+    /** Escritura atómica con fsync (AtomicFile): un corte de luz deja el índice anterior o el nuevo, nunca uno truncado. */
     private fun write(d: File, arr: JSONArray) {
-        val tmp = File(d, "index.json.tmp")
-        tmp.writeText(arr.toString(1))
-        if (!tmp.renameTo(indexFile(d))) Log.w(TAG, "no se pudo reemplazar index.json")
+        val f = android.util.AtomicFile(indexFile(d))
+        val out = try { f.startWrite() } catch (e: Exception) { Log.w(TAG, "no se pudo escribir index.json: $e"); return }
+        try {
+            out.write(arr.toString(1).toByteArray(Charsets.UTF_8))
+            f.finishWrite(out)
+        } catch (e: Exception) {
+            f.failWrite(out)
+            Log.w(TAG, "no se pudo escribir index.json: $e")
+        }
     }
 
     companion object {

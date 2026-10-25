@@ -2,6 +2,23 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.2.0 (2026-10-25)
+- Entradas: desplegable bajo la píldora (estilo tvOS) con HDMI, AV y TV en vivo, ícono por tipo, nombre personalizado ("ATV · HDMI 3") y punto verde en las entradas con señal. El cambio de entrada va dirigido a la app de TV en vivo (antes un visor de archivos podía reclamar el intent) y llega a la app aunque ya esté abierta (antes la TV se quedaba en la entrada anterior). El botón Entradas del control abre el mismo desplegable.
+- Control remoto con asignación dinámica para cualquier control: Ajustes > Control remoto > "Asignar un botón" aprende la tecla y permite elegir Entradas, Ajustes, TV en vivo, la función original o cualquier app. Valores iniciales para el control TCL BT_RC813_MA (Netflix, Prime Video, YouTube, TCL Channel, Guard, Web, TCL Home, Ajustes). Flechas, OK, Atrás, Inicio, volumen y encendido nunca se reasignan.
+- TV en vivo configurable (por defecto Movistar TV si está instalada): la usan el botón TV del control y la opción TV en vivo de Entradas.
+- Botón Ajustes del control: en el home abre Ajustes; dentro de otra app abre el panel rápido del televisor (si el fabricante lo tiene). Ajustes suma la sección Televisor (ajustes rápidos, imagen y sonido).
+- "Desinstalar app" del menú funciona (faltaba REQUEST_DELETE_PACKAGES y Android descartaba el pedido en silencio).
+- Top Shelf: se pinta al instante desde caché y se refresca en segundo plano solo si venció; las tarjetas son alcanzables con el D-pad (UP desde el dock); el dock ya no espera la lectura del TvProvider; las imágenes repetidas se descargan una vez y las de tarjetas que ya no se ven se omiten.
+- Ajustes: sin emojis, títulos uniformes, ruta de navegación, ayuda de teclas, "Liberar memoria de Lienzo" y PSS contra la meta. Favoritas del dock de 4 a 7.
+- Coherencia visual: píldoras de la barra superior con foco blanco; el resto de los focos sigue el acento de la obra (antes las píldoras quedaban con el color del arranque).
+- Rendimiento: abrir y cerrar la grilla sin rebind ni re-medición cuando no cambió "Continuar viendo" (TCL: 18% a 0% de cuadros lentos, p90 9 ms). Corregida una fuga del panel de ajustes que retenía la Activity anterior tras recreate().
+- Servicio de botones en TCL: el sistema bloquea su arranque sin el appop APP_AUTO_START (ver README); Ajustes > Control remoto muestra si está activo o detenido.
+- Botón y píldora Ajustes: menú para elegir Ajustes de Lienzo, ajustes rápidos del televisor (si el fabricante los tiene) o ajustes del sistema. Botón Ajustes del control TCL (4077) asignado por defecto. Un botón asignado a una app no instalada, o TV en vivo sin app elegida, deja pasar la tecla a su función original.
+- Coherencia visual: Clima, Calendario, Temporizador, Alarma, Ajustes, menú de app y Salud usan el estilo de Entradas (tarjeta de vidrio y foco blanco con texto oscuro); la barra superior se atenúa bajo los paneles.
+- Video del modo arte y del protector: elección del video e "Importar video o imágenes" en Modo arte y protector; solo se ofrecen videos que existen en el equipo y se avisa si no hay ninguno. La importación lee USB y almacenamiento interno.
+- Entradas se oculta en equipos sin entradas de video (decos).
+- Correcciones tras una revisión de código con auditoría: bucle exponencial de refresco en el asistente (ANR), OOM al importar fotos verticales, pantalla negra al volver al home y reescritura del último fondo en cada regreso, doble decodificación del fondo, foco atrapado con el dock vacío, use-after-free al regenerar el desenfoque, reproductor de la app de TV en vivo destruido al abrirla desde Entradas, videos duplicados al reimportar, restaurar respaldo pisaba el apagado nocturno en curso, índice de Mis fondos perdido tras un corte de luz, Top Shelf vaciado por un error transitorio del provider, sello de app equivocado en Continuar viendo, MENU en modo mover y package visibility de los accesos rápidos.
+
 ## 1.1.3 (2026-10-21)
 - Validación del reabrir automático: primera actualización hecha desde una versión que ya incluye esa función.
 

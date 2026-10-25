@@ -23,16 +23,14 @@ import cl.deco.shelf.clock.TimerItem
 
 /** Utilidades de las páginas Temporizador y Alarma (D-pad: chips enfocables y selectores con ARRIBA/ABAJO). */
 internal object PageUi {
-    fun focusBg(ctx: Context, radius: Float = 10f) = StateListDrawable().apply {
-        addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { setColor(Theme.withAlpha(Theme.accent, 0x99)); cornerRadius = ctx.dpf(radius) })
-        addState(intArrayOf(android.R.attr.state_selected), GradientDrawable().apply { setColor(Theme.withAlpha(Theme.accent, 0x55)); cornerRadius = ctx.dpf(radius) })
-        addState(intArrayOf(), GradientDrawable().apply { setColor(0x22FFFFFF); cornerRadius = ctx.dpf(radius) })
-    }
+    /** Estilo común (ver [Glass]): blanco con foco, vidrio claro seleccionado. Quien lo use con texto debe aplicar Glass.fg. */
+    fun focusBg(ctx: Context, radius: Float = 14f) = Glass.bg(ctx, radius)
 
-    fun chip(ctx: Context, text: String, w: Int = 0, onClick: () -> Unit): TextView = tv(ctx, 15f).apply {
+    fun chip(ctx: Context, text: String, w: Int = 0, onClick: () -> Unit): TextView = tv(ctx, 15f, Ui.TEXT, "sans-serif-medium").apply {
         this.text = text; gravity = Gravity.CENTER
         isFocusable = true; isClickable = true
-        background = focusBg(ctx)
+        background = focusBg(ctx, 20f)
+        setTextColor(Glass.fg())
         setPadding(ctx.dp(14), 0, ctx.dp(14), 0)
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(if (w > 0) ctx.dp(w) else -2, ctx.dp(40)).apply { rightMargin = ctx.dp(8) }
@@ -43,7 +41,7 @@ internal object PageUi {
         var value = start
             set(v) { field = ((v % (max + 1)) + (max + 1)) % (max + 1); text = "%02d %s".format(field, unit) }
         init {
-            textSize = 20f; setTextColor(Ui.TEXT); gravity = Gravity.CENTER
+            textSize = 20f; setTextColor(Glass.fg()); gravity = Gravity.CENTER
             isFocusable = true; isClickable = true
             background = focusBg(ctx)
             layoutParams = LinearLayout.LayoutParams(ctx.dp(96), ctx.dp(48)).apply { rightMargin = ctx.dp(8) }
@@ -198,7 +196,9 @@ class AlarmPage(private val ctx: Context, private val onChanged: () -> Unit) {
         r2.addView(tv(ctx, 12f, Ui.TEXT2).apply { text = "  sin días = única" })
         body.addView(r2, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(8) })
         labelEt.apply {
-            hint = "Etiqueta (opcional)"; setHintTextColor(0x88FFFFFF.toInt()); setTextColor(Ui.TEXT); textSize = 16f
+            hint = "Etiqueta (opcional)"; textSize = 16f
+            setTextColor(Glass.fg())
+            setHintTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(0x992A2F3A.toInt(), 0x88FFFFFF.toInt())))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setSingleLine(true); setPadding(ctx.dp(14), 0, ctx.dp(14), 0)
             background = PageUi.focusBg(ctx)
