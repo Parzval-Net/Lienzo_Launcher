@@ -34,7 +34,8 @@ data class MediaItem(
     val dateAdded: Long,
 ) {
     val key: String get() = ImportMath.dedupeKey(name, size)
-    val isUsb: Boolean get() = volume != MediaStore.VOLUME_EXTERNAL_PRIMARY
+    // Android 9 solo expone "external" (todos los volúmenes juntos): ahí no se distingue el USB
+    val isUsb: Boolean get() = volume != "external_primary" && volume != MediaStore.VOLUME_EXTERNAL
 }
 
 /**
@@ -63,7 +64,8 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
 
     fun query(limit: Int = MAX_ITEMS): List<MediaItem> {
         val all = ArrayList<MediaItem>()
-        val volumes = try { MediaStore.getExternalVolumeNames(app) } catch (e: Exception) { emptySet() }
+        val volumes = if (android.os.Build.VERSION.SDK_INT < 29) setOf(MediaStore.VOLUME_EXTERNAL)
+            else try { MediaStore.getExternalVolumeNames(app) } catch (e: Exception) { emptySet() }
         for (vol in volumes) {
             for (video in listOf(false, true)) {
                 try { all += queryVolume(vol, video) } catch (e: Exception) { Log.w(TAG, "volumen $vol: $e") }
@@ -117,7 +119,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             val w = fmt.intOr(MediaFormat.KEY_WIDTH, 0)
             val h = fmt.intOr(MediaFormat.KEY_HEIGHT, 0)
             val rot = fmt.intOr(MediaFormat.KEY_ROTATION, 0)
-            var fps = fmt.getNumber(MediaFormat.KEY_FRAME_RATE)?.toFloat() ?: 0f
+            var fps = fmt.num(MediaFormat.KEY_FRAME_RATE)?.toFloat() ?: 0f
             if (fps <= 0f) fps = estimateFps(ex, track)
             val ct = fmt.intOr(MediaFormat.KEY_COLOR_TRANSFER, 0)
             val hdr = ct == MediaFormat.COLOR_TRANSFER_ST2084 || ct == MediaFormat.COLOR_TRANSFER_HLG
@@ -125,7 +127,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             var decoder = true
             if (VideoRules.isAvc(mime) || VideoRules.isHevc(mime)) {
                 val q = MediaFormat.createVideoFormat(mime!!, w, h)
-                fmt.getNumber(MediaFormat.KEY_PROFILE)?.let { q.setInteger(MediaFormat.KEY_PROFILE, it.toInt()) }
+                fmt.num(MediaFormat.KEY_PROFILE)?.let { q.setInteger(MediaFormat.KEY_PROFILE, it.toInt()) }
                 decoder = try { MediaCodecList(MediaCodecList.REGULAR_CODECS).findDecoderForFormat(q) != null } catch (_: Exception) { true }
             }
             return VideoRules.evaluate(mime, w, h, rot, fps, hdr, decoder)
@@ -137,7 +139,14 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
         }
     }
 
-    private fun MediaFormat.intOr(key: String, d: Int) = if (containsKey(key)) getNumber(key)?.toInt() ?: d else d
+    private fun MediaFormat.intOr(key: String, d: Int) = num(key)?.toInt() ?: d
+
+    /** Valor numérico sea entero o decimal (getNumber es de Android 10; en 9 se prueba entero y luego decimal). */
+    private fun MediaFormat.num(key: String): Number? = when {
+        !containsKey(key) -> null
+        android.os.Build.VERSION.SDK_INT >= 29 -> getNumber(key)
+        else -> try { getInteger(key) } catch (_: ClassCastException) { try { getFloat(key) } catch (_: ClassCastException) { null } }
+    }
 
     /** fps por conteo de muestras del primer segundo (el contenedor no la declara). */
     private fun estimateFps(ex: MediaExtractor, track: Int): Float {

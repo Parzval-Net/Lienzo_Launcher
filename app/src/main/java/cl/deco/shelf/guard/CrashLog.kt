@@ -50,6 +50,7 @@ object CrashLog {
      * de salidas de proceso de Android (API 30+). Se incorporan al registro una sola vez por salida.
      */
     fun absorbExits(ctx: Context) {
+        if (android.os.Build.VERSION.SDK_INT < 30) return // Android 9 y 10 no guardan el historial; queda el UncaughtExceptionHandler
         try {
             val seenF = File(ctx.applicationContext.filesDir, "exits.seen")
             val seen = seenF.takeIf { it.exists() }?.readText()?.trim()?.toLongOrNull() ?: 0L

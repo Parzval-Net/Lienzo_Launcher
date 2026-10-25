@@ -169,7 +169,8 @@ class UpdateInstaller(ctx: Context, private val ui: Listener) {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(app.packageName)
             setSize(apk.length())
-            setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+            // Android 12+: confirmación explícita. Antes de 12 la confirmación del sistema es siempre obligatoria (y este método no existe)
+            if (android.os.Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
         }
         val id = pi.createSession(params)
         sessionId = id

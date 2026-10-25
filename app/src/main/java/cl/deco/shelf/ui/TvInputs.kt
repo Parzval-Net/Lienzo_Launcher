@@ -74,7 +74,11 @@ object TvInputs {
             out += Source(info.id, if (dev != null) "$dev · ${base.substringAfter(" · ")}" else base, k, last == info.id,
                 intentFor(info, tvApp), dev, plugged || dev != null)
         }
-        if (liveApp != null && out.none { it.kind == Kind.TV }) out += Source(LIVE_ID, "TV en vivo", Kind.TV, last == LIVE_ID, liveApp) // equipos sin sintonizador
+        // Box de streaming (Mi Box, Chromecast): sin HDMI ni AV físicos no hay entradas reales. Apps como Pluto TV o Play
+        // Películas publican entradas "sintonizador" por software; mostrarlas daría una lista que repite apps del dock
+        if (out.none { it.kind == Kind.HDMI || it.kind == Kind.AV }) return emptyList()
+        // TV sin sintonizador pero con HDMI/AV: "TV en vivo" abre la app elegida
+        if (liveApp != null && out.none { it.kind == Kind.TV }) out += Source(LIVE_ID, "TV en vivo", Kind.TV, last == LIVE_ID, liveApp)
         return out
     }
 

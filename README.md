@@ -2,7 +2,7 @@
 
 **Lienzo** es un launcher liviano para Android TV y Google TV (televisores y decos): una obra de arte de dominio público como fondo, tus apps favoritas en un dock, "Continuar viendo", Entradas (HDMI, AV, TV en vivo), botones del control asignables a cualquier app, reloj con alarma y temporizador, clima y feriados. Paquete `cl.deco.shelf`, licencia MIT.
 
-> **English summary.** Lienzo is a lightweight Android TV launcher (Android 11+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork (or a dynamic colour glow) as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), TV inputs with an HDMI hot-plug notice, fully remappable remote buttons, clock, alarms and timers, weather and public holidays, a screensaver with video, a crash watchdog (safe mode) and a device health notice. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub. Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are built and signed by GitHub Actions from encrypted repository secrets when a `vX.Y.Z` tag is pushed (or locally with `tools/release.sh`). UI language: Spanish (Chile) with partial English date formats. Tested on a DIW585 set-top box (Android 12) and a TCL Google TV (Android 11).
+> **English summary.** Lienzo is a lightweight Android TV launcher (Android 9+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork (or a dynamic colour glow) as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), TV inputs with an HDMI hot-plug notice, fully remappable remote buttons, clock, alarms and timers, weather and public holidays, a screensaver with video, a crash watchdog (safe mode) and a device health notice. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub. Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are built and signed by GitHub Actions from encrypted repository secrets when a `vX.Y.Z` tag is pushed (or locally with `tools/release.sh`). UI language: Spanish (Chile) with partial English date formats. Tested on a DIW585 set-top box (Android 12), a TCL Google TV (Android 11) and a Xiaomi Mi Box S (Android 9).
 
 ## Capturas
 
@@ -38,7 +38,8 @@ Capturas en un televisor TCL con Google TV. Tienen desenfocados los íconos de a
 
 ## Requisitos
 
-- Android TV 11 o superior (`minSdk` 30). Probado en un decodificador DIW585 (Android 12) y en un televisor TCL con Google TV (Android 11). Otros equipos no están verificados.
+- Android TV 9 o superior (`minSdk` 28). Probado en un decodificador DIW585 (Android 12), un televisor TCL con Google TV (Android 11) y una Xiaomi Mi Box S MDZ-22-AB (Android 9). Otros equipos no están verificados.
+- En Android 9 el launcher de sistema gana aunque se elija otro inicio: "Usar Lienzo como inicio" (Configuración sin PC) lo deshabilita de forma reversible y "Volver al launcher original" lo rehabilita.
 - Para el modo sin ADB, un explorador de archivos o una app de descarga en el equipo.
 
 ## Instalación

@@ -46,20 +46,31 @@ object SelfSetup {
 
     /** Lienzo como pantalla de inicio y su protector como salvapantallas del sistema. */
     fun makeDefault(ctx: Context, onApproval: () -> Unit): String = run(ctx, onApproval) { adb ->
-        adb.shell("cmd package set-home-activity --user 0 ${ComponentName(ctx, MainActivity::class.java).flattenToString()}")
+        val me = ComponentName(ctx, MainActivity::class.java)
+        adb.shell("cmd package set-home-activity --user 0 ${me.flattenToString()}")
         adb.shell("settings put secure screensaver_components ${ComponentName(ctx, ArtDreamService::class.java).flattenToString()}")
         adb.shell("settings put secure screensaver_enabled 1")
-        "Lienzo es el inicio y el protector"
+        // Android 9 (Mi Box S y otros): el launcher de sistema tiene prioridad y gana igual; se deshabilita (reversible con
+        // "Volver al launcher original"), como hace cleanyourtv en ese equipo
+        val home = ctx.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)
+        val winner = home?.activityInfo?.packageName
+        if (winner != null && winner != ctx.packageName && winner in KNOWN_STOCK) {
+            adb.shell("pm disable-user --user 0 $winner")
+            adb.shell("am force-stop $winner")
+            adb.shell("cmd package set-home-activity --user 0 ${me.flattenToString()}")
+            "Lienzo es el inicio y el protector (launcher original deshabilitado)"
+        } else "Lienzo es el inicio y el protector"
     }
 
     /** Devuelve el inicio al launcher del fabricante (o al primero que no sea Lienzo) y lo abre. */
-    fun restoreStock(ctx: Context, onApproval: () -> Unit): String {
-        val stock = stockHome(ctx) ?: return "No hay otro launcher instalado"
-        return run(ctx, onApproval) { adb ->
-            adb.shell("cmd package set-home-activity --user 0 ${stock.flattenToString()}")
-            adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME")
-            "Inicio devuelto a ${appLabel(ctx, stock.packageName)}"
-        }
+    fun restoreStock(ctx: Context, onApproval: () -> Unit): String = run(ctx, onApproval) { adb ->
+        // Si "Usar Lienzo como inicio" lo deshabilitó (Android 9), primero se vuelve a habilitar
+        val disabled = adb.shell("pm list packages -d")
+        for (p in KNOWN_STOCK) if (disabled.contains("package:$p\n") || disabled.trimEnd().endsWith("package:$p")) adb.shell("pm enable $p")
+        val stock = stockHome(ctx) ?: return@run "No hay otro launcher instalado"
+        adb.shell("cmd package set-home-activity --user 0 ${stock.flattenToString()}")
+        adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME")
+        "Inicio devuelto a ${appLabel(ctx, stock.packageName)}"
     }
 
     /** Launcher original: primero los conocidos de Google TV y Android TV, luego cualquier otro HOME que no sea Lienzo. */

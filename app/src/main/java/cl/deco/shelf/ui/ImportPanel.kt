@@ -398,7 +398,10 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
                 if (g != gen || iv.tag != it.uri) return@execute // la celda ya se reutilizó o el panel se cerró
                 val sig = CancellationSignal()
                 synchronized(thumbSignals) { thumbSignals.add(sig) }
-                val raw = try { context.contentResolver.loadThumbnail(it.uri, Size(THUMB_W, THUMB_H), sig) } catch (_: Throwable) { null }
+                val raw = try {
+                    if (android.os.Build.VERSION.SDK_INT >= 29) context.contentResolver.loadThumbnail(it.uri, Size(THUMB_W, THUMB_H), sig)
+                    else legacyThumb(it)
+                } catch (_: Throwable) { null }
                 // Fotos y cuadros de video son opacos: en RGB_565 la caché guarda el doble de miniaturas
                 val bmp = if (raw == null || raw.config == Bitmap.Config.RGB_565) raw
                     else (try { raw.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null })?.also { raw.recycle() } ?: raw
@@ -411,6 +414,24 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
                 }
             }
         } catch (_: Exception) { /* executor cerrado */ }
+    }
+
+    /** Android 9 (sin loadThumbnail): foto con downsample desde el stream, video con un cuadro de MediaMetadataRetriever. */
+    private fun legacyThumb(it: MediaItem): Bitmap? {
+        if (it.isVideo) {
+            val r = android.media.MediaMetadataRetriever()
+            return try {
+                r.setDataSource(context, it.uri)
+                r.getFrameAtTime(1_000_000)?.let { f -> Bitmap.createScaledBitmap(f, THUMB_W, THUMB_W * f.height / f.width.coerceAtLeast(1), true).also { s -> if (s !== f) f.recycle() } }
+            } finally { runCatching { r.release() } }
+        }
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(it.uri)?.use { s -> android.graphics.BitmapFactory.decodeStream(s, null, o) }
+        var sample = 1
+        while (o.outWidth / (sample * 2) >= THUMB_W && o.outHeight / (sample * 2) >= THUMB_H) sample *= 2
+        return context.contentResolver.openInputStream(it.uri)?.use { s ->
+            android.graphics.BitmapFactory.decodeStream(s, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 })
+        }
     }
 
     private fun dur(ms: Long): String { val s = (ms / 1000).toInt(); return "%d:%02d".format(s / 60, s % 60) }
