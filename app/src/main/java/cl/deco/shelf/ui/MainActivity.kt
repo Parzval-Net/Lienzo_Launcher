@@ -401,6 +401,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         super.onStart()
         if (!ready) return
         started = true
+        startedAt = android.os.SystemClock.uptimeMillis()
         if (state == HomeState.ART_MODE) applyState(stateBeforeArt, animate = false)
         registerReceiver(pkgReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -570,7 +571,24 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         super.onStop()
     }
 
+    private var startedAt = 0L
+    private var lastHomeAt = 0L
+
+    /**
+     * Home dos veces rápido con Lienzo ya en pantalla: obra siguiente. Funciona con cualquier control (no usa el servicio
+     * de botones). Al volver desde otra app Android entrega el Home con la Activity detenida, así que no cuenta como primera.
+     */
+    private fun doubleHome(intent: Intent?, inFront: Boolean): Boolean {
+        if (intent?.action != Intent.ACTION_MAIN || intent.categories?.contains(Intent.CATEGORY_HOME) != true) return false
+        val now = android.os.SystemClock.uptimeMillis()
+        if (!inFront || now - startedAt < 800) { lastHomeAt = 0; return false }
+        if (now - lastHomeAt <= DOUBLE_HOME_MS) { lastHomeAt = 0; return true }
+        lastHomeAt = now
+        return false
+    }
+
     override fun onNewIntent(intent: Intent?) {
+        val inFront = started
         super.onNewIntent(intent)
         if (!ready) return
         if (CrashLog.safeMode(this)) { SafeActivity.launch(this); return }
@@ -590,6 +608,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (state != HomeState.DOCK) applyState(HomeState.DOCK)
         focusFirst()
         scheduleArtMode()
+        if (doubleHome(intent, inFront)) nextArt()
     }
 
     override fun onTrimMemory(level: Int) {
@@ -1601,7 +1620,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun changed(key: String) {
         when (key) {
-            ShelfPrefs.BG_ONLINE, ShelfPrefs.BG_SOURCE -> { lastArt = System.currentTimeMillis(); loadArt(true) }
+            ShelfPrefs.BG_ONLINE, ShelfPrefs.BG_SOURCE, ShelfPrefs.COLLECTION -> { lastArt = System.currentTimeMillis(); loadArt(true) }
             ShelfPrefs.BG_BRIGHTNESS -> applyDim(animate = true)
             ShelfPrefs.NIGHT_DIM -> { scheduleSun(); applyDim(animate = true) }
             ShelfPrefs.BLUR_LEVEL -> {
@@ -2241,6 +2260,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val SAFE_LEFT get() = 96
         val BLUR_RADII = intArrayOf(0, 10, 20, 32)
         const val ART_VIDEO_DELAY_MS = 45_000L
+        /** Ventana para el doble Home (obra siguiente). */
+        const val DOUBLE_HOME_MS = 600L
         const val NIGHT_FACTOR = 0.8f // 20% adicional de atenuación sobre el ajuste del usuario
         const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L

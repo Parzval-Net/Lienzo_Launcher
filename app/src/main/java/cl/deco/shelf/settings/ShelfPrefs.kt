@@ -19,6 +19,8 @@ class ShelfPrefs(context: Context) {
     /** 0 colección curada, 1 Mis fondos, 2 ambas, [BG_DYNAMIC] fondo oscuro con el color de la app enfocada. */
     var bgSource: Int get() = int(BG_SOURCE, 0).coerceIn(0, BG_DYNAMIC); set(v) = put(BG_SOURCE, v)
     val dynamicBg get() = bgSource == BG_DYNAMIC
+    /** Colección activa de Mis fondos para el fondo y el video ("" = todas). Ver Collections. */
+    var collection: String get() = str(COLLECTION, ""); set(v) = put(COLLECTION, v)
     /** Video del protector y del modo arte: "monet" (por defecto), "user:<archivo>" o "all". Ver VideoPolicy. */
     var videoChoice: String get() = str(VIDEO_CHOICE, "monet"); set(v) = put(VIDEO_CHOICE, v)
     var bgBrightness: Int get() = int(BG_BRIGHT, 100).coerceIn(60, 100); set(v) = put(BG_BRIGHT, v)
@@ -90,7 +92,7 @@ class ShelfPrefs(context: Context) {
         private const val BG_BRIGHT = BG_BRIGHTNESS; private const val DYN_COLORS = DYNAMIC_COLORS
         const val NIGHT_DIM = "night_dim"
         const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
-        const val BG_SOURCE = "bg_source"; const val VIDEO_CHOICE = "video_choice"
+        const val BG_SOURCE = "bg_source"; const val VIDEO_CHOICE = "video_choice"; const val COLLECTION = "collection"
         const val BG_DYNAMIC = 3
         const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
@@ -103,7 +105,7 @@ class ShelfPrefs(context: Context) {
         const val UPDATE_AUTO = "update_auto"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
-            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
+            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, COLLECTION, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST, UPDATE_AUTO, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )

@@ -6,24 +6,62 @@ import java.io.File
 
 /**
  * Videos del modo arte y del protector: el de Monet (`getExternalFilesDir("video")`, cargado por adb) y los propios
- * (`getExternalFilesDir("video_user")`). La selección vive en [ShelfPrefs.videoChoice] y es común a ambos usos.
+ * (`getExternalFilesDir("video_user")`). Los propios van en una subcarpeta por colección (General = la raíz); su nombre
+ * es la ruta relativa ("Warhammer 40k/nebulosa.mp4"). La selección vive en [ShelfPrefs.videoChoice] y es común a ambos usos;
+ * la rotación y la elección se limitan a la colección activa.
  */
 object VideoLibrary {
     const val USER_DIR = "video_user"
     private const val TICK_PREFS = "video_library"
+
+    /** Video propio con su nombre relativo y su colección. */
+    class UserVideo(val file: File, val name: String, val collection: String)
 
     fun monet(ctx: Context): File? =
         ctx.getExternalFilesDir("video")?.listFiles { f -> f.extension.equals("mp4", true) }?.minByOrNull { it.name }
 
     fun userDir(ctx: Context): File? = ctx.getExternalFilesDir(USER_DIR)
 
-    fun userVideos(ctx: Context): List<File> =
-        userDir(ctx)?.listFiles { f -> f.isFile && f.extension.lowercase() in VideoRules.EXTENSIONS && f.length() > 0 }
-            ?.sortedBy { it.name.lowercase() }.orEmpty()
+    /** Carpeta de una colección (se crea si falta). */
+    fun collectionDir(ctx: Context, collection: String): File? {
+        val root = userDir(ctx) ?: return null
+        val sub = Collections.dirName(collection)
+        return (if (sub.isEmpty()) root else File(root, sub)).also { it.mkdirs() }
+    }
+
+    private fun isVideo(f: File) = f.isFile && f.extension.lowercase() in VideoRules.EXTENSIONS && f.length() > 0
+
+    /** Todos los videos propios: los de la raíz (General) y los de cada subcarpeta de colección. */
+    fun all(ctx: Context): List<UserVideo> {
+        val root = userDir(ctx) ?: return emptyList()
+        val out = ArrayList<UserVideo>()
+        root.listFiles()?.forEach { f ->
+            when {
+                isVideo(f) -> out += UserVideo(f, f.name, Collections.GENERAL)
+                f.isDirectory -> f.listFiles()?.filter { isVideo(it) }?.forEach { v -> out += UserVideo(v, "${f.name}/${v.name}", f.name) }
+            }
+        }
+        return out.sortedWith(compareBy({ it.collection != Collections.GENERAL }, { it.name.lowercase() }))
+    }
+
+    /** Videos de la colección activa ("" = todas). */
+    fun userVideos(ctx: Context): List<UserVideo> {
+        val active = ShelfPrefs(ctx).collection
+        return all(ctx).filter { Collections.matches(active, it.collection) }
+    }
+
+    fun collections(ctx: Context): List<String> = Collections.sorted(all(ctx).map { it.collection })
 
     fun delete(ctx: Context, name: String): Boolean {
-        val f = userVideos(ctx).firstOrNull { it.name == name } ?: return false
-        return f.delete()
+        val v = all(ctx).firstOrNull { it.name == name } ?: return false
+        val ok = v.file.delete()
+        v.file.parentFile?.takeIf { it != userDir(ctx) && it.list().isNullOrEmpty() }?.delete()
+        return ok
+    }
+
+    /** Borra los videos de una colección. */
+    fun removeCollection(ctx: Context, collection: String) {
+        all(ctx).filter { it.collection == collection }.forEach { delete(ctx, it.name) }
     }
 
     /** Hay algún video elegible (no avanza la rotación de "Alternar todos"). */
@@ -44,7 +82,7 @@ object VideoLibrary {
         return when (val t = VideoPolicy.pick(prefs.videoChoice, users.map { it.name }, monet != null, tick)) {
             null -> null
             VideoPolicy.MONET -> monet
-            else -> users.firstOrNull { it.name == t }
+            else -> users.firstOrNull { it.name == t }?.file
         }
     }
 }

@@ -8,7 +8,8 @@ import java.io.File
 
 /**
  * "Mis fondos": imágenes importadas por el usuario en `getExternalFilesDir("art_user")`, con un index.json propio
- * del mismo formato que la colección curada (más la clave "key" para no importar dos veces el mismo archivo).
+ * del mismo formato que la colección curada (más "key" para no importar dos veces el mismo archivo y "collection",
+ * la colección temática; sin ella es General). El fondo y el protector usan solo la colección activa.
  * Bloqueante: llamar desde executor.
  */
 class UserArt(context: Context) : ArtSource {
@@ -17,7 +18,11 @@ class UserArt(context: Context) : ArtSource {
     private val prefs by lazy { app.getSharedPreferences("user_art", Context.MODE_PRIVATE) }
     private val dir: File? get() = app.getExternalFilesDir(DIR)
 
-    data class Entry(val id: String, val title: String, val file: File, val bytes: Long, val home: Boolean, val key: String)
+    data class Entry(val id: String, val title: String, val file: File, val bytes: Long, val home: Boolean, val key: String,
+                     val collection: String = Collections.GENERAL)
+
+    /** Colección activa (Ajustes > Pantalla y fondos > Colección): "" = todas. */
+    private val active: String get() = cl.deco.shelf.settings.ShelfPrefs(app).collection
 
     private fun indexFile(d: File) = File(d, "index.json")
 
@@ -48,16 +53,35 @@ class UserArt(context: Context) : ArtSource {
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             val f = File(d, o.optString("file"))
             if (!f.exists() || f.length() == 0L) return@mapNotNull null
-            Entry(o.getString("id"), o.optString("title"), f, f.length(), o.optBoolean("home", true), o.optString("key"))
+            Entry(o.getString("id"), o.optString("title"), f, f.length(), o.optBoolean("home", true), o.optString("key"),
+                o.optString("collection").ifBlank { Collections.GENERAL })
         }
     }
 
-    fun count(forHome: Boolean = false) = entries().count { !forHome || it.home }
+    /** Obras de la colección activa (las que usan el fondo y el protector). */
+    private fun activeEntries(): List<Entry> { val a = active; return entries().filter { Collections.matches(a, it.collection) } }
+
+    fun count(forHome: Boolean = false) = activeEntries().count { !forHome || it.home }
+
+    /** Colecciones con al menos una imagen, General primero. */
+    fun collections(): List<String> = Collections.sorted(entries().map { it.collection })
+
+    /** Borra todas las imágenes de una colección. */
+    fun removeCollection(name: String) = synchronized(LOCK) {
+        val d = dir ?: return
+        val arr = readArray(d)
+        val out = JSONArray()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (o.optString("collection").ifBlank { Collections.GENERAL } == name) File(d, o.optString("file")).delete() else out.put(o)
+        }
+        write(d, out)
+    }
 
     fun importedKeys(): Set<String> = entries().map { it.key }.filter { it.isNotEmpty() }.toSet()
 
     override fun next(forHome: Boolean): Artwork? = synchronized(LOCK) {
-        val list = entries().filter { !forHome || it.home }
+        val list = activeEntries().filter { !forHome || it.home }
         if (list.isEmpty()) return null
         val key = if (forHome) KEY_HOME else KEY_ALL
         val idx = (prefs.getInt(key, -1) + 1).mod(list.size)
@@ -96,6 +120,7 @@ class UserArt(context: Context) : ArtSource {
             .put("mode", mode)
             .put("bytes", e.bytes)
             .put("key", e.key)
+            .put("collection", e.collection)
         if (!e.home) o.put("home", false)
         arr.put(o)
         write(d, arr)

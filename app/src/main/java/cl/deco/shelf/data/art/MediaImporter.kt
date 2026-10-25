@@ -32,8 +32,11 @@ data class MediaItem(
     val durationMs: Long,
     val isVideo: Boolean,
     val dateAdded: Long,
+    /** Carpeta de origen (MediaStore bucket): define la colección. */
+    val folder: String = "",
 ) {
     val key: String get() = ImportMath.dedupeKey(name, size)
+    val collection: String get() = Collections.fromFolder(folder)
     // Android 9 solo expone "external" (todos los volúmenes juntos): ahí no se distingue el USB
     val isUsb: Boolean get() = volume != "external_primary" && volume != MediaStore.VOLUME_EXTERNAL
 }
@@ -80,6 +83,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.MIME_TYPE, MediaStore.MediaColumns.WIDTH, MediaStore.MediaColumns.HEIGHT,
             MediaStore.MediaColumns.DATE_ADDED,
+            BUCKET, // carpeta de origen (columna de Images/Video en Android 9; MediaColumns desde 10)
         )
         if (video) cols += MediaStore.MediaColumns.DURATION
         val out = ArrayList<MediaItem>()
@@ -94,7 +98,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
                 if (video && !mime.startsWith("video/")) continue
                 out += MediaItem(
                     ContentUris.withAppendedId(base, c.getLong(0)), vol, name, size, mime,
-                    c.getInt(4), c.getInt(5), if (video) c.getLong(7) else 0L, video, c.getLong(6),
+                    c.getInt(4), c.getInt(5), if (video) c.getLong(8) else 0L, video, c.getLong(6), c.getString(7).orEmpty(),
                 )
             }
         }
@@ -178,8 +182,8 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
 
         // 1) Verificación de formato y duplicados
         val doneKeys = art.importedKeys()
-        val videoDir = VideoLibrary.userDir(app)?.also { it.mkdirs() }
-        val existingVideos = VideoLibrary.userVideos(app).associate { it.name to it.length() }
+        // Duplicado = mismo nombre y tamaño dentro de la misma colección
+        val existingVideos = VideoLibrary.all(app).associate { "${it.collection}|${it.file.name}" to it.file.length() }
         val images = ArrayList<MediaItem>()
         val videos = ArrayList<MediaItem>()
         items.forEachIndexed { i, it ->
@@ -190,7 +194,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             } else {
                 // Se compara con el nombre ya saneado (así se guardó): antes "Clip (1).MP4" nunca coincidía y se copiaba otra vez
                 val stored = ImportMath.safeFileName(it.name, emptySet())
-                if (existingVideos[stored] == it.size || existingVideos[it.name] == it.size) { skipped += it.name; return@forEachIndexed }
+                if (existingVideos["${it.collection}|$stored"] == it.size || existingVideos["${it.collection}|${it.name}"] == it.size) { skipped += it.name; return@forEachIndexed }
                 when (val v = validateVideo(it)) {
                     is VideoRules.Verdict.Ok -> videos += it
                     is VideoRules.Verdict.Rejected -> rejected += it.name to v.message
@@ -225,7 +229,8 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             val base = done
             onProgress(Progress("Importando", ++idx, todo, it.name, base, total))
             try {
-                val ok = copyVideo(it, videoDir ?: throw IOException("sin carpeta"), cancel) { n -> onProgress(Progress("Importando", idx, todo, it.name, base + n, total)) }
+                val dir = VideoLibrary.collectionDir(app, it.collection) ?: throw IOException("sin carpeta")
+                val ok = copyVideo(it, dir, cancel) { n -> onProgress(Progress("Importando", idx, todo, it.name, base + n, total)) }
                 if (ok) vids++ else return Outcome(imgs, vids, rejected, skipped, failed, cancelled = true)
             } catch (e: Throwable) {
                 Log.w(TAG, "video ${it.name}: $e")
@@ -286,12 +291,12 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             part.delete()
         }
         art.add(
-            UserArt.Entry(id, item.name.substringBeforeLast('.'), dest, dest.length(), home = !mat, key = item.key),
+            UserArt.Entry(id, item.name.substringBeforeLast('.'), dest, dest.length(), home = !mat, key = item.key, collection = item.collection),
             if (mat) "mat" else "cover",
         )
     }
 
-    /** Copia el video a video_user. Devuelve false si se canceló (el parcial se borra). */
+    /** Copia el video a la carpeta de su colección en video_user. Devuelve false si se canceló (el parcial se borra). */
     private fun copyVideo(item: MediaItem, dir: File, cancel: AtomicBoolean, progress: (Long) -> Unit): Boolean {
         val name = ImportMath.safeFileName(item.name, dir.list()?.toSet().orEmpty())
         val dest = File(dir, name)
@@ -325,6 +330,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
     companion object {
         private const val TAG = "MediaImporter"
         private const val JPEG_QUALITY = 85
+        private const val BUCKET = "bucket_display_name"
         private const val MAX_ITEMS = 1000
         private val IMAGE_MIMES = setOf("image/jpeg", "image/png", "image/webp", "image/bmp")
 

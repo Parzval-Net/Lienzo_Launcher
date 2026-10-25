@@ -177,6 +177,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Section("Fondo"),
         // Fuente: obras de arte, imágenes propias o "Color dinámico" (fondo oscuro con el color de la app enfocada)
         choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, sourceNames, listOf(0, 1, 2, ShelfPrefs.BG_DYNAMIC), { p.bgSource }, { p.bgSource = it }),
+    ) + collectionRows() + listOf(
         choice("Rotación de obra", ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", "Diario"), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
         Row.Act("Cambiar obra ahora") { host.nextArt() },
         Row.Act("Mis fondos", { "Importar y gestionar imágenes y videos propios" }) { panel.push(myBackgroundsPage()) },
@@ -185,6 +186,23 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Ninguno", "Bajo", "Medio", "Alto"), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
         toggle("Colores", ShelfPrefs.DYNAMIC_COLORS, "Dinámicos desde la obra", "Neutros", { p.dynamicColors }, { p.dynamicColors = it }),
     ))
+
+    /** Todas las colecciones (imágenes o videos), General primero. */
+    private fun allCollections(): List<String> =
+        cl.deco.shelf.data.art.Collections.sorted(Graph.from(ctx).userArt.collections() + VideoLibrary.collections(ctx))
+
+    /**
+     * "Colección": qué grupo de Mis fondos usan el fondo, el protector y el video. Aparece en cuanto hay algo importado;
+     * si la activa ya no existe (se borró) vuelve a "Todas".
+     */
+    private fun collectionRows(): List<Row> {
+        val cols = allCollections()
+        if (p.collection.isNotEmpty() && p.collection !in cols) p.collection = ""
+        if (cols.isEmpty()) return emptyList()
+        val values = listOf("") + cols
+        val names = listOf("Todas") + cols
+        return listOf(choice("Colección de Mis fondos", ShelfPrefs.COLLECTION, names, values, { p.collection }, { p.collection = it }))
+    }
 
     fun artAndScreensaverPage(): Page = Page("Modo arte y protector", listOf(
         Row.Section("Modo arte"),
@@ -217,7 +235,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val videos = VideoLibrary.userVideos(ctx)
         val tokens = ArrayList<String>(); val names = ArrayList<String>()
         if (monet) { tokens += VideoPolicy.MONET; names += "Monet" }
-        for (v in videos) { tokens += VideoPolicy.userChoice(v.name); names += "Propio: " + short(v.name, 22) }
+        for (v in videos) { tokens += VideoPolicy.userChoice(v.name); names += "Propio: " + short(v.file.nameWithoutExtension, 22) }
         if (tokens.size > 1) { tokens += VideoPolicy.ALL; names += "Alternar todos" }
         return tokens to names
     }
@@ -331,11 +349,15 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         return Page("Mis fondos", listOf(
             Row.Section("Importar"),
             Row.Act("Importar imágenes y videos", { "USB o almacenamiento del equipo" }) { host.importFromUsb() },
-            Row.Act("Gestionar mis fondos", { counts(ua.count(), VideoLibrary.userVideos(ctx).size) }) { pendingDelete = null; panel.push(managePage()) },
+            Row.Act("Gestionar mis fondos", {
+                val n = allCollections().size
+                counts(ua.entries().size, VideoLibrary.all(ctx).size) + if (n > 0) " · $n ${if (n == 1) "colección" else "colecciones"}" else ""
+            }) { pendingDelete = null; panel.push(managePage()) },
             Row.Section("Uso"),
             Row.Info("Uso") { "La fuente del fondo (obras, Mis fondos, ambas o color dinámico) se elige en Pantalla y fondos." },
             Row.Info("Video") { "El video del modo arte y del protector se elige en Modo arte y protector." },
             Row.Section("Cómo preparar los archivos"),
+            Row.Info("Colecciones") { "Cada carpeta es una colección: lo que copies en Pictures/Lienzo-Warhammer 40k queda en \"Warhammer 40k\". Se elige en Pantalla y fondos." },
             Row.Info("Imágenes") { "JPG, PNG o WebP en cualquier carpeta. Se ajustan a 1920x1080 (recorte centrado; las verticales llevan passe-partout y solo salen en el protector)." },
             Row.Info("Videos") { "MP4, MOV, M4V o MKV con H.264 o H.265, hasta 1920x1080 y 60 fps. 4K u otros formatos pueden afectar la reproducción de Netflix y se rechazan." },
             Row.Info("Espacio") { "Lienzo deja siempre al menos 500 MB libres en el equipo." },
@@ -349,10 +371,10 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     private fun managePage(): Page {
         val ua = Graph.from(ctx).userArt
-        val imgs = ua.entries()
-        val vids = VideoLibrary.userVideos(ctx)
+        val allImgs = ua.entries()
+        val allVids = VideoLibrary.all(ctx)
         val rows = ArrayList<Row>()
-        if (imgs.isEmpty() && vids.isEmpty()) rows += Row.Info("") { "Todavía no importaste nada. Usa Importar imágenes y videos." }
+        if (allImgs.isEmpty() && allVids.isEmpty()) rows += Row.Info("") { "Todavía no importaste nada. Usa Importar imágenes y videos." }
         fun confirmable(key: String, label: String, size: Long, delete: () -> Unit) = Row.Act(short(label), { if (pendingDelete == key) "OK de nuevo para borrar" else SpaceRules.format(size) }) {
             if (pendingDelete == key) {
                 pendingDelete = null
@@ -367,16 +389,21 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
                 }
             } else pendingDelete = key
         }
-        if (imgs.isNotEmpty()) {
-            rows += Row.Section("Imágenes (${imgs.size})")
+        // Una sección por colección: primero "Borrar colección" y luego sus imágenes y videos
+        for (col in allCollections()) {
+            val imgs = allImgs.filter { it.collection == col }
+            val vids = allVids.filter { it.collection == col }
+            rows += Row.Section("$col (${counts(imgs.size, vids.size)})")
+            rows += confirmable("c:$col", "Borrar colección completa", imgs.sumOf { it.bytes } + vids.sumOf { it.file.length() }) {
+                ua.removeCollection(col)
+                VideoLibrary.removeCollection(ctx, col)
+                if (p.collection == col) p.collection = ""
+            }
             imgs.forEach { e -> rows += confirmable("i:${e.id}", e.title + if (e.home) "" else " (vertical)", e.bytes) { ua.remove(e.id) } }
-        }
-        if (vids.isNotEmpty()) {
-            rows += Row.Section("Videos (${vids.size})")
-            vids.forEach { f ->
-                rows += confirmable("v:${f.name}", f.name, f.length()) {
-                    VideoLibrary.delete(ctx, f.name)
-                    if (p.videoChoice == VideoPolicy.userChoice(f.name)) p.videoChoice = VideoPolicy.MONET
+            vids.forEach { v ->
+                rows += confirmable("v:${v.name}", "Video: " + v.file.name, v.file.length()) {
+                    VideoLibrary.delete(ctx, v.name)
+                    if (p.videoChoice == VideoPolicy.userChoice(v.name)) p.videoChoice = VideoPolicy.MONET
                 }
             }
         }

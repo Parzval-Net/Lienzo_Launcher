@@ -24,8 +24,8 @@ Capturas en un televisor TCL con Google TV. Tienen desenfocados los íconos de a
 - Entradas del televisor (HDMI con nombre personalizado, estado "Conectado" real y nombre HDMI-CEC del equipo, AV, TV en vivo) desde la barra superior o el botón Entradas del control. Aviso al enchufar un equipo en un HDMI, con cualquier app en pantalla.
 - Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes, TV en vivo, Todas las apps o Modo arte. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas. En el botón de Modo arte, una pulsación corta pasa a la obra siguiente y mantenerlo abre el video.
 - Top Shelf y "Continuar viendo" (Watch Next y canales de vista previa, vía `READ_TV_LISTINGS`).
-- Fondo de obras de dominio público (117 obras de Wikimedia Commons, incluidas 57 liberadas como CC0 por The Met y la National Gallery of Art), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra. O "Color dinámico": fondo oscuro con un resplandor del color de la app enfocada.
-- Mis fondos: importa tus imágenes y videos desde un pendrive USB (sin red, sin ADB).
+- Fondo de obras de dominio público (117 obras de Wikimedia Commons, incluidas 57 liberadas como CC0 por The Met y la National Gallery of Art), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra. O "Color dinámico": fondo oscuro con un resplandor del color de la app enfocada. Home dos veces rápido pasa a la obra siguiente.
+- Mis fondos: importa tus imágenes y videos desde un pendrive USB (sin red, sin ADB), ordenados en colecciones temáticas por carpeta (`Lienzo-<Tema>`), y elige qué colección usan el fondo y el video.
 - Modo arte y protector de pantalla con video.
 - Configuración sin PC: permisos, servicio de botones, inicio y protector con la depuración por red del propio equipo.
 - Reloj, calendario con feriados (por país y región), temporizador y alarma.

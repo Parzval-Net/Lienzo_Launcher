@@ -28,3 +28,10 @@ firma/
 # Material interno que no se publica
 re/
 .claude/
+
+# Fondos y videos personales (uso privado, nunca al repositorio)
+*.mp4
+*.mov
+*.mkv
+*.m4v
+*.webm

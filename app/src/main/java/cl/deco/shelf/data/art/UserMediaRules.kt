@@ -94,6 +94,33 @@ object SpaceRules {
     }
 }
 
+/**
+ * Colecciones de "Mis fondos": se arman por la carpeta de origen al importar. "Pictures/Lienzo-Warhammer 40k/" queda en la
+ * colección "Warhammer 40k"; otra carpeta conserva su nombre; sin carpeta (o lo importado antes de las colecciones) va a
+ * [GENERAL]. La colección activa vive en ShelfPrefs.collection ("" = todas).
+ */
+object Collections {
+    const val GENERAL = "General"
+    const val ALL = ""
+    private val PREFIX = Regex("^lienzo[\\s_-]+", RegexOption.IGNORE_CASE)
+
+    fun fromFolder(folder: String?): String {
+        val n = folder.orEmpty().trim().replace(PREFIX, "").replace('_', ' ').replace(Regex("\\s+"), " ").trim()
+        return if (n.isEmpty()) GENERAL else n.take(40)
+    }
+
+    /** Nombre de carpeta seguro para los videos de la colección (General = raíz de video_user). */
+    fun dirName(collection: String): String =
+        if (collection == GENERAL || collection.isBlank()) "" else collection.replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").trim().take(40)
+
+    /** Orden de presentación: General primero y el resto alfabético. */
+    fun sorted(names: Collection<String>): List<String> =
+        names.distinct().sortedWith(compareBy({ it != GENERAL }, { it.lowercase() }))
+
+    /** [entry] pertenece a la colección activa [active] ("" = todas). */
+    fun matches(active: String, entry: String) = active == ALL || active == entry
+}
+
 enum class Src { CURATED, MINE }
 
 /** Fuente del fondo: Colección curada / Mis fondos / Ambas. */

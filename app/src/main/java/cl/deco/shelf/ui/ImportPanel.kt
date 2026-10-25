@@ -373,8 +373,9 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
         override fun onBindViewHolder(h: Cell, position: Int) {
             val it = items[position]
             h.name.text = it.name
-            h.meta.text = if (it.isVideo) "Video ${dur(it.durationMs)} · ${it.width}x${it.height} · ${SpaceRules.format(it.size)}"
-            else "${it.width}x${it.height} · ${SpaceRules.format(it.size)}"
+            // La colección sale de la carpeta ("Lienzo-Warhammer 40k" -> "Warhammer 40k")
+            h.meta.text = (if (it.isVideo) "Video ${dur(it.durationMs)} · ${it.width}x${it.height} · ${SpaceRules.format(it.size)}"
+            else "${it.width}x${it.height} · ${SpaceRules.format(it.size)}") + " · ${it.collection}"
             h.tag.text = when { it.key in imported && !it.isVideo -> "Importada"; it.isUsb -> "USB"; else -> "" }
             h.tag.visibility = if (h.tag.text.isEmpty()) View.GONE else View.VISIBLE
             h.check.checked = it.uri in selected
