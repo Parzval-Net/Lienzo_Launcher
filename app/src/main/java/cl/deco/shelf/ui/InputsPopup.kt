@@ -132,9 +132,8 @@ class InputsPopup(ctx: Context) : FrameLayout(ctx) {
                 text = s.label; maxLines = 1
                 setTextColor(fg); isDuplicateParentStateEnabled = true
             }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = c.dp(14) })
-            // "Conectado" solo con un equipo detectado por HDMI-CEC (señal real); el estado de cable del sistema no es confiable
-            // (ver TvInputs.sources). Sin CEC se marca la última usada
-            if (s.device != null) {
+            // "Conectado": cable HDMI puesto o equipo CEC (ver TvInputs.sources); sin eso, se marca la última usada
+            if (s.connected) {
                 addView(View(c).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF34C759.toInt()) } },
                     LinearLayout.LayoutParams(c.dp(8), c.dp(8)).apply { leftMargin = c.dp(16) })
                 addView(tv(c, 14f, Ui.TEXT2).apply { text = "Conectado"; setTextColor(fg2); isDuplicateParentStateEnabled = true },

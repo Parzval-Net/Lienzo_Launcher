@@ -24,7 +24,8 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
         setPadding(context.dp(16), context.dp(16), context.dp(16), context.dp(16))
         background = Glass.card(ctx)
     }
-    private val title = tv(ctx, 18f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+    // Hasta 2 líneas: avisos como "Nintendo Switch se conectó en HDMI 3" no se cortan
+    private val title = tv(ctx, 18f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
 
     init {
         visibility = GONE

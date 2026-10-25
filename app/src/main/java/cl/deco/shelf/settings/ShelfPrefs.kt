@@ -16,7 +16,9 @@ class ShelfPrefs(context: Context) {
     var bgIntervalMin: Int get() = int(BG_INTERVAL, 30); set(v) = put(BG_INTERVAL, v)
     var bgOnline: Boolean get() = bool(BG_ONLINE, false); set(v) = put(BG_ONLINE, v)
     /** Fuente del fondo: 0 = colección curada (por defecto), 1 = Mis fondos, 2 = ambas. Ver SourcePolicy. */
-    var bgSource: Int get() = int(BG_SOURCE, 0).coerceIn(0, 2); set(v) = put(BG_SOURCE, v)
+    /** 0 colección curada, 1 Mis fondos, 2 ambas, [BG_DYNAMIC] fondo oscuro con el color de la app enfocada. */
+    var bgSource: Int get() = int(BG_SOURCE, 0).coerceIn(0, BG_DYNAMIC); set(v) = put(BG_SOURCE, v)
+    val dynamicBg get() = bgSource == BG_DYNAMIC
     /** Video del protector y del modo arte: "monet" (por defecto), "user:<archivo>" o "all". Ver VideoPolicy. */
     var videoChoice: String get() = str(VIDEO_CHOICE, "monet"); set(v) = put(VIDEO_CHOICE, v)
     var bgBrightness: Int get() = int(BG_BRIGHT, 100).coerceIn(60, 100); set(v) = put(BG_BRIGHT, v)
@@ -89,6 +91,7 @@ class ShelfPrefs(context: Context) {
         const val NIGHT_DIM = "night_dim"
         const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
         const val BG_SOURCE = "bg_source"; const val VIDEO_CHOICE = "video_choice"
+        const val BG_DYNAMIC = 3
         const val ART_ON = "art_enabled"; const val ART_WAIT = "art_wait_s"; const val ART_VIDEO = "art_video"
         const val DREAM_VIDEO = "dream_video"; const val DREAM_INTERVAL = "dream_interval_min"
         const val TOP_SHELF = "top_shelf"; const val CLOCK24 = "clock24"; const val WEATHER_ON = "weather_on"

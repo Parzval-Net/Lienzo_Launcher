@@ -23,14 +23,14 @@ object BitmapUtil {
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
     }
 
-    /** Imagen de fondo: decodifica y reduce a lo más [maxW] de ancho. */
-    fun decodeFile(path: String, maxW: Int, maxH: Int): Bitmap? {
+    /** Imagen de fondo: decodifica y reduce a lo más [maxW] de ancho. ARGB solo como origen temporal que luego se baja a 565 con dither. */
+    fun decodeFile(path: String, maxW: Int, maxH: Int, config: Bitmap.Config = Bitmap.Config.RGB_565): Bitmap? {
         val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, b)
         if (b.outWidth <= 0) return null
         val o = BitmapFactory.Options().apply {
             inSampleSize = sampleFor(b.outWidth, b.outHeight, maxW, maxH)
-            inPreferredConfig = Bitmap.Config.RGB_565
+            inPreferredConfig = config
         }
         val bmp = BitmapFactory.decodeFile(path, o) ?: return null
         if (bmp.width <= maxW * 1.15f) return bmp

@@ -28,22 +28,26 @@ object TvInputs {
     enum class Kind { HDMI, AV, TV, OTHER }
 
     /**
-     * [id] identifica la entrada para recordar la última usada; [last] la marca en el desplegable. [device] es el nombre
-     * de un equipo detectado por HDMI-CEC en ese puerto (consola, deco, barra de sonido): la única señal de conexión real.
+     * [id] identifica la entrada para recordar la última usada; [last] la marca en el desplegable. [connected]: hay un cable
+     * HDMI puesto en ese puerto (solo HDMI y solo si la señal es confiable en el equipo). [device] es el nombre de un equipo
+     * detectado por HDMI-CEC (consola, deco).
      */
-    class Source(val id: String, val label: String, val kind: Kind, val last: Boolean, val intent: Intent, val device: String? = null)
+    class Source(val id: String, val label: String, val kind: Kind, val last: Boolean, val intent: Intent,
+                 val device: String? = null, val connected: Boolean = false)
 
     private const val PREF_LAST = "last_input_id"
     private const val LIVE_ID = "livetv"
 
     /**
+     * Cable puesto en un HDMI. Verificado en la TCL de pruebas desenchufando y enchufando una Switch: el estado pasa a
+     * INPUT_STATE_CONNECTED (0) con cable y a CONNECTED_STANDBY (1) sin él (los puertos vacíos quedan en 1); DISCONNECTED (2)
+     * no aparece. AV/compuesto no tiene detección (siempre 0), por eso solo se usa en HDMI.
+     */
+    fun hdmiPlugged(state: Int) = state == TvInputManager.INPUT_STATE_CONNECTED
+
+    /**
      * Entradas visibles, ordenadas: HDMI, AV/componente, sintonizador y otras. Bloqueante (binder y PackageManager): llamar
      * fuera del main thread.
-     *
-     * Sin indicador "Conectado": TvInputManager.getInputState no refleja el cable en la TCL de pruebas (verificado: con todo
-     * desenchufado marcaba HDMI 3 por tener nombre guardado y AV porque el compuesto no tiene detección, mientras el HAL
-     * reportaba cable_connection_status desconocido en todos los puertos). La señal física real (HdmiControlManager, sysfs)
-     * exige permisos de sistema. Mejor no mostrar estado que mostrar uno falso; en su lugar se marca la última usada.
      */
     fun sources(ctx: Context): List<Source> {
         val out = ArrayList<Source>()
@@ -54,18 +58,29 @@ object TvInputs {
         // "TV en vivo" abre la app elegida en Ajustes > Control remoto (por defecto Movistar TV); sin ella, el sintonizador
         val liveApp = cl.deco.shelf.service.KeyMap.liveTvApp(ctx)?.let { cl.deco.shelf.service.KeyMap.launchIntent(ctx, it) }
         // Equipos HDMI-CEC (Nintendo Switch, PlayStation, Xbox, decos): el framework los publica como entradas hijas del
-        // puerto (getParentId). Es API pública y refleja un equipo realmente presente, a diferencia de getInputState
+        // puerto (getParentId), con su nombre
         val cec = inputs.filter { it.parentId != null }
-        for (info in inputs.filter { it.parentId == null }.sortedWith(compareBy({ kind(it.type).ordinal }, { it.id }))) {
+        val ports = inputs.filter { it.parentId == null }
+        // Estado de cable por HDMI. Si TODOS dicen "conectado", el equipo no informa el cable (valor por defecto de Android
+        // para entradas sin hotplug) y no se muestra nada: mejor sin estado que con uno falso
+        val hdmiStates = ports.filter { kind(it.type) == Kind.HDMI }.associate { it.id to (try { tim.getInputState(it.id) } catch (_: Exception) { -1 }) }
+        val trusted = hdmiStates.size > 1 && hdmiStates.values.any { !hdmiPlugged(it) }
+        for (info in ports.sortedWith(compareBy({ kind(it.type).ordinal }, { it.id }))) {
             val k = kind(info.type)
             if (k == Kind.TV && liveApp != null) { if (out.none { it.kind == Kind.TV }) out += Source(LIVE_ID, "TV en vivo", k, last == LIVE_ID, liveApp); continue }
             val dev = cec.firstOrNull { it.parentId == info.id }?.loadLabel(ctx)?.toString()?.takeIf { it.isNotBlank() }
             val base = label(ctx, info, k)
-            out += Source(info.id, if (dev != null) "$dev · ${base.substringAfter(" · ")}" else base, k, last == info.id, intentFor(info, tvApp), dev)
+            val plugged = k == Kind.HDMI && trusted && hdmiPlugged(hdmiStates[info.id] ?: -1)
+            out += Source(info.id, if (dev != null) "$dev · ${base.substringAfter(" · ")}" else base, k, last == info.id,
+                intentFor(info, tvApp), dev, plugged || dev != null)
         }
         if (liveApp != null && out.none { it.kind == Kind.TV }) out += Source(LIVE_ID, "TV en vivo", Kind.TV, last == LIVE_ID, liveApp) // equipos sin sintonizador
         return out
     }
+
+    /** La entrada [inputId] si es un HDMI (para el aviso "se conectó algo"), con su nombre y equipo CEC si lo hay. */
+    fun hdmiSource(ctx: Context, inputId: String): Source? =
+        sources(ctx).firstOrNull { it.id == inputId && it.kind == Kind.HDMI }
 
     /** Panel de entradas del fabricante, si existe (respaldo cuando TvInputManager no lista nada). */
     fun systemPanel(ctx: Context): Intent? = Intent(ACTION_VIEW_INPUTS).takeIf {

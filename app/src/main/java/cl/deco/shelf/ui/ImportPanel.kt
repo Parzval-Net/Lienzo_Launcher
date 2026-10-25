@@ -61,7 +61,7 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
 
     private val thumbs = Executors.newSingleThreadExecutor { r -> Thread(r, "lienzo-thumbs").apply { priority = Thread.MIN_PRIORITY } }
     private val thumbSignals = HashSet<CancellationSignal>()
-    private val cache = object : LruCache<android.net.Uri, Bitmap>(6 * 1024 * 1024) {
+    private val cache = object : LruCache<android.net.Uri, Bitmap>(4 * 1024 * 1024) {
         override fun sizeOf(key: android.net.Uri, value: Bitmap) = value.byteCount
     }
 
@@ -398,7 +398,10 @@ class ImportPanel(ctx: Context) : FrameLayout(ctx) {
                 if (g != gen || iv.tag != it.uri) return@execute // la celda ya se reutilizó o el panel se cerró
                 val sig = CancellationSignal()
                 synchronized(thumbSignals) { thumbSignals.add(sig) }
-                val bmp = try { context.contentResolver.loadThumbnail(it.uri, Size(THUMB_W, THUMB_H), sig) } catch (_: Throwable) { null }
+                val raw = try { context.contentResolver.loadThumbnail(it.uri, Size(THUMB_W, THUMB_H), sig) } catch (_: Throwable) { null }
+                // Fotos y cuadros de video son opacos: en RGB_565 la caché guarda el doble de miniaturas
+                val bmp = if (raw == null || raw.config == Bitmap.Config.RGB_565) raw
+                    else (try { raw.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null })?.also { raw.recycle() } ?: raw
                 synchronized(thumbSignals) { thumbSignals.remove(sig) }
                 if (bmp == null) return@execute
                 main.post {

@@ -109,6 +109,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var today: TodayPanel
     private lateinit var menu: MenuPanel
     private lateinit var inputsPopup: InputsPopup
+    private lateinit var hdmiNotice: HdmiNotice
     private lateinit var hint: android.widget.TextView
     private lateinit var prefs: ShelfPrefs
     private lateinit var settings: SettingsPanel
@@ -205,6 +206,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             colors = intArrayOf(Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0x2E), Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0))
         }
         root.background = android.graphics.drawable.LayerDrawable(arrayOf(base, glow))
+        // "Color dinámico": fondo casi negro con un resplandor ambiental que toma el color de la app enfocada
+        dynBase = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF0E1016.toInt(), 0xFF07080B.toInt()))
+        dynGlow = GradientDrawable().apply {
+            gradientType = GradientDrawable.RADIAL_GRADIENT
+            gradientRadius = screenH * 1.25f
+            setGradientCenter(0.32f, 0.78f)
+            colors = intArrayOf(Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0x66), Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0))
+        }
         window.setBackgroundDrawable(null)
         rootView = root
         content = FrameLayout(this)
@@ -319,6 +328,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 if (!TvInputs.launch(this@MainActivity, s)) Toast.makeText(this@MainActivity, "No se pudo abrir ${s.label}", Toast.LENGTH_SHORT).show()
             }
         }
+        hdmiNotice = HdmiNotice(this)
         settings = SettingsPanel(this)
         health = HealthPanel(this).apply {
             snapshot = { healthSnapshot() }
@@ -348,6 +358,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         root.addView(today, ViewGroup.LayoutParams(-1, -1))
         root.addView(menu, ViewGroup.LayoutParams(-1, -1))
         root.addView(inputsPopup, ViewGroup.LayoutParams(-1, -1))
+        root.addView(hdmiNotice, ViewGroup.LayoutParams(-1, -1))
         root.addView(settings, ViewGroup.LayoutParams(-1, -1))
         root.addView(health, ViewGroup.LayoutParams(-1, -1))
         root.addView(importPanel, ViewGroup.LayoutParams(-1, -1))
@@ -421,6 +432,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         loadArt(rotate)
         topBar.setWifiSsid(getWifiSsid())
         try { tvInputs?.registerCallback(inputsCallback, main) } catch (_: Throwable) {}
+        if (!cl.deco.shelf.service.KeyMap.serviceRunning(this)) homeHdmiWatcher = cl.deco.shelf.service.HdmiWatcher(this).also { it.start() }
         // Entradas solo si el equipo tiene alguna (TV con HDMI/AV/sintonizador o panel del fabricante); un deco no la muestra
         ioData.execute {
             val has = try { TvInputs.sources(this).isNotEmpty() || TvInputs.systemPanel(this) != null } catch (_: Throwable) { true }
@@ -434,6 +446,25 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     /** Intents de KeyService (botones Entradas y Ajustes del control). */
     private fun handleRemoteAction(i: Intent?, delay: Long): Boolean = when (i?.action) {
         ACTION_OPEN_INPUTS -> { main.postDelayed({ if (started) openInputs() }, delay); true }
+        cl.deco.shelf.service.KeyMap.ACTION_OPEN_APPS -> {
+            main.postDelayed({ if (started && !gridOpen && adapter.gridCount > 0) openGrid() }, delay)
+            true
+        }
+        cl.deco.shelf.service.KeyMap.ACTION_ART_MODE -> {
+            // Pedido explícito con un botón: entra aunque el modo arte automático esté desactivado en Ajustes
+            main.postDelayed({
+                if (!started || artMode) return@postDelayed
+                if (state != HomeState.DOCK && state != HomeState.TOPBAR) applyState(HomeState.DOCK, animate = false)
+                stateBeforeArt = HomeState.DOCK
+                applyState(HomeState.ART_MODE)
+            }, delay)
+            true
+        }
+        cl.deco.shelf.service.KeyMap.ACTION_INPUT_CONNECTED -> {
+            val id = i.getStringExtra(cl.deco.shelf.service.KeyMap.EXTRA_INPUT_ID)
+            if (id != null) main.postDelayed({ if (started) showInputConnected(id) }, delay)
+            id != null
+        }
         ACTION_OPEN_SETTINGS -> {
             main.postDelayed({
                 if (!started || settings.isOpen || menu.visibility == View.VISIBLE) return@postDelayed
@@ -445,6 +476,43 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         else -> false
     }
+
+    /**
+     * Aviso al enchufar un equipo en un HDMI: "Un dispositivo se conectó en HDMI 3" (o el nombre CEC del equipo) con la
+     * opción de cambiar a esa entrada. Lo pide HdmiWatcher desde el servicio de botones (cualquier app en pantalla) o, sin
+     * servicio, el vigía propio del home.
+     */
+    private fun showInputConnected(inputId: String) {
+        ioShelf.execute {
+            val s = try { TvInputs.hdmiSource(this, inputId) } catch (_: Throwable) { null } ?: return@execute
+            main.post {
+                if (!started || settings.isOpen || inputsPopup.isOpen) return@post
+                if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
+                if (artMode) applyState(stateBeforeArt, animate = false)
+                val port = s.label.substringAfterLast(" · ")
+                if (!hdmiNotice.isOpen) prevFocus = currentFocus
+                blockContent(true, dimBar = false) // aviso liviano: el home y la barra siguen visibles detrás
+                hdmiNotice.onSwitch = {
+                    closeHdmiNotice(restore = false)
+                    releaseVideoForPlayback()
+                    if (!TvInputs.launch(this, s)) Toast.makeText(this, "No se pudo abrir $port", Toast.LENGTH_SHORT).show()
+                }
+                hdmiNotice.onDismiss = { closeHdmiNotice() }
+                hdmiNotice.show(s.device ?: "Dispositivo conectado",
+                    if (s.device != null) "Conectado en $port" else "Se conectó un equipo en $port", port)
+            }
+        }
+    }
+
+    private fun closeHdmiNotice(restore: Boolean = true) {
+        if (!hdmiNotice.isOpen) return
+        hdmiNotice.hide()
+        blockContent(false)
+        if (restore) restoreFocus()
+    }
+
+    /** Vigía de HDMI del home cuando el servicio de botones no está activo (con servicio, él avisa en cualquier app). */
+    private var homeHdmiWatcher: cl.deco.shelf.service.HdmiWatcher? = null
 
     /** Botón Ajustes del control: elegir entre Ajustes de Lienzo, ajustes rápidos del televisor o ajustes del sistema. */
     private fun openSettingsChooser() {
@@ -482,8 +550,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         netWatcher?.stop()
         runCatching { unregisterReceiver(pkgReceiver) }
         runCatching { tvInputs?.unregisterCallback(inputsCallback) }
+        homeHdmiWatcher?.stop(); homeHdmiWatcher = null
         if (today.visibility == View.VISIBLE) closeToday()
         closeInputs(restore = false)
+        closeHdmiNotice(restore = false)
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
@@ -505,6 +575,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // HOME con el launcher ya visible: cerrar overlays y volver al dock
         if (menu.visibility == View.VISIBLE) closeMenu(restore = false)
         closeInputs(restore = false)
+        closeHdmiNotice(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
         dropImport()
         if (settings.isOpen) closeSettings()
@@ -631,7 +702,59 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private val artRetry = Runnable { if (started && artBmp == null) loadArt(true) }
 
+    // ---------- Fondo "Color dinámico" ----------
+
+    private lateinit var dynBase: GradientDrawable
+    private lateinit var dynGlow: GradientDrawable
+    private var glowColor = Theme.NEUTRAL_ACCENT
+    private var glowAnim: android.animation.ValueAnimator? = null
+    /** Color dominante por app (k-means sobre su tile, una vez): mover el foco no recalcula nada. */
+    private val appColors = HashMap<String, Int>()
+
+    /** Activa el fondo dinámico: suelta la obra (menos memoria) y pinta el fondo oscuro con resplandor. */
+    private fun showDynamicBackground() {
+        artView.animate().cancel()
+        releaseArt()
+        currentArt = null
+        artView.alpha = 1f
+        rootView.background = android.graphics.drawable.LayerDrawable(arrayOf(dynBase, dynGlow))
+        Theme.animateTo(Theme.neutral(), 400L, true)
+    }
+
+    /** Lleva el resplandor al color de la app enfocada con una transición de 450 ms (sin capas extra: un solo drawable). */
+    private var glowTarget: String? = null
+
+    private fun glowFor(e: AppEntry) {
+        if (!prefs.dynamicBg) return
+        glowTarget = e.key
+        appColors[e.key]?.let { animateGlow(it); return }
+        val tile = loader.cached(e) ?: return
+        ioShelf.execute {
+            val c = try { cl.deco.shelf.util.Palette.from(tile).accent } catch (_: Throwable) { return@execute }
+            // Solo si el foco sigue en esa app (al navegar rápido no se pinta el color de una app ya dejada atrás)
+            main.post { appColors[e.key] = c; if (started && prefs.dynamicBg && glowTarget == e.key) animateGlow(c) }
+        }
+    }
+
+    private fun animateGlow(to: Int) {
+        if (to == glowColor) return
+        glowAnim?.cancel()
+        val from = glowColor
+        glowColor = to
+        val ev = android.animation.ArgbEvaluator()
+        glowAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 450L
+            interpolator = Ui.DECEL
+            addUpdateListener {
+                val c = ev.evaluate(it.animatedFraction, from, to) as Int
+                dynGlow.colors = intArrayOf(Theme.withAlpha(c, 0x66), Theme.withAlpha(c, 0))
+            }
+            start()
+        }
+    }
+
     private fun loadArt(rotate: Boolean) {
+        if (prefs.dynamicBg) { showDynamicBackground(); return } // sin obras: fondo de color dinámico
         ioArt.execute {
             var a = if (!rotate) currentArt else null
             if (a == null) a = try { graph.art.next() } catch (_: Throwable) { null }
@@ -691,7 +814,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
      * decodifica la obra completa; así nunca se ve negro al volver al home. En frío además fija la obra vigente si no venció.
      */
     private fun restoreLastArt() {
-        if (artBmp != null) return
+        if (artBmp != null || prefs.dynamicBg) return
         val path = prefs.sp.getString("last_art_path", null) ?: return
         val ts = prefs.sp.getLong("last_art_ts", 0L)
         val f = File(path)
@@ -1124,6 +1247,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     override fun onFocus(e: AppEntry, slot: Int) {
+        glowFor(e) // fondo "Color dinámico": el resplandor sigue a la app enfocada (dock y grilla)
         if (!adapter.isFav(slot)) {
             gridName.text = e.label
             main.post {
@@ -1277,7 +1401,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun enterArtMode() {
-        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || inputsPopup.isOpen || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen) return
+        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || inputsPopup.isOpen || hdmiNotice.isOpen || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen) return
         if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
         stateBeforeArt = state
         applyState(HomeState.ART_MODE)
@@ -1333,6 +1457,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         override fun onInputAdded(inputId: String) = refreshInputs()
         override fun onInputRemoved(inputId: String) = refreshInputs()
         override fun onInputUpdated(inputId: String) = refreshInputs()
+        override fun onInputStateChanged(inputId: String, state: Int) = refreshInputs() // "Conectado" al día con el desplegable abierto
     }
 
     private fun refreshInputs() {
@@ -1973,6 +2098,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (updatePanel.isOpen) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down && !updatePanel.back()) closeUpdate(); return true }
             if (k == KeyEvent.KEYCODE_MENU) return true
+            return super.dispatchKeyEvent(e)
+        }
+        if (hdmiNotice.isOpen) {
+            if (k == KeyEvent.KEYCODE_BACK) { if (down) closeHdmiNotice(); return true }
+            if (k == KeyEvent.KEYCODE_MENU) return true
+            if (hdmiNotice.handleKey(e)) return true
             return super.dispatchKeyEvent(e)
         }
         if (inputsPopup.isOpen) {

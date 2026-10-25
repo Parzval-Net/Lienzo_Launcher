@@ -24,13 +24,13 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Normaliza el banner o ícono ACTUAL de cada app a un tile 16:9 homogéneo (w x h px, esquinas redondeadas ya aplicadas).
+ * Normaliza el banner o ícono ACTUAL de cada app a un tile 16:9 homogéneo (w x h px, RGB_565 opaco; esquinas al dibujar).
  * Siempre parte del arte instalado, así una actualización de la app trae su arte nuevo. Pipeline:
  * - Banner opaco 16:9: escala exacta al tile desde su mayor resolución, sin trim, relleno ni crop (idéntico al oficial).
  * - Banner con transparencia: logo recortado por alpha, centrado con 8% de padding, sobre su color promedio oscurecido.
  * - Solo ícono adaptive: foreground al 60% del alto sobre degradado diagonal de su background. Legacy: 50% con sombra.
  * - Overrides artesanales por paquete (IconOverrides) solo para apps sin arte propio. Nunca para marcas.
- * Acabado: esquinas redondeadas y borde interior de 1 px blanco al 6% (el brillo especular solo en el tile enfocado).
+ * Acabado: borde interior de 1 px blanco al 6% (el brillo especular solo en el tile enfocado).
  * Cache en disco cacheDir/tiles/{pkg}_{versionCode}_{hash}.png: la clave incluye versionCode, una actualización
  * con Shelf cerrado se detecta sola al arrancar. Bloqueante: llamar fuera del main thread.
  */
@@ -54,7 +54,7 @@ class TileRenderer(private val context: Context, private val w: Int, private val
         }
         val f = cacheFile(entry, original)
         if (f != null && f.exists()) {
-            BitmapFactory.decodeFile(f.path)?.let { return it }
+            BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })?.let { return it }
         }
         val bmp = try { render(entry, original) } catch (e: Throwable) { Log.w(TAG, "render ${entry.key}: $e"); null } ?: return null
         if (f != null) try {
@@ -279,13 +279,12 @@ class TileRenderer(private val context: Context, private val w: Int, private val
 
     // ---- Acabado ----
 
+    /** Tile opaco en RGB_565 (mitad de memoria): las esquinas las redondea RoundImageView al dibujar. */
     private fun finish(flat: Bitmap, shine: Boolean): Bitmap {
-        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
         val c = Canvas(out)
-        val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
-        c.drawRoundRect(rect, radius, radius, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-            shader = BitmapShader(flat, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-        })
+        c.drawColor(BASE) // lo transparente del arte (overrides, bordes de banners) queda sobre gris oscuro, no negro puro
+        c.drawBitmap(flat, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)) // dither: degradados sin bandas
         flat.recycle()
         if (shine) {
             // Solo borde interior de 1 px blanco al 6%; el brillo especular vive únicamente en el tile enfocado
@@ -325,7 +324,8 @@ class TileRenderer(private val context: Context, private val w: Int, private val
 
     private companion object {
         const val TAG = "ShelfTiles"
-        const val RENDER_REV = 5 // subir al cambiar el algoritmo: invalida los tiles en disco
+        const val RENDER_REV = 6 // subir al cambiar el algoritmo: invalida los tiles en disco
+        const val BASE = 0xFF1B1E27.toInt()
         const val EW = 32
         const val EH = 18
         const val UNIFORM_SHARE = 0.6f

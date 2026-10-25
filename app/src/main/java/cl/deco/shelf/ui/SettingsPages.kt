@@ -141,6 +141,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         rows += Row.Act("Entradas de Lienzo") { pick(KeyMap.INPUTS) }
         rows += Row.Act("Menú de ajustes", { "Lienzo, rápidos o del televisor" }) { pick(KeyMap.SETTINGS) }
         rows += Row.Act("TV en vivo", { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: "Sin app (función original)" }) { pick(KeyMap.LIVETV) }
+        rows += Row.Act("Todas las apps", { "Grilla de Lienzo" }) { pick(KeyMap.APPS) }
+        rows += Row.Act("Modo arte", { "Obra a pantalla completa" }) { pick(KeyMap.ART) }
         rows += Row.Act("Función original del sistema") { pick(null) }
         rows += Row.Section("Abrir una app")
         for ((label, pkg) in launchableApps()) rows += Row.Act(label) { pick(KeyMap.app(pkg)) }
@@ -170,9 +172,11 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     fun screenAndBackgroundPage(): Page = Page("Pantalla y fondos", listOf(
         Row.Section("Fondo"),
+        // Fuente: obras de arte, imágenes propias o "Color dinámico" (fondo oscuro con el color de la app enfocada)
+        choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, sourceNames, listOf(0, 1, 2, ShelfPrefs.BG_DYNAMIC), { p.bgSource }, { p.bgSource = it }),
         choice("Rotación de obra", ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", "Diario"), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
         Row.Act("Cambiar obra ahora") { host.nextArt() },
-        Row.Act("Mis fondos", { sourceName() }) { panel.push(myBackgroundsPage()) },
+        Row.Act("Mis fondos", { "Importar y gestionar imágenes y videos propios" }) { panel.push(myBackgroundsPage()) },
         choice("Brillo del fondo", ShelfPrefs.BG_BRIGHTNESS, listOf("60%", "70%", "80%", "90%", "100%"), listOf(60, 70, 80, 90, 100), { p.bgBrightness }, { p.bgBrightness = it }),
         toggle("Atenuar de noche", ShelfPrefs.NIGHT_DIM, "Sí", "No", { p.nightDim }, { p.nightDim = it }),
         choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Ninguno", "Bajo", "Medio", "Alto"), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
@@ -267,7 +271,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     // ---- Mis fondos ----
 
-    private fun sourceName() = listOf("Colección curada", "Mis fondos", "Ambas")[p.bgSource.coerceIn(0, 2)]
+    private val sourceNames = listOf("Colección curada", "Mis fondos", "Ambas", "Color dinámico")
+    private fun sourceName() = sourceNames[p.bgSource.coerceIn(0, sourceNames.size - 1)]
 
     private fun counts(i: Int, v: Int) = "$i ${if (i == 1) "imagen" else "imágenes"}, $v ${if (v == 1) "video" else "videos"}"
 
@@ -282,7 +287,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             Row.Act("Importar imágenes y videos", { "USB o almacenamiento del equipo" }) { host.importFromUsb() },
             Row.Act("Gestionar mis fondos", { counts(ua.count(), VideoLibrary.userVideos(ctx).size) }) { pendingDelete = null; panel.push(managePage()) },
             Row.Section("Uso"),
-            choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, listOf("Colección curada", "Mis fondos", "Ambas"), listOf(0, 1, 2), { p.bgSource }, { p.bgSource = it }),
+            Row.Info("Uso") { "La fuente del fondo (obras, Mis fondos, ambas o color dinámico) se elige en Pantalla y fondos." },
             Row.Info("Video") { "El video del modo arte y del protector se elige en Modo arte y protector." },
             Row.Section("Cómo preparar los archivos"),
             Row.Info("Imágenes") { "JPG, PNG o WebP en cualquier carpeta. Se ajustan a 1920x1080 (recorte centrado; las verticales llevan passe-partout y solo salen en el protector)." },

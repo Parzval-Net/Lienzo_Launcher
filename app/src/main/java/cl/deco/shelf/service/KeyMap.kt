@@ -19,13 +19,19 @@ import org.json.JSONObject
  *
  * Valores iniciales verificados en una TCL (Android 11, control BT_RC813_MA) el 25-10-2026: el firmware entrega keycodes
  * propios sobre 4000 (4062 Netflix, 4099 Prime Video, 4065 YouTube, 4020 TCL Channel, 4140 Guard, 4159 Web, 4137 TCL Home,
- * 4514 Ajustes) y estándar para Entradas (178) y Asistente (219). Los keycodes estándar de Android cubren otros controles.
+ * 4077 Ajustes, 4001 TV en vivo, 4514 Menú ≡, 4056 123) y estándar para Entradas (178), Asistente (219), Información (165),
+ * Perfil (288) y CH (166/167). Menú ≡ queda con su función de fábrica (el panel de ajustes rápidos de TCL, que el sistema
+ * abre antes del filtro de accesibilidad). Los keycodes estándar de Android cubren otros controles.
  */
 object KeyMap {
     /** Acciones: "app:<paquete>", INPUTS, SETTINGS, LIVETV o NONE (deja pasar la tecla al sistema). */
     const val INPUTS = "inputs"
     const val SETTINGS = "settings"
     const val LIVETV = "livetv"
+    /** Lienzo con la grilla de todas las apps abierta. */
+    const val APPS = "apps"
+    /** Modo arte de Lienzo ahora (obra a pantalla completa, con video si está configurado). */
+    const val ART = "art"
     const val NONE = "none"
     fun app(pkg: String) = "app:$pkg"
 
@@ -36,7 +42,9 @@ object KeyMap {
     /** Nombres conocidos de botones para mostrar en Ajustes (el resto se muestra como "Botón <código>"). */
     private val names = mapOf(
         4062 to "Netflix", 4099 to "Prime Video", 4065 to "YouTube", 4020 to "TCL Channel", 4140 to "Guard", 4159 to "Web",
-        4137 to "TCL Home", 4077 to "Ajustes (TCL)", 4514 to "Opciones (TCL)", KeyEvent.KEYCODE_TV_INPUT to "Entradas", KeyEvent.KEYCODE_SETTINGS to "Ajustes",
+        4137 to "TCL Home", 4077 to "Ajustes (TCL)", 4514 to "Menú ≡ / ajustes rápidos (TCL)", 4001 to "TV en vivo (TCL)", 4056 to "123 (TCL)",
+        KeyEvent.KEYCODE_PROFILE_SWITCH to "Perfil", KeyEvent.KEYCODE_INFO to "Información", KeyEvent.KEYCODE_CHANNEL_UP to "CH +",
+        KeyEvent.KEYCODE_CHANNEL_DOWN to "CH −", KeyEvent.KEYCODE_TV_INPUT to "Entradas", KeyEvent.KEYCODE_SETTINGS to "Ajustes",
         KeyEvent.KEYCODE_TV to "TV en vivo", KeyEvent.KEYCODE_GUIDE to "Guía", KeyEvent.KEYCODE_ASSIST to "Asistente",
         KeyEvent.KEYCODE_SEARCH to "Buscar", KeyEvent.KEYCODE_VOICE_ASSIST to "Asistente de voz", KeyEvent.KEYCODE_ALL_APPS to "Todas las apps",
         KeyEvent.KEYCODE_EXPLORER to "Navegador", KeyEvent.KEYCODE_PROG_RED to "Rojo", KeyEvent.KEYCODE_PROG_GREEN to "Verde",
@@ -52,7 +60,9 @@ object KeyMap {
         4159 to app("com.instantbits.cast.receiver"),
         4137 to app("com.android.vending"),
         4077 to SETTINGS, // botón con engranaje del control TCL (scan 233), verificado en la TV
-        4514 to SETTINGS,
+        4001 to LIVETV,   // botón TV en vivo (televisor con antena) del control TCL, verificado en la TV
+        4056 to APPS,     // botón 123 del control TCL: sin teclado numérico útil en Lienzo, abre todas las apps
+        KeyEvent.KEYCODE_PROFILE_SWITCH to ART, // Perfil: el selector de perfiles de Google TV no está; modo arte
         KeyEvent.KEYCODE_SETTINGS to SETTINGS,
         KeyEvent.KEYCODE_TV_INPUT to INPUTS,
         KeyEvent.KEYCODE_TV to LIVETV,
@@ -126,6 +136,8 @@ object KeyMap {
         action == null || action == NONE -> "Original del sistema"
         action == INPUTS -> "Entradas de Lienzo"
         action == SETTINGS -> "Menú de ajustes"
+        action == APPS -> "Todas las apps"
+        action == ART -> "Modo arte"
         action == LIVETV -> liveTvApp(ctx)?.let { "TV en vivo: ${appLabel(ctx, it)}" } ?: "Original (sin app de TV en vivo)"
         action.startsWith("app:") -> action.removePrefix("app:").let { if (installed(ctx, it)) appLabel(ctx, it) else "Original (app no instalada)" }
         else -> action
@@ -161,6 +173,8 @@ object KeyMap {
             action == INPUTS -> openLienzo(ctx, ACTION_OPEN_INPUTS)
             // Menú para elegir: Ajustes de Lienzo, ajustes rápidos del televisor o ajustes completos del sistema
             action == SETTINGS -> openLienzo(ctx, ACTION_OPEN_SETTINGS)
+            action == APPS -> openLienzo(ctx, ACTION_OPEN_APPS)
+            action == ART -> openLienzo(ctx, ACTION_ART_MODE)
             action == LIVETV -> liveTvApp(ctx)?.let { launch(ctx, it) }
             action.startsWith("app:") -> launch(ctx, action.removePrefix("app:"))
         }
@@ -168,6 +182,11 @@ object KeyMap {
 
     const val ACTION_OPEN_INPUTS = "cl.deco.shelf.OPEN_INPUTS"
     const val ACTION_OPEN_SETTINGS = "cl.deco.shelf.OPEN_SETTINGS"
+    const val ACTION_OPEN_APPS = "cl.deco.shelf.OPEN_APPS"
+    const val ACTION_ART_MODE = "cl.deco.shelf.ART_MODE"
+    /** Un HDMI pasó de vacío a cable puesto (HdmiWatcher): Lienzo muestra el aviso para cambiar a esa entrada. */
+    const val ACTION_INPUT_CONNECTED = "cl.deco.shelf.INPUT_CONNECTED"
+    const val EXTRA_INPUT_ID = "input_id"
 
     private fun openLienzo(ctx: Context, action: String) =
         start(ctx, Intent(action).setClassName(ctx, "cl.deco.shelf.ui.MainActivity").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP))

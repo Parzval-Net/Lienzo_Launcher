@@ -133,8 +133,9 @@ object VideoPolicy {
         pool += userNames
         return when {
             choice == ALL -> pool.takeIf { it.isNotEmpty() }?.get(tick.mod(pool.size))
-            choice.startsWith(USER_PREFIX) -> choice.removePrefix(USER_PREFIX).takeIf { it in userNames } ?: if (monetAvailable) MONET else null
-            else -> if (monetAvailable) MONET else null
+            // Sin el video elegido (o sin Monet, que no viene en el APK) se usa otro disponible antes que quedar sin video
+            choice.startsWith(USER_PREFIX) -> choice.removePrefix(USER_PREFIX).takeIf { it in userNames } ?: if (monetAvailable) MONET else userNames.firstOrNull()
+            else -> if (monetAvailable) MONET else userNames.firstOrNull()
         }
     }
 }

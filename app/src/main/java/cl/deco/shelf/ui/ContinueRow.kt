@@ -90,9 +90,7 @@ class ContinueRow(
             val c = parent.context
             val cell = FocusCell(c, cardW, cardH, padX, c.dp(10), c.dp(48), radius)
             // Sello de la app: ícono pequeño abajo a la derecha, radio 4 y sombra suave
-            val badge = ImageView(c).apply {
-                scaleType = ImageView.ScaleType.FIT_XY
-            }
+            val badge: ImageView = RoundImageView(c, c.dpf(4f))
             cell.content.addView(badge, FrameLayout.LayoutParams(c.dp(28), c.dp(16), Gravity.BOTTOM or Gravity.END).apply { rightMargin = c.dp(6); bottomMargin = c.dp(8) })
             // Barra de avance de 3 px en el borde inferior
             val track = View(c).apply { setBackgroundColor(0x55FFFFFF); visibility = View.GONE }

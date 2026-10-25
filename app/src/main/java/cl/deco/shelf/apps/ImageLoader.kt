@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Genera en background el bitmap final de cada tile (fondo, banner/ícono, label, esquinas redondeadas ya
- * aplicadas) y las imágenes de las tarjetas del Top Shelf. Cache LRU de ~8 MB acotada por bytes.
+ * al dibujar) y las imágenes de las tarjetas del Top Shelf, ambos en RGB_565. Cache LRU de 4 MB acotada por bytes.
  */
 class ImageLoader(private val context: Context, private val w: Int, private val h: Int, private val radius: Float) {
 
@@ -68,9 +68,12 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
         }
         pool.execute {
             val bmp = cache.get(key) ?: if (!wanted()) null else try {
-                readBytes(uri)?.let { BitmapUtil.decodeBytes(it, cw, ch) }?.let { src ->
-                    roundedCover(src, cw, ch, radius, scrim = true).also { src.recycle(); cache.put(key, it) }
-                }
+                val f = download(uri)
+                try {
+                    f?.let { BitmapUtil.decodeFile(it.path, cw, ch, Bitmap.Config.ARGB_8888) }?.let { src ->
+                        cover(src, cw, ch).also { src.recycle(); cache.put(key, it) }
+                    }
+                } finally { f?.delete() }
             } catch (e: Throwable) { null }
             val cbs = synchronized(inflight) { inflight.remove(key) }.orEmpty()
             main.post { for (cb in cbs) cb(bmp) }
@@ -105,9 +108,15 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
     /** Tipo de tile (banner, adaptive, legacy, override) por clave de app, para diagnóstico. */
     fun kinds(): Map<String, TileRenderer.Kind> = renderer.kinds
 
-    private fun readBytes(uri: String): ByteArray? {
+    /**
+     * Copia la imagen a un archivo temporal en vez de a un ByteArray: el heap Java no crece con cada descarga (antes un
+     * póster de 1-4 MB se duplicaba al armar el arreglo) y la decodificación lee el archivo con downsample.
+     */
+    private fun download(uri: String): java.io.File? {
         val u = Uri.parse(uri)
         var conn: HttpURLConnection? = null
+        val tmp = java.io.File.createTempFile("card", null, context.cacheDir)
+        var ok = false
         try {
             val stream = if (u.scheme == "http" || u.scheme == "https") {
                 val c = URL(uri).openConnection() as HttpURLConnection
@@ -119,44 +128,46 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
                 context.contentResolver.openInputStream(u)
             } ?: return null
             stream.use { s ->
-                val out = java.io.ByteArrayOutputStream()
-                val buf = ByteArray(16 * 1024)
-                while (true) {
-                    val n = s.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                    if (out.size() > MAX_DOWNLOAD) return null
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(16 * 1024)
+                    var total = 0
+                    while (true) {
+                        val n = s.read(buf)
+                        if (n < 0) break
+                        total += n
+                        if (total > MAX_DOWNLOAD) return null
+                        out.write(buf, 0, n)
+                    }
                 }
-                return out.toByteArray()
             }
+            ok = true
+            return tmp
         } finally {
             conn?.disconnect() // libera el socket aunque la lectura falle o se corte por tamaño
+            if (!ok) tmp.delete()
         }
     }
 
-    private fun roundedCover(src: Bitmap, cw: Int, ch: Int, r: Float, scrim: Boolean): Bitmap {
-        val out = Bitmap.createBitmap(cw, ch, Bitmap.Config.ARGB_8888)
+    /** Tarjeta opaca en RGB_565 (cover centrado y scrim inferior, con dither); las esquinas las pone RoundImageView. */
+    private fun cover(src: Bitmap, cw: Int, ch: Int): Bitmap {
+        val out = Bitmap.createBitmap(cw, ch, Bitmap.Config.RGB_565)
         val c = Canvas(out)
         val s = maxOf(cw / src.width.toFloat(), ch / src.height.toFloat())
         val m = Matrix().apply {
             setScale(s, s)
             postTranslate((cw - src.width * s) / 2f, (ch - src.height * s) / 2f)
         }
-        val shader = BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply { setLocalMatrix(m) }
-        val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { this.shader = shader }
-        c.drawRoundRect(RectF(0f, 0f, cw.toFloat(), ch.toFloat()), r, r, p)
-        if (scrim) {
-            val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                this.shader = LinearGradient(0f, ch * 0.45f, 0f, ch.toFloat(), 0x00000000, 0xDD000000.toInt(), Shader.TileMode.CLAMP)
-            }
-            c.drawRoundRect(RectF(0f, 0f, cw.toFloat(), ch.toFloat()), r, r, sp)
-        }
+        c.drawBitmap(src, m, Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG))
+        c.drawRect(0f, 0f, cw.toFloat(), ch.toFloat(), Paint(Paint.DITHER_FLAG).apply {
+            shader = LinearGradient(0f, ch * 0.45f, 0f, ch.toFloat(), 0x00000000, 0xDD000000.toInt(), Shader.TileMode.CLAMP)
+        })
         return out
     }
 
     private companion object {
         const val HIDDEN_CLASS = "hidden"
-        const val CACHE_BYTES = 6 * 1024 * 1024
+        // Tiles y tarjetas en RGB_565: 4 MB guardan más imágenes que los 6 MB anteriores en ARGB
+        const val CACHE_BYTES = 4 * 1024 * 1024
         const val MAX_DOWNLOAD = 4 * 1024 * 1024
     }
 }

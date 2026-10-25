@@ -112,7 +112,9 @@ class UserMediaRulesTest {
 
     @Test fun monetPorDefecto() {
         assertEquals("monet", VideoPolicy.pick("monet", listOf("a.mp4"), true, 0))
-        assertNull(VideoPolicy.pick("monet", listOf("a.mp4"), false, 0))
+        // Sin Monet (no viene en el APK) se usa el primer video propio en vez de quedar sin video
+        assertEquals("a.mp4", VideoPolicy.pick("monet", listOf("a.mp4"), false, 0))
+        assertNull(VideoPolicy.pick("monet", emptyList(), false, 0))
         assertEquals("monet", VideoPolicy.pick("valor-desconocido", emptyList(), true, 0))
     }
 
@@ -120,6 +122,7 @@ class UserMediaRulesTest {
         assertEquals("a.mp4", VideoPolicy.pick(VideoPolicy.userChoice("a.mp4"), listOf("a.mp4", "b.mp4"), true, 5))
         assertEquals("monet", VideoPolicy.pick(VideoPolicy.userChoice("borrado.mp4"), listOf("b.mp4"), true, 0))
         assertNull(VideoPolicy.pick(VideoPolicy.userChoice("borrado.mp4"), emptyList(), false, 0))
+        assertEquals("b.mp4", VideoPolicy.pick(VideoPolicy.userChoice("borrado.mp4"), listOf("b.mp4"), false, 0))
     }
 
     @Test fun alternarTodosRotaMonetYPropios() {

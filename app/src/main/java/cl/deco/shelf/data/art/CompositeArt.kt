@@ -16,7 +16,8 @@ class CompositeArt(context: Context, private val curated: ArtSource, private val
 
     override fun next(forHome: Boolean): Artwork? {
         val mode = prefs.bgSource
-        if (mode == SourcePolicy.CURATED) return curated.next(forHome)
+        // Con "Color dinámico" el home no usa obras; el protector sigue mostrando la colección curada
+        if (mode == SourcePolicy.CURATED || mode == ShelfPrefs.BG_DYNAMIC) return curated.next(forHome)
         val key = if (forHome) "tick_home" else "tick_all"
         val tick = tickPrefs.getInt(key, 0)
         tickPrefs.edit().putInt(key, tick + 1).apply()
