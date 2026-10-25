@@ -8,7 +8,7 @@ Este proyecto usa ideas, datos y obras de terceros. Atribuciones:
    El código de Lienzo está escrito de forma independiente; no se copió código de Free My TV.
 
 2. Obras de arte - Wikimedia Commons
-   La colección curada de 60 obras está en dominio público (licencias PD-Art, PD-old o CC0, según cada archivo). La app las descarga
+   La colección curada de 117 obras está en dominio público (licencias PD-Art, PD-old o CC0, según cada archivo). La app las descarga
    desde upload.wikimedia.org. Cada obra, su autor, museo y licencia figuran en app/src/main/assets/art_index.json, con el enlace a su
    página de Commons (campo "src"). https://commons.wikimedia.org/
 

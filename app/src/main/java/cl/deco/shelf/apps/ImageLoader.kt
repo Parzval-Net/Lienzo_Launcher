@@ -84,6 +84,12 @@ class ImageLoader(private val context: Context, private val w: Int, private val 
 
     fun trim() = cache.evictAll()
 
+    /**
+     * Recorta la caché a [fraction] de su tope conservando lo más reciente (tiles del dock y tarjetas en pantalla): al
+     * volver de una app nada se redibuja ni se vuelve a descargar. Con presión de memoria real se usa [trim].
+     */
+    fun trimTo(fraction: Float) = cache.trimToSize((CACHE_BYTES * fraction).toInt())
+
     /** Un paquete cambió (reemplazo o baja): borra su tile en disco y memoria para regenerarlo con el arte nuevo. */
     fun invalidate(pkg: String) {
         pool.execute { renderer.invalidate(pkg) }

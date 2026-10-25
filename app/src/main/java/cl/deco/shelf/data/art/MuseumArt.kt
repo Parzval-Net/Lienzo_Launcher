@@ -22,7 +22,8 @@ import kotlin.random.Random
 /**
  * Obras de dominio público (Wikimedia Commons) para el modo arte.
  *
- * Colección curada de 60 obras en `getExternalFilesDir("art")` (index.json + JPEG 1920x1080), cargada por adb push
+ * Colección curada de 117 obras (60 originales + 57 CC0 de The Met y la National Gallery of Art, todas vía Commons) en
+ * `getExternalFilesDir("art")` (index.json + JPEG 1920x1080), cargada por adb push
  * o descargada por la propia app. Si la carpeta está vacía o incompleta, [startFullDownload] baja desde Commons,
  * según assets/art_index.json, las obras faltantes: una a la vez, con reintentos y backoff, solo con red sin
  * medición de datos. Cada obra se recorta con BitmapRegionDecoder, se escala a 1920x1080 (con passe-partout

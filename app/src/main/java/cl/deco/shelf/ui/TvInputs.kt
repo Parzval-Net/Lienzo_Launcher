@@ -27,23 +27,43 @@ object TvInputs {
 
     enum class Kind { HDMI, AV, TV, OTHER }
 
-    class Source(val label: String, val kind: Kind, val connected: Boolean, val intent: Intent)
+    /**
+     * [id] identifica la entrada para recordar la última usada; [last] la marca en el desplegable. [device] es el nombre
+     * de un equipo detectado por HDMI-CEC en ese puerto (consola, deco, barra de sonido): la única señal de conexión real.
+     */
+    class Source(val id: String, val label: String, val kind: Kind, val last: Boolean, val intent: Intent, val device: String? = null)
 
-    /** Entradas visibles, ordenadas: HDMI, AV/componente, sintonizador y otras. */
+    private const val PREF_LAST = "last_input_id"
+    private const val LIVE_ID = "livetv"
+
+    /**
+     * Entradas visibles, ordenadas: HDMI, AV/componente, sintonizador y otras. Bloqueante (binder y PackageManager): llamar
+     * fuera del main thread.
+     *
+     * Sin indicador "Conectado": TvInputManager.getInputState no refleja el cable en la TCL de pruebas (verificado: con todo
+     * desenchufado marcaba HDMI 3 por tener nombre guardado y AV porque el compuesto no tiene detección, mientras el HAL
+     * reportaba cable_connection_status desconocido en todos los puertos). La señal física real (HdmiControlManager, sysfs)
+     * exige permisos de sistema. Mejor no mostrar estado que mostrar uno falso; en su lugar se marca la última usada.
+     */
     fun sources(ctx: Context): List<Source> {
         val out = ArrayList<Source>()
         val tim = ctx.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager ?: return out
         val tvApp = liveTvActivity(ctx)
+        val last = ctx.getSharedPreferences("shelf", Context.MODE_PRIVATE).getString(PREF_LAST, null)
         val inputs = try { tim.tvInputList.filter { !it.isHidden(ctx) } } catch (e: Exception) { Log.w("Shelf", "entradas: $e"); emptyList() }
         // "TV en vivo" abre la app elegida en Ajustes > Control remoto (por defecto Movistar TV); sin ella, el sintonizador
         val liveApp = cl.deco.shelf.service.KeyMap.liveTvApp(ctx)?.let { cl.deco.shelf.service.KeyMap.launchIntent(ctx, it) }
-        for (info in inputs.sortedWith(compareBy({ kind(it.type).ordinal }, { it.id }))) {
+        // Equipos HDMI-CEC (Nintendo Switch, PlayStation, Xbox, decos): el framework los publica como entradas hijas del
+        // puerto (getParentId). Es API pública y refleja un equipo realmente presente, a diferencia de getInputState
+        val cec = inputs.filter { it.parentId != null }
+        for (info in inputs.filter { it.parentId == null }.sortedWith(compareBy({ kind(it.type).ordinal }, { it.id }))) {
             val k = kind(info.type)
-            if (k == Kind.TV && liveApp != null) { if (out.none { it.kind == Kind.TV }) out += Source("TV en vivo", k, false, liveApp); continue }
-            val connected = info.isPassthroughInput && try { tim.getInputState(info.id) == TvInputManager.INPUT_STATE_CONNECTED } catch (_: Exception) { false }
-            out += Source(label(ctx, info, k), k, connected, intentFor(info, tvApp))
+            if (k == Kind.TV && liveApp != null) { if (out.none { it.kind == Kind.TV }) out += Source(LIVE_ID, "TV en vivo", k, last == LIVE_ID, liveApp); continue }
+            val dev = cec.firstOrNull { it.parentId == info.id }?.loadLabel(ctx)?.toString()?.takeIf { it.isNotBlank() }
+            val base = label(ctx, info, k)
+            out += Source(info.id, if (dev != null) "$dev · ${base.substringAfter(" · ")}" else base, k, last == info.id, intentFor(info, tvApp), dev)
         }
-        if (liveApp != null && out.none { it.kind == Kind.TV }) out += Source("TV en vivo", Kind.TV, false, liveApp) // equipos sin sintonizador
+        if (liveApp != null && out.none { it.kind == Kind.TV }) out += Source(LIVE_ID, "TV en vivo", Kind.TV, last == LIVE_ID, liveApp) // equipos sin sintonizador
         return out
     }
 
@@ -60,6 +80,7 @@ object TvInputs {
         val flags = if (channel) Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             else Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
         ctx.startActivity(Intent(s.intent).addFlags(flags))
+        ctx.getSharedPreferences("shelf", Context.MODE_PRIVATE).edit().putString(PREF_LAST, s.id).apply()
         true
     } catch (e: Exception) {
         Log.w("Shelf", "entrada ${s.label}: $e")

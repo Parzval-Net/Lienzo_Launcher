@@ -23,7 +23,7 @@ Las capturas tienen desenfocados los íconos de apps y el historial de reproducc
 - Entradas del televisor (HDMI con nombre personalizado y estado de señal, AV, TV en vivo) desde la barra superior o el botón Entradas del control.
 - Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes o TV en vivo. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas.
 - Top Shelf y "Continuar viendo" (Watch Next y canales de vista previa, vía `READ_TV_LISTINGS`).
-- Fondo de obras de dominio público (60 obras de Wikimedia Commons), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra.
+- Fondo de obras de dominio público (117 obras de Wikimedia Commons, incluidas 57 liberadas como CC0 por The Met y la National Gallery of Art), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra.
 - Mis fondos: importa tus imágenes y videos desde un pendrive USB (sin red, sin ADB).
 - Modo arte y protector de pantalla con video.
 - Reloj, calendario con feriados (por país y región), temporizador y alarma.

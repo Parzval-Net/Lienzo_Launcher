@@ -61,7 +61,9 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Choice(label, listOf(on, off), { if (get()) 0 else 1 }, { set(it == 0); host.changed(key) })
 
     // Sin emojis: la fuente de color se cargaría solo para esto (varios MB de PSS) y no combina con los íconos del sistema
-    fun root(): Page = Page("Ajustes", tvRows() + listOf(
+    // Lienzo primero (es lo que se abre desde "Ajustes de Lienzo") y una sola sección Televisor sin repetidos: antes Imagen,
+    // Sonido y Ajustes de Android aparecían dos veces (Televisor y Accesos rápidos)
+    fun root(): Page = Page("Ajustes", listOf(
         Row.Section("Lienzo"),
         Row.Act("Pantalla y fondos", { sourceName() }) { panel.push(screenAndBackgroundPage()) },
         Row.Act("Modo arte y protector", { if (p.artEnabled) "Activado" else "Desactivado" }) { panel.push(artAndScreensaverPage()) },
@@ -70,20 +72,20 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Act("Control remoto", { if (KeyMap.serviceRunning(ctx)) "Botones activos" else "Requiere activar" }) { panel.push(remotePage()) },
         Row.Act("Sistema y energía", { if (p.nightOn) "Apagado nocturno activo" else "Apagado nocturno inactivo" }) { panel.push(powerAndSystemPage()) },
         Row.Act("Mantenimiento e información", { version }) { panel.push(aboutAndMaintenancePage()) },
-        Row.Section("Accesos rápidos del sistema"),
-        *QuickAccess.items.map { q -> Row.Act(q.label) { QuickAccess.launch(ctx, q) } }.toTypedArray(),
-    ))
+    ) + tvRows())
 
-    /** Sección "Televisor": los accesos rápidos del fabricante (en TCL, el panel que abría el botón Ajustes del control). */
+    /** Sección "Televisor": ajustes rápidos del fabricante (si existen) y accesos del sistema, cada uno una sola vez. */
     private fun tvRows(): List<Row> {
         val rows = ArrayList<Row>()
         rows += Row.Section("Televisor")
-        rows += Row.Act("Ajustes del televisor", { "Todos los ajustes del sistema" }) { QuickAccess.launch(ctx, QuickAccess.items.last()) }
         QuickAccess.tvQuick(ctx)?.let { quick ->
             rows += Row.Act("Ajustes rápidos", { "Brillo, imagen, sonido, temporizador" }) { host.finishSettings(); openActivity(quick) }
         }
-        rows += Row.Act("Imagen") { QuickAccess.launch(ctx, QuickAccess.picture) }
-        rows += Row.Act("Sonido") { QuickAccess.launch(ctx, QuickAccess.sound) }
+        // Wi-Fi, Bluetooth, Imagen, Sonido, Almacenamiento y, al final, todos los ajustes del sistema
+        for (q in QuickAccess.items) {
+            val label = if (q === QuickAccess.items.last()) "Todos los ajustes del sistema" else q.label
+            rows += Row.Act(label) { QuickAccess.launch(ctx, q) }
+        }
         return rows
     }
 
@@ -197,7 +199,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         rows += Row.Section("Video")
         if (tokens.isEmpty()) rows += Row.Info("Sin videos en el equipo") { "Importa uno propio para que el modo arte y el protector muestren video." }
         else rows += Row.Choice("Video", names, { tokens.indexOf(p.videoChoice).coerceAtLeast(0) }, { p.videoChoice = tokens[it]; host.changed(ShelfPrefs.VIDEO_CHOICE) })
-        rows += Row.Act("Importar video o imágenes", { "USB o almacenamiento del equipo" }) { host.importFromUsb() }
+        rows += Row.Act("Agregar o quitar videos", { "Mis fondos" }) { panel.push(myBackgroundsPage()) }
         rows += Row.Info("") { "MP4, MOV, M4V o MKV (H.264 o H.265) hasta 1080p. Puedes bajarlo con Downloader al almacenamiento y luego importarlo." }
         return rows
     }
@@ -244,14 +246,11 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     ))
 
     fun aboutAndMaintenancePage(): Page = Page("Mantenimiento e información", listOf(
+        // Memoria de video, RAM, tiempo encendido y "Liberar cachés" viven en el panel Salud (antes se repetían aquí)
         Row.Section("Diagnóstico y salud"),
-        Row.Act("Salud del equipo", { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) "Reinicio recomendado" else "En orden" }) { host.openHealth() },
+        Row.Act("Salud del equipo", { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) "Reinicio recomendado" else "Memoria, encendido y cachés" }) { host.openHealth() },
         Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
         Row.Info("Memoria de Lienzo (PSS)") { "${host.pss()} · objetivo en reposo < 40 MB" },
-        Row.Act("Liberar memoria de Lienzo", { "Cachés de íconos y desenfoque" }) { host.freeMemory(); panel.rebuild() },
-        Row.Info("Memoria de video (CMA)") { cl.deco.shelf.util.DeviceHealth.cmaText(cl.deco.shelf.util.DeviceHealth.read()) },
-        Row.Info("Encendido hace") { cl.deco.shelf.util.DeviceHealth.uptimeText(cl.deco.shelf.util.DeviceHealth.read().uptimeMs) },
-        Row.Info("Último aviso") { cl.deco.shelf.util.HealthNoticeStore(p.sp).lastNoticeText(Es.english) },
         Row.Section("Actualizaciones"),
         Row.Act("Buscar actualizaciones", { host.updateStatus() }) { host.checkUpdates() },
         choice("Actualizaciones automáticas", ShelfPrefs.UPDATE_AUTO, listOf("Buscar y avisar", "Desactivadas"), listOf(true, false), { p.updateAuto }, { p.updateAuto = it }),
@@ -278,15 +277,13 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     fun myBackgroundsPage(): Page {
         val ua = Graph.from(ctx).userArt
-        val (tokens, names) = videoOptions()
-        return Page("Mis fondos", listOfNotNull(
+        return Page("Mis fondos", listOf(
             Row.Section("Importar"),
             Row.Act("Importar imágenes y videos", { "USB o almacenamiento del equipo" }) { host.importFromUsb() },
             Row.Act("Gestionar mis fondos", { counts(ua.count(), VideoLibrary.userVideos(ctx).size) }) { pendingDelete = null; panel.push(managePage()) },
             Row.Section("Uso"),
             choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, listOf("Colección curada", "Mis fondos", "Ambas"), listOf(0, 1, 2), { p.bgSource }, { p.bgSource = it }),
-            if (tokens.isEmpty()) Row.Info("Video del protector y del modo arte") { "Sin videos: importa uno propio" }
-            else Row.Choice("Video del protector y del modo arte", names, { tokens.indexOf(p.videoChoice).coerceAtLeast(0) }, { p.videoChoice = tokens[it]; host.changed(ShelfPrefs.VIDEO_CHOICE) }),
+            Row.Info("Video") { "El video del modo arte y del protector se elige en Modo arte y protector." },
             Row.Section("Cómo preparar los archivos"),
             Row.Info("Imágenes") { "JPG, PNG o WebP en cualquier carpeta. Se ajustan a 1920x1080 (recorte centrado; las verticales llevan passe-partout y solo salen en el protector)." },
             Row.Info("Videos") { "MP4, MOV, M4V o MKV con H.264 o H.265, hasta 1920x1080 y 60 fps. 4K u otros formatos pueden afectar la reproducción de Netflix y se rechazan." },
@@ -386,7 +383,9 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val rows = ArrayList<Row>()
         rows += Row.Info("Estado") { artState().second }
         rows += Row.Bar("Descarga", { artState().second }, { Graph.from(ctx).art.downloadProgress().let { (d, t) -> if (t > 0) d.toFloat() / t else 1f } })
-        if (!ready) rows += Row.Act("Descargar 60 obras (~23 MB)") {
+        // Total real del catálogo (~0,4 MB por obra a 1920x1080)
+        val total = try { Graph.from(ctx).art.downloadProgress().second } catch (_: Throwable) { 0 }
+        if (!ready) rows += Row.Act(if (total > 0) "Descargar $total obras (~${(total * 0.4).toInt()} MB)" else "Descargar la colección") {
             try { Graph.from(ctx).art.startFullDownload() } catch (_: Throwable) {}
             tick()
         }

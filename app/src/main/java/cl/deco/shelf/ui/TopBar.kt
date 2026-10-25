@@ -218,21 +218,17 @@ class TopBar(
         }
         icon.visibility = GONE
 
-        // Centro: avisos de salud, almacenamiento, actualizaciones y descarga
-        addView(LinearLayout(ctx).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(artChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
-            addView(lowChip)
-            addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(10) })
-            addView(updateChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(10) })
-        }, LayoutParams(-2, -2, Gravity.CENTER))
-
         // Izquierda: saludo, reloj y fecha
         addView(left, LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
 
-        // Derecha: píldoras superiores (Entradas, Wi-Fi, Ajustes) y bloque de clima
+        // Derecha: avisos (descarga de obras, espacio, salud, actualización), píldoras (Entradas, Wi-Fi, Ajustes) y clima.
+        // Los avisos van en la misma fila, a la izquierda de las píldoras: centrados se montaban sobre "Entradas"
         val rightRow = LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
+            addView(artChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
+            addView(lowChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
+            addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
+            addView(updateChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
             val inPill = pill(cl.deco.shelf.R.drawable.ic_in_hdmi, "Entradas", onInputs).also { inputsPill = it }
             addView(inPill)
             val wifiPill = pill(cl.deco.shelf.R.drawable.ic_q_wifi, "Wi-Fi", onWifi).also {

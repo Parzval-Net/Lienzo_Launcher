@@ -420,6 +420,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (rotate) lastArt = System.currentTimeMillis()
         loadArt(rotate)
         topBar.setWifiSsid(getWifiSsid())
+        try { tvInputs?.registerCallback(inputsCallback, main) } catch (_: Throwable) {}
         // Entradas solo si el equipo tiene alguna (TV con HDMI/AV/sintonizador o panel del fabricante); un deco no la muestra
         ioData.execute {
             val has = try { TvInputs.sources(this).isNotEmpty() || TvInputs.systemPanel(this) != null } catch (_: Throwable) { true }
@@ -480,6 +481,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         artPolling = false
         netWatcher?.stop()
         runCatching { unregisterReceiver(pkgReceiver) }
+        runCatching { tvInputs?.unregisterCallback(inputsCallback) }
         if (today.visibility == View.VISIBLE) closeToday()
         closeInputs(restore = false)
         dropImport()
@@ -490,7 +492,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         stopArtVideo(animate = false)
         pendingFree?.run()
         releaseArt()
-        loader.trim()
+        // Se conserva la mitad más reciente de la caché (tiles del dock, tarjetas del Top Shelf): al volver no se redibujan
+        loader.trimTo(0.5f)
         super.onStop()
     }
 
@@ -519,10 +522,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         super.onTrimMemory(level)
         if (!ready) return
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-            // Shelf ya no está visible: soltar fondo blur y cache de íconos (se recargan en onStart)
+            // Shelf ya no está visible: soltar el blur; la caché de íconos se recorta y solo se vacía con presión de memoria real
             blurView.setImageDrawable(null)
             blurBmp?.recycle(); blurBmp = null
-            loader.trim()
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) loader.trim() else loader.trimTo(0.5f)
         }
     }
 
@@ -769,10 +772,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (a.id != prefs.sp.getString("last_art_id", null)) saveLastArt(a, bmp)
         applyPalette(animate = artBmp != null)
         val old = artBmp
+        val sameArt = old != null && a.id == artId // misma obra (JPEG del regreso al home -> decodificación completa)
         val newD = BitmapDrawable(resources, bmp)
         artBmp = bmp
         artId = a.id
-        if (old == null) {
+        if (sameArt) {
+            // Es la misma imagen: se reemplaza sin fundido, así volver de una app no se ve como una recarga del fondo
+            artView.setImageDrawable(newD)
+            recycleArt(old!!)
+        } else if (old == null) {
             artView.setImageDrawable(newD)
             if (artPlayer == null) {
                 // Primera obra: crossfade desde el degradado; después se retira la capa de fondo (la obra opaca cubre todo)
@@ -1131,7 +1139,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         lastDockSlot = slot
         val pkg = e.component.packageName
-        if (pkg != shelfPkg) { shelfView.clear(); shelfPkg = null }
+        // Con datos en caché el contenido anterior se reemplaza directo a los 120 ms (sin vaciar y volver a aparecer);
+        // solo se vacía si la app nueva aún no tiene datos y habrá que consultar el provider
+        if (pkg != shelfPkg && !(prefs.topShelf && graph.shelf.peek(pkg) != null)) { shelfView.clear(); shelfPkg = null }
         pendingPkg = pkg
         shelfWanted = pkg
         pendingEntry = e
@@ -1313,9 +1323,45 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
      * Entradas (píldora o botón Input del control): desplegable bajo la píldora con HDMI, AV y TV en vivo. Sin entradas en
      * TvInputManager se abre el panel del fabricante si existe.
      */
+    private var inputsLoading = false
+
+    /**
+     * Cambios de entradas mientras el home es visible: un equipo HDMI-CEC (consola, deco) que se enciende o se retira
+     * aparece o desaparece como entrada hija. Con el desplegable abierto se actualiza en el lugar; si no, solo la píldora.
+     */
+    private val inputsCallback = object : android.media.tv.TvInputManager.TvInputCallback() {
+        override fun onInputAdded(inputId: String) = refreshInputs()
+        override fun onInputRemoved(inputId: String) = refreshInputs()
+        override fun onInputUpdated(inputId: String) = refreshInputs()
+    }
+
+    private fun refreshInputs() {
+        if (!started) return
+        ioShelf.execute {
+            val sources = try { TvInputs.sources(this) } catch (_: Throwable) { return@execute }
+            val has = sources.isNotEmpty() || TvInputs.systemPanel(this) != null
+            main.post {
+                if (!started) return@post
+                topBar.setInputsAvailable(has)
+                if (inputsPopup.isOpen && sources.isNotEmpty()) inputsPopup.update(sources)
+            }
+        }
+    }
+
+    private val tvInputs by lazy { getSystemService(Context.TV_INPUT_SERVICE) as? android.media.tv.TvInputManager }
+
+    /** La lista se arma en ioData (binder de TvInputManager y PackageManager) y el desplegable se abre al volver al main. */
     private fun openInputs() {
+        if (inputsPopup.isOpen || inputsLoading) return
+        inputsLoading = true
+        ioShelf.execute { // ioShelf: no espera detrás de una consulta lenta de clima o feriados (ioData)
+            val sources = try { TvInputs.sources(this) } catch (_: Throwable) { emptyList() }
+            main.post { inputsLoading = false; if (started) showInputs(sources) }
+        }
+    }
+
+    private fun showInputs(sources: List<TvInputs.Source>) {
         if (inputsPopup.isOpen) return
-        val sources = TvInputs.sources(this)
         if (sources.isEmpty()) {
             val panel = TvInputs.systemPanel(this)
             if (panel != null) try { startActivity(panel.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Exception) {}

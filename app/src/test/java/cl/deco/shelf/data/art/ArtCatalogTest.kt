@@ -60,10 +60,11 @@ class ArtCatalogTest {
 
     @Test fun assetRealTienePesoYObrasValidas() {
         val f = File("src/main/assets/art_index.json")
-        assertTrue("art_index.json < 40 KB", f.length() < 40 * 1024)
+        // 117 obras (60 originales + 57 CC0 de The Met y la NGA vía Commons): el índice sigue siendo texto liviano en el APK
+        assertTrue("art_index.json < 80 KB", f.length() < 80 * 1024)
         val l = ArtCatalog.parse(f.readText())
-        assertEquals(60, l.size)
-        assertEquals(60, l.map { it.id }.toSet().size)
+        assertEquals(117, l.size)
+        assertEquals(117, l.map { it.id }.toSet().size)
         l.forEach {
             assertTrue(it.url, it.url.startsWith("https://upload.wikimedia.org/") && Regex("\\.jpe?g", RegexOption.IGNORE_CASE).containsMatchIn(it.url))
             assertTrue(it.id, it.crop[0] >= 0 && it.crop[1] >= 0 && it.crop[0] + it.crop[2] <= 1.0001 && it.crop[1] + it.crop[3] <= 1.0001)

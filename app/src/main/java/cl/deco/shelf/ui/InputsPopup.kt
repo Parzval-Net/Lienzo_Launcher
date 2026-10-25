@@ -45,7 +45,7 @@ class InputsPopup(ctx: Context) : FrameLayout(ctx) {
     val isOpen get() = visibility == VISIBLE
 
     /** Muestra [list] bajo [anchor] (borde izquierdo alineado con la píldora). */
-    fun open(anchor: View, list: List<TvInputs.Source>) {
+    private fun fill(list: List<TvInputs.Source>) {
         card.removeAllViews(); rows.clear()
         var prev: TvInputs.Kind? = null
         for (s in list) {
@@ -56,6 +56,18 @@ class InputsPopup(ctx: Context) : FrameLayout(ctx) {
             rows += r
             card.addView(r, LinearLayout.LayoutParams(-1, context.dp(46)))
         }
+    }
+
+    /** Entradas cambiaron con el desplegable abierto (equipo CEC enchufado o retirado): filas nuevas, mismo foco, sin animar. */
+    fun update(list: List<TvInputs.Source>) {
+        if (!isOpen) return
+        val idx = rows.indexOfFirst { it.hasFocus() }.coerceAtLeast(0)
+        fill(list)
+        rows.getOrNull(idx.coerceAtMost(rows.size - 1))?.requestFocus()
+    }
+
+    fun open(anchor: View, list: List<TvInputs.Source>) {
+        fill(list)
         val loc = IntArray(2); val me = IntArray(2)
         anchor.getLocationOnScreen(loc); getLocationOnScreen(me)
         // Ancho fijo (las filas son match_parent): alineada con la píldora y sin salir por el borde derecho
@@ -120,10 +132,17 @@ class InputsPopup(ctx: Context) : FrameLayout(ctx) {
                 text = s.label; maxLines = 1
                 setTextColor(fg); isDuplicateParentStateEnabled = true
             }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = c.dp(14) })
-            if (s.connected) {
+            // "Conectado" solo con un equipo detectado por HDMI-CEC (señal real); el estado de cable del sistema no es confiable
+            // (ver TvInputs.sources). Sin CEC se marca la última usada
+            if (s.device != null) {
                 addView(View(c).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFF34C759.toInt()) } },
                     LinearLayout.LayoutParams(c.dp(8), c.dp(8)).apply { leftMargin = c.dp(16) })
                 addView(tv(c, 14f, Ui.TEXT2).apply { text = "Conectado"; setTextColor(fg2); isDuplicateParentStateEnabled = true },
+                    LinearLayout.LayoutParams(-2, -2).apply { leftMargin = c.dp(8) })
+            } else if (s.last) {
+                addView(View(c).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Ui.TEXT2) } },
+                    LinearLayout.LayoutParams(c.dp(6), c.dp(6)).apply { leftMargin = c.dp(16) })
+                addView(tv(c, 14f, Ui.TEXT2).apply { text = "Última usada"; setTextColor(fg2); isDuplicateParentStateEnabled = true },
                     LinearLayout.LayoutParams(-2, -2).apply { leftMargin = c.dp(8) })
             }
             setOnClickListener { onPick?.invoke(s) }
