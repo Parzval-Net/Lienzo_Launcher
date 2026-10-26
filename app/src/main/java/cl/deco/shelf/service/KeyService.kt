@@ -26,9 +26,18 @@ class KeyService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         hdmi = HdmiWatcher(this).also { it.start() }
+        // Avisos del sistema al cambiar volumen o silencio (acciones ocultas de AudioManager, públicas en la práctica)
+        val volFilter = android.content.IntentFilter().apply {
+            addAction("android.media.VOLUME_CHANGED_ACTION")
+            addAction("android.media.STREAM_MUTE_CHANGED_ACTION")
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(volumeReceiver, volFilter, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(volumeReceiver, volFilter)
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(volumeReceiver) }
+        main.removeCallbacksAndMessages(null)
         hdmi?.stop(); hdmi = null
         super.onDestroy()
     }
@@ -45,6 +54,7 @@ class KeyService : AccessibilityService() {
             if (lag > LAG_MS) Log.w(TAG, "tecla ${event.keyCode} llegó con $lag ms de atraso")
         }
         if (KeyMap.offerToLearner(event)) return true
+        if (handleVolume(event)) return true
         if (KeyMap.reservedKey(event.keyCode)) return false
         // La acción se resuelve una vez por pulsación (al bajar): repeticiones y UP reusan el resultado sin volver a consultar
         // a PackageManager si la app del botón está instalada
@@ -75,11 +85,42 @@ class KeyService : AccessibilityService() {
         return true
     }
 
+    /**
+     * Volumen y silencio: la tecla se consume siempre. Dejarla pasar no sirve: con un filtro de teclas de accesibilidad activo,
+     * la TCL ajusta el volumen antes del filtro y otra vez cuando la tecla vuelve de él (medido: 4 ajustes por pulsación con
+     * el servicio, 2 sin él), así saltaba 2 o 3 pasos y Silenciar se anulaba solo. Como otros equipos podrían ajustar solo
+     * después del filtro, si a los [VOL_CHECK_MS] el sistema no movió el volumen (ni el silencio) lo aplica el servicio.
+     */
+    private fun handleVolume(event: KeyEvent): Boolean {
+        val dir = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> android.media.AudioManager.ADJUST_RAISE
+            KeyEvent.KEYCODE_VOLUME_DOWN -> android.media.AudioManager.ADJUST_LOWER
+            KeyEvent.KEYCODE_VOLUME_MUTE -> android.media.AudioManager.ADJUST_TOGGLE_MUTE
+            else -> return false
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && (event.repeatCount == 0 || dir != android.media.AudioManager.ADJUST_TOGGLE_MUTE)) {
+            val pressedAt = event.eventTime
+            main.postDelayed({
+                if (lastVolumeChange >= pressedAt) return@postDelayed // el sistema ya lo aplicó (TCL)
+                val am = getSystemService(AUDIO_SERVICE) as? android.media.AudioManager ?: return@postDelayed
+                am.adjustSuggestedStreamVolume(dir, android.media.AudioManager.USE_DEFAULT_STREAM_TYPE, android.media.AudioManager.FLAG_SHOW_UI)
+            }, VOL_CHECK_MS)
+        }
+        return true
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+    /** Último cambio de volumen o silencio informado por el sistema (uptime), para no aplicar dos veces la misma tecla. */
+    @Volatile private var lastVolumeChange = 0L
+    private val volumeReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) { lastVolumeChange = android.os.SystemClock.uptimeMillis() }
+    }
+
     private var longFired = false
     /** Acción resuelta al bajar cada tecla, hasta que se suelta. */
     private val pressed = HashMap<Int, String?>()
 
-    private companion object { const val TAG = "KeyService"; const val LONG_MS = 600L; const val LAG_MS = 80L }
+    private companion object { const val TAG = "KeyService"; const val LONG_MS = 600L; const val LAG_MS = 80L; const val VOL_CHECK_MS = 250L }
 }
 
 /**
