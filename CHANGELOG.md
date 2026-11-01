@@ -2,6 +2,10 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.2.1 (2026-10-31)
+- Temporada de Halloween, del 24 de octubre al 1 de noviembre: acento naranjo calabaza y violeta sobre fondo casi negro, "Feliz Halloween" en la barra superior y saludo "Noche de Halloween" desde las 19:00 del 31. El 2 de noviembre Lienzo vuelve solo a su aspecto normal. Se apaga en Pantalla y fondos > Temporada.
+- Fondo de temporada: 4 obras de dominio público (Füssli, *La pesadilla*; Böcklin, *La isla de los muertos*; Friedrich, *Abadía en el robledal* y *Dos hombres contemplando la luna*) que se descargan con la colección y solo rotan en el fondo y el protector dentro de su temporada. Idea tomada del tema Halloween de CleanYourTV (MIT).
+
 ## 1.2.0 (2026-10-25)
 - Entradas: desplegable bajo la píldora (estilo tvOS) con HDMI, AV y TV en vivo, ícono por tipo, nombre personalizado ("ATV · HDMI 3") y punto verde en las entradas con señal. El cambio de entrada va dirigido a la app de TV en vivo (antes un visor de archivos podía reclamar el intent) y llega a la app aunque ya esté abierta (antes la TV se quedaba en la entrada anterior). El botón Entradas del control abre el mismo desplegable.
 - Control remoto con asignación dinámica para cualquier control: Ajustes > Control remoto > "Asignar un botón" aprende la tecla y permite elegir Entradas, Ajustes, TV en vivo, la función original o cualquier app. Valores iniciales para el control TCL BT_RC813_MA (Netflix, Prime Video, YouTube, TCL Channel, Guard, Web, TCL Home, Ajustes). Flechas, OK, Atrás, Inicio, volumen y encendido nunca se reasignan.

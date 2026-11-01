@@ -22,6 +22,7 @@ import cl.deco.shelf.clock.AlarmService
 import cl.deco.shelf.clock.ClockScheduler
 import cl.deco.shelf.clock.ClockStore
 import cl.deco.shelf.clock.NightMode
+import cl.deco.shelf.util.Seasonal
 import cl.deco.shelf.util.Palette
 import org.json.JSONArray
 import org.json.JSONObject
@@ -183,6 +184,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         prefs = ShelfPrefs(this)
         applyLocalePrefs()
         Theme.dynamic = prefs.dynamicColors
+        Theme.season = Seasonal.paletteFor(LocalDate.now(), prefs.seasonal)
         screenH = resources.displayMetrics.heightPixels
 
         val radius = dpf(12f)
@@ -644,11 +646,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val now = System.currentTimeMillis()
             val t = LocalTime.now()
             topBar.setTime(Es.hora(t.hour, t.minute, prefs.clock24))
-            topBar.setGreeting(t.hour)
-            topBar.setWifiSsid(getWifiSsid())
             val d = LocalDate.now()
+            topBar.setGreeting(t.hour, if (Theme.season != null) Seasonal.greeting(d, t.hour) else null)
+            topBar.setWifiSsid(getWifiSsid())
             if (d != lastDate) {
                 lastDate = d
+                applySeason(d)
                 topBar.setDate(Es.fecha(d))
                 updateHoliday(d)
             }
@@ -706,7 +709,16 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val list = holidayCache[d.year]
         if (list == null) { loadHolidays(d.year); return }
         holidayName = list.firstOrNull { it.date == d }?.name
-        topBar.setHoliday(holidayName)
+        topBar.setHoliday(holidayName ?: if (Theme.season != null) Seasonal.label(d) else null)
+    }
+
+    /** Entra o sale de la skin de temporada al cambiar el día o el ajuste. */
+    private fun applySeason(d: LocalDate) {
+        val s = Seasonal.paletteFor(d, prefs.seasonal)
+        if (s === Theme.season) return
+        Theme.season = s
+        applyPalette(animate = true)
+        if (ready) { lastArt = System.currentTimeMillis(); loadArt(true) } // cambia a (o sale de) las obras de temporada
     }
 
     private fun loadHolidays(year: Int) {
@@ -951,7 +963,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     /** Paleta dinámica de la obra o neutra, según el ajuste. */
     private fun applyPalette(animate: Boolean) {
-        val p = if (prefs.dynamicColors) palette else null
+        val p = if (prefs.dynamicColors && Theme.season == null) palette else null
         Theme.animateTo(p ?: Theme.neutral(), 400L, animate)
     }
 
@@ -1632,6 +1644,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 applyState(state, animate = false)
             }
             ShelfPrefs.DYNAMIC_COLORS -> { Theme.dynamic = prefs.dynamicColors; applyPalette(animate = true) }
+            ShelfPrefs.SEASONAL -> { val d = LocalDate.now(); applySeason(d); updateHoliday(d) }
             ShelfPrefs.ART_ON, ShelfPrefs.ART_WAIT -> scheduleArtMode()
             ShelfPrefs.TOP_SHELF, ShelfPrefs.CONTINUE_ROW -> {
                 shelfView.clear(); shelfPkg = null

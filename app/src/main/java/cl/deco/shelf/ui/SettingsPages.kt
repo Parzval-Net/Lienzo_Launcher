@@ -185,6 +185,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         toggle("Atenuar de noche", ShelfPrefs.NIGHT_DIM, "Sí", "No", { p.nightDim }, { p.nightDim = it }),
         choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Ninguno", "Bajo", "Medio", "Alto"), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
         toggle("Colores", ShelfPrefs.DYNAMIC_COLORS, "Dinámicos desde la obra", "Neutros", { p.dynamicColors }, { p.dynamicColors = it }),
+        toggle("Temporada", ShelfPrefs.SEASONAL, "Halloween (24 oct a 1 nov)", "Apagada", { p.seasonal }, { p.seasonal = it }),
     ))
 
     /** Todas las colecciones (imágenes o videos), General primero. */

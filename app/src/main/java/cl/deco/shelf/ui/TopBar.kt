@@ -253,8 +253,8 @@ class TopBar(
 
     /** Actualiza el saludo según la hora del día. */
 
-    fun setGreeting(hour: Int) {
-        val text = when (hour) {
+    fun setGreeting(hour: Int, override: String? = null) {
+        val text = override ?: when (hour) {
             in 6..11 -> "Buenos días"
             in 12..19 -> "Buenas tardes"
             else -> "Buenas noches"

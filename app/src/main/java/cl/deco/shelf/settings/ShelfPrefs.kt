@@ -29,6 +29,8 @@ class ShelfPrefs(context: Context) {
     /** Atenúa el fondo 20% extra entre el atardecer y el amanecer (Open-Meteo). */
     var nightDim: Boolean get() = bool(NIGHT_DIM, true); set(v) = put(NIGHT_DIM, v)
     var dynamicColors: Boolean get() = bool(DYN_COLORS, true); set(v) = put(DYN_COLORS, v)
+    /** Skin de temporada (Halloween) dentro de sus fechas. */
+    var seasonal: Boolean get() = bool(SEASONAL, true); set(v) = put(SEASONAL, v)
     // Modo arte del home
     var artEnabled: Boolean get() = bool(ART_ON, true); set(v) = put(ART_ON, v)
     var artWaitSec: Int get() = int(ART_WAIT, 45); set(v) = put(ART_WAIT, v)
@@ -92,7 +94,7 @@ class ShelfPrefs(context: Context) {
     companion object {
         const val BG_BRIGHTNESS = "bg_brightness"; const val BLUR_LEVEL = "blur_level"; const val DYNAMIC_COLORS = "dyn_colors"
         private const val BG_BRIGHT = BG_BRIGHTNESS; private const val DYN_COLORS = DYNAMIC_COLORS
-        const val NIGHT_DIM = "night_dim"
+        const val NIGHT_DIM = "night_dim"; const val SEASONAL = "seasonal"
         const val BG_INTERVAL = "bg_interval_min"; const val BG_ONLINE = "bg_online"
         const val BG_SOURCE = "bg_source"; const val VIDEO_CHOICE = "video_choice"; const val COLLECTION = "collection"
         const val BG_DYNAMIC = 3
@@ -107,7 +109,7 @@ class ShelfPrefs(context: Context) {
         const val UPDATE_AUTO = "update_auto"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
         private val ALL = listOf(
-            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, COLLECTION, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CONTINUE_ROW, CLOCK24,
+            BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, COLLECTION, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, SEASONAL, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CONTINUE_ROW, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST, UPDATE_AUTO, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
         )

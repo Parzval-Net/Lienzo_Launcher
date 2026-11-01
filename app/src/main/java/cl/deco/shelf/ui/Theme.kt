@@ -4,6 +4,7 @@ import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.graphics.Color
 import cl.deco.shelf.util.Palette
+import cl.deco.shelf.util.Seasonal
 
 /**
  * Colores de acento vigentes. Con "Dinámicos" salen de la obra de fondo (transición de 400 ms solo al cambiar de obra);
@@ -18,6 +19,8 @@ object Theme {
     @JvmStatic var light = NEUTRAL_LIGHT; private set
     @JvmStatic var dark = NEUTRAL_DARK; private set
     var dynamic = true
+    /** Skin de temporada vigente (ver [Seasonal]); manda sobre los colores dinámicos y los neutros. */
+    @JvmField var season: Palette? = null
 
     val listeners = ArrayList<() -> Unit>()
     private var anim: ValueAnimator? = null
@@ -35,7 +38,7 @@ object Theme {
         return Color.argb(0x57, r, g, b)
     }
 
-    fun neutral() = Palette(NEUTRAL_ACCENT, NEUTRAL_LIGHT, NEUTRAL_DARK)
+    fun neutral() = season ?: Palette(NEUTRAL_ACCENT, NEUTRAL_LIGHT, NEUTRAL_DARK)
 
     fun animateTo(p: Palette, ms: Long = 400L, animate: Boolean = true) {
         anim?.cancel()
