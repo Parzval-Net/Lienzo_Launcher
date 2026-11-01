@@ -19,8 +19,6 @@ data class CatalogItem(
     val url: String,
     val crop: List<Double>,
     val sourceUrl: String,
-    /** Temporada de la obra ("halloween"); vacío = colección de todo el año. Ver Seasonal.pick. */
-    val season: String = "",
 ) {
     val file: String get() = "$id.jpg"
 }
@@ -58,7 +56,6 @@ object ArtCatalog {
                 url = o.getString("url"),
                 crop = (0 until 4).map { c.getDouble(it) },
                 sourceUrl = o.optString("src").takeIf { it.isNotBlank() }?.let { COMMONS_WIKI + it }.orEmpty(),
-                season = o.optString("season"),
             )
         }
     }

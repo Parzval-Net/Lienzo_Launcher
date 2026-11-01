@@ -130,6 +130,9 @@ class TopBar(
     private var wifiLabel: TextView? = null
     private var inputsPill: View? = null
     private var wifiPill: View? = null
+    private var settingsPill: View? = null
+    /** Skin de temporada: calabaza en Wi-Fi, murciélago en Entradas y fantasma en Ajustes (Fluent Emoji 3D, MIT). */
+    private var season = false
     private val artChip = tv(ctx, 13f, Ui.TEXT2, "sans-serif-medium").apply {
         visibility = GONE
         setPadding(context.dp(10), context.dp(4), context.dp(10), context.dp(4))
@@ -169,8 +172,10 @@ class TopBar(
             setImageResource(iconRes)
             imageTintList = fg
             isDuplicateParentStateEnabled = true
+            tag = iconRes
         }
         addView(img, LinearLayout.LayoutParams(context.dp(18), context.dp(18)))
+        setOnFocusChangeListener { _, has -> if (has && season) nudge(img) }
         val lbl = tv(ctx, 14f, Ui.TEXT, "sans-serif-medium").apply {
             this.text = text
             tag = "pill_label"
@@ -236,7 +241,8 @@ class TopBar(
                 this@TopBar.wifiPill = it
             }
             addView(wifiPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8) })
-            addView(pill(cl.deco.shelf.R.drawable.ic_q_settings, "Ajustes", onSettings), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8); rightMargin = context.dp(10) })
+            val setPill = pill(cl.deco.shelf.R.drawable.ic_q_settings, "Ajustes", onSettings).also { settingsPill = it }
+            addView(setPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8); rightMargin = context.dp(10) })
             addView(this@TopBar.right)
         }
         addView(rightRow, LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
@@ -291,7 +297,51 @@ class TopBar(
 
     fun setWeather(w: Weather?) { lastWeather = w; renderWeather() }
 
-    fun setOnline(on: Boolean) { if (online != on) { online = on; renderWeather() } }
+    fun setOnline(on: Boolean) { if (online != on) { online = on; renderWeather(); if (season) seasonIcons() } }
+
+    /** Entra o sale de la skin de temporada: cambia los íconos de las píldoras por los de Halloween o los originales. */
+    fun setSeason(on: Boolean) {
+        if (season == on) return
+        season = on
+        seasonIcons()
+    }
+
+    private fun pillIcon(p: View?) = (p as? LinearLayout)?.getChildAt(0) as? ImageView
+
+    private fun seasonIcons() {
+        val pumpkin = if (online) cl.deco.shelf.R.drawable.halloween_pumpkin_lit else cl.deco.shelf.R.drawable.halloween_pumpkin_dark
+        for ((p, spooky) in listOf(
+            wifiPill to pumpkin,
+            inputsPill to cl.deco.shelf.R.drawable.halloween_bat,
+            settingsPill to cl.deco.shelf.R.drawable.halloween_ghost,
+        )) {
+            val img = pillIcon(p) ?: continue
+            if (img.getTag(cl.deco.shelf.R.id.season_tint) == null) img.setTag(cl.deco.shelf.R.id.season_tint, img.imageTintList)
+            val size = ctx.dp(if (season) 24 else 18)
+            img.layoutParams = img.layoutParams.apply { width = size; height = size }
+            if (season) {
+                img.setImageResource(spooky); img.imageTintList = null
+            } else {
+                img.setImageResource(img.tag as Int)
+                img.imageTintList = img.getTag(cl.deco.shelf.R.id.season_tint) as? android.content.res.ColorStateList
+            }
+        }
+    }
+
+    /** Al enfocar: el murciélago bate las alas dos veces y el fantasma sube y vuelve. La calabaza queda quieta. */
+    private fun nudge(img: ImageView) {
+        img.animate().cancel(); img.scaleY = 1f; img.translationY = 0f
+        when (img.tag as Int) {
+            cl.deco.shelf.R.drawable.ic_in_hdmi -> img.animate().scaleY(0.72f).setDuration(130).withEndAction {
+                img.animate().scaleY(1f).setDuration(130).withEndAction {
+                    img.animate().scaleY(0.72f).setDuration(130).withEndAction { img.animate().scaleY(1f).setDuration(130) }
+                }
+            }
+            cl.deco.shelf.R.drawable.ic_q_settings -> img.animate().translationY(-ctx.dpf(3f)).setDuration(450).withEndAction {
+                img.animate().translationY(0f).setDuration(450)
+            }
+        }
+    }
 
     fun setArtProgress(text: String?) {
         if (text == null) { artChip.visibility = GONE; return }

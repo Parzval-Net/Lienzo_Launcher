@@ -54,3 +54,13 @@ Este proyecto usa ideas, datos y obras de terceros. Atribuciones:
 
 Los nombres de apps y servicios de terceros que puedan aparecer en pantalla pertenecen a sus propietarios. Lienzo no está afiliado
 ni respaldado por ellos.
+
+8. Tema Halloween de CleanYourTV (MIT) - https://github.com/Gathin23/cleanyourtv
+   Copyright (c) 2026 Gathin. La skin de temporada (ui/BatFlightView.kt, íconos de las píldoras) es un puerto a Kotlin
+   de su BatFlightView y SpookyIconDrawable, bajo la licencia MIT reproducida en el punto 2.
+   Íconos res/drawable-nodpi/halloween_*.webp: Fluent Emoji 3D, Copyright (c) Microsoft Corporation, MIT
+   (https://github.com/microsoft/fluentui-emoji).
+   Fondos assets/seasonal/halloween/: 001 es CC0 (CleanYourTV); 002 a 008 son fotos de Wikimedia Commons, recortadas y
+   graduadas por CleanYourTV, cada una bajo su propia licencia (CC0, dominio público, CC BY 4.0 o CC BY-SA 4.0; las
+   adaptaciones de obras CC BY-SA siguen bajo CC BY-SA). Autores y enlaces en assets/seasonal/halloween/CREDITS.md.
+

@@ -23,12 +23,10 @@ class SeasonalTest {
         assertNull(Seasonal.paletteFor(LocalDate.of(2026, 11, 2), true))
     }
 
-    @Test fun obrasDeTemporada() {
-        val obras = listOf("monet" to "", "fuseli" to "halloween", "degas" to "")
-        assertEquals(listOf("fuseli" to "halloween"), Seasonal.pick(obras, "halloween") { it.second })
-        assertEquals(listOf("monet" to "", "degas" to ""), Seasonal.pick(obras, null) { it.second })
-        // En temporada pero sin obras de temporada descargadas: sigue la colección normal
-        assertEquals(listOf("monet" to ""), Seasonal.pick(listOf("monet" to ""), "halloween") { it.second })
+    @Test fun fondosEnElApk() {
+        val d = java.io.File("src/main/assets/seasonal/halloween")
+        assertEquals(8, (1..8).count { java.io.File(d, "%03d.jpg".format(it)).length() > 0 })
+        assertTrue(java.io.File(d, "CREDITS.md").exists())
     }
 
     @Test fun saludo() {

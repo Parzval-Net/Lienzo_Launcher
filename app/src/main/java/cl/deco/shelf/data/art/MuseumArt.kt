@@ -8,15 +8,12 @@ import android.graphics.Rect
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
-import cl.deco.shelf.settings.ShelfPrefs
-import cl.deco.shelf.util.Seasonal
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
@@ -37,14 +34,13 @@ class MuseumArt(private val context: Context) : ArtSource {
 
     private val app = context.applicationContext
     private val prefs by lazy { app.getSharedPreferences("museum_art", Context.MODE_PRIVATE) }
-    private val shelfPrefs by lazy { ShelfPrefs(app) }
     private val indexLock = Any()
     private val localDir: File? by lazy { app.getExternalFilesDir("art") }
     private var localCache: List<LocalEntry> = emptyList()
     private var localStamp = -1L
 
     /** Obra de la colección curada local. [home] false = excluida del fondo. */
-    private data class LocalEntry(val art: Artwork, val home: Boolean, val season: String)
+    private data class LocalEntry(val art: Artwork, val home: Boolean)
 
     private fun indexFile(dir: File) = File(dir, "index.json")
 
@@ -62,6 +58,7 @@ class MuseumArt(private val context: Context) : ArtSource {
                     val o = arr.getJSONObject(i)
                     val img = File(dir, o.getString("file"))
                     if (!img.exists()) return@mapNotNull null
+                    if (o.has("season")) return@mapNotNull null // obras de temporada de la 1.2.1, reemplazadas por SeasonalArt
                     LocalEntry(
                         Artwork(
                             id = "local-" + o.getString("id"),
@@ -72,7 +69,6 @@ class MuseumArt(private val context: Context) : ArtSource {
                             file = img,
                         ),
                         home = o.optBoolean("home", true),
-                        season = o.optString("season"),
                     )
                 }
                 list.shuffled(Random(LOCAL_SEED)) // orden fijo pero sin agrupar por artista
@@ -85,10 +81,9 @@ class MuseumArt(private val context: Context) : ArtSource {
     }
 
     override fun next(forHome: Boolean): Artwork? = synchronized(indexLock) {
-        val season = Seasonal.active(LocalDate.now(), shelfPrefs.seasonal)
-        val list = Seasonal.pick(loadLocal().filter { !forHome || it.home }, season) { it.season }
+        val list = loadLocal().filter { !forHome || it.home }
         if (list.isEmpty()) return null
-        val key = (if (forHome) KEY_LAST_LOCAL_HOME else KEY_LAST_LOCAL_ALL) + (season?.let { "_$it" } ?: "")
+        val key = if (forHome) KEY_LAST_LOCAL_HOME else KEY_LAST_LOCAL_ALL
         val idx = (prefs.getInt(key, -1) + 1).mod(list.size)
         prefs.edit().putInt(key, idx).apply()
         list[idx].art
@@ -329,7 +324,6 @@ class MuseumArt(private val context: Context) : ArtSource {
             .put("mode", item.mode)
             .put("bytes", bytes)
         if (!item.home) o.put("home", false)
-        if (item.season.isNotEmpty()) o.put("season", item.season)
         byId[item.id] = o
         val ordered = JSONArray()
         // orden del catálogo, luego cualquier obra ajena

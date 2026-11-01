@@ -2,6 +2,11 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.2.2 (2026-10-31)
+- Skin de Halloween más visible, basada en el pack de CleanYourTV (cleanyour.tv/halloween): la píldora Wi-Fi es una calabaza (encendida con red, apagada sin red), Ajustes un fantasma que sube al enfocarlo y Entradas un murciélago que bate las alas. En el primer Home del día suben murciélagos por la pantalla.
+- Fondos de temporada: las 8 imágenes nocturnas del tema Halloween de CleanYourTV, ya en 1920x1080 y compuestas para que el dock y el reloj se lean, vienen en el APK y rotan en el fondo y el protector. Reemplazan las 4 obras de la 1.2.1, que se recortaban mal. Al terminar la temporada se borran del equipo.
+- Todo sigue siendo temporal: del 24 de octubre al 1 de noviembre, y se apaga en Pantalla y fondos > Temporada.
+
 ## 1.2.1 (2026-10-31)
 - Temporada de Halloween, del 24 de octubre al 1 de noviembre: acento naranjo calabaza y violeta sobre fondo casi negro, "Feliz Halloween" en la barra superior y saludo "Noche de Halloween" desde las 19:00 del 31. El 2 de noviembre Lienzo vuelve solo a su aspecto normal. Se apaga en Pantalla y fondos > Temporada.
 - Fondo de temporada: 4 obras de dominio público (Füssli, *La pesadilla*; Böcklin, *La isla de los muertos*; Friedrich, *Abadía en el robledal* y *Dos hombres contemplando la luna*) que se descargan con la colección y solo rotan en el fondo y el protector dentro de su temporada. Idea tomada del tema Halloween de CleanYourTV (MIT).

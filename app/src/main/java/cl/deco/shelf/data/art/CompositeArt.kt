@@ -13,9 +13,12 @@ class CompositeArt(context: Context, private val curated: ArtSource, private val
     private val app = context.applicationContext
     private val prefs by lazy { ShelfPrefs(app) }
     private val tickPrefs by lazy { app.getSharedPreferences("composite_art", Context.MODE_PRIVATE) }
+    private val seasonal by lazy { SeasonalArt(app) }
 
     override fun next(forHome: Boolean): Artwork? {
         val mode = prefs.bgSource
+        // Temporada (Halloween): sus fondos mandan en el home y el protector, salvo con "Color dinámico" en el home
+        if (!forHome || mode != ShelfPrefs.BG_DYNAMIC) seasonal.next()?.let { return it }
         // Con "Color dinámico" el home no usa obras; el protector sigue mostrando la colección curada
         if (mode == SourcePolicy.CURATED || mode == ShelfPrefs.BG_DYNAMIC) return curated.next(forHome)
         val key = if (forHome) "tick_home" else "tick_all"

@@ -314,6 +314,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onWifi = { QuickAccess.launch(this, QuickAccess.items[0]) },
             onSettings = { openSettingsChooser() },
         )
+        topBar.setSeason(Theme.season != null)
         content.addView(topBar, FrameLayout.LayoutParams(-1, dp(76)).apply {
             topMargin = dp(16); leftMargin = dp(34); rightMargin = dp(34)
         })
@@ -533,6 +534,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         super.onResume()
         // Botón de Modo arte con Lienzo al frente: KeyService entrega la acción directo (startActivity pausaría y sacaría del modo arte)
         if (ready) cl.deco.shelf.service.KeyMap.foreground = { handleRemoteAction(it, 0L) }
+        if (ready) batsOncePerDay()
+    }
+
+    /** Halloween: murciélagos sobre el home la primera vez que se abre en el día. */
+    private fun batsOncePerDay() {
+        if (Theme.season == null) return
+        val today = LocalDate.now().toString()
+        if (prefs.sp.getString("season_bats_day", null) == today) return
+        prefs.sp.edit().putString("season_bats_day", today).apply()
+        val v = BatFlightView(this)
+        rootView.addView(v, FrameLayout.LayoutParams(-1, -1))
+        v.play(14, 3200L) { rootView.post { rootView.removeView(v) } }
     }
 
     override fun onPause() {
@@ -717,6 +730,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val s = Seasonal.paletteFor(d, prefs.seasonal)
         if (s === Theme.season) return
         Theme.season = s
+        topBar.setSeason(s != null)
         applyPalette(animate = true)
         if (ready) { lastArt = System.currentTimeMillis(); loadArt(true) } // cambia a (o sale de) las obras de temporada
     }
@@ -850,6 +864,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun restoreLastArt() {
         if (artBmp != null || prefs.dynamicBg) return
         val path = prefs.sp.getString("last_art_path", null) ?: return
+        if ((Theme.season != null) != path.contains("/seasonal/")) return
         val ts = prefs.sp.getLong("last_art_ts", 0L)
         val f = File(path)
         if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return
@@ -978,6 +993,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private fun lastArtFresh(): Boolean {
         val path = prefs.sp.getString("last_art_path", null) ?: return false
+        if ((Theme.season != null) != path.contains("/seasonal/")) return false // entra o sale de temporada: fondo nuevo
         return File(path).exists() && System.currentTimeMillis() - prefs.sp.getLong("last_art_ts", 0L) <= prefs.bgIntervalMin * 60_000L
     }
 

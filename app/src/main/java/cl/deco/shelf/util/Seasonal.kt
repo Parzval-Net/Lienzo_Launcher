@@ -19,15 +19,6 @@ object Seasonal {
     /** Temporada vigente para [d] ("halloween"), o null fuera de fechas o con el ajuste apagado. */
     fun active(d: LocalDate, enabled: Boolean): String? = if (enabled && halloween(d)) HALLOWEEN_ID else null
 
-    /**
-     * Obras para el fondo: en temporada solo las de esa temporada (si ya hay alguna descargada);
-     * fuera de ella, nunca las de temporada.
-     */
-    fun <T> pick(items: List<T>, season: String?, seasonOf: (T) -> String): List<T> {
-        if (season != null) items.filter { seasonOf(it) == season }.let { if (it.isNotEmpty()) return it }
-        return items.filter { seasonOf(it).isEmpty() }
-    }
-
     /** Paleta vigente para [d], o null fuera de temporada o con el ajuste apagado. */
     fun paletteFor(d: LocalDate, enabled: Boolean): Palette? = if (enabled && halloween(d)) HALLOWEEN else null
 
