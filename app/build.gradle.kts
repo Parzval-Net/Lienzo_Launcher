@@ -21,8 +21,8 @@ android {
         applicationId = "cl.deco.shelf"
         minSdk = 28
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.2.2"
+        versionCode = 10
+        versionName = "1.3.0"
         // Solo con -PlienzoCrashTrigger: gatillo de crash para probar el modo seguro. El release normal NO lo trae.
         val trigger = project.hasProperty("lienzoCrashTrigger")
         buildConfigField("boolean", "CRASH_TRIGGER", trigger.toString())

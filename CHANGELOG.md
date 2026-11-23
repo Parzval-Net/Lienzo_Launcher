@@ -2,8 +2,8 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
-## [Unreleased]
-- Tamaño del APK (< 950 KB): fondos de Halloween servidos bajo demanda vía Wikimedia Commons salvo `001.webp` embebido como fallback; blur precalculado guardado en WebP (`lastblur.webp`) + paleta cacheada para evitar doble decodificación 1080p al volver al Home.
+## 1.3.0 (2026-11-23)
+- Tamaño del APK (< 950 KB): fondos de Halloween servidos bajo demanda desde el repositorio en GitHub (`raw.githubusercontent.com`) salvo `001.webp` embebido como fallback; blur precalculado guardado en WebP (`lastblur.webp`) + paleta cacheada para evitar doble decodificación 1080p al volver al Home.
 - Rendimiento y memoria: scale-first blur directo en `RGB_565` (elimina el arreglo `dv` de ~1,1 MB), caché de disco LRU (8 MB) para pósters remotos de Top Shelf y tiles `.webp` (`RENDER_REV = 7`).
 - Seguridad en `ImageLoader`: validación HTTPS estricta, bloqueo de rangos locales/loopback y verificación de redirecciones; guard atómico y caché de versión en `TileRenderer`.
 - Permisos y protector OLED: soporte granular de `READ_MEDIA_IMAGES` y `READ_MEDIA_VIDEO` para Android 13+; desplazamiento anti burn-in por píxeles/esquinas y escalado acotado a la pantalla en `ArtDreamService`.

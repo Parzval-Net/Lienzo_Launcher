@@ -113,7 +113,7 @@ Huella SHA-256 del certificado de release: `7B:EA:3F:BF:E0:CF:1A:F9:D1:E4:58:DE:
 ## Privacidad
 
 - Sin analítica ni cuentas. El único puerto que se abre es el micro-servidor HTTP local del panel QR (`Enviar / Respaldo desde el celular`), únicamente mientras ese panel está en pantalla, en la red Wi-Fi local, con token aleatorio por sesión y cierre automático a los 5 minutos de inactividad.
-- La red se usa solo para: Open-Meteo (clima y búsqueda de ciudades), Nager.Date (feriados), Wikimedia (obras de arte y fondos de temporada bajo demanda) y GitHub (actualizaciones: `api.github.com`, `github.com` y su CDN de releases). Si desactivas "Actualizaciones automáticas", GitHub solo se consulta cuando lo pides.
+- La red se usa solo para: Open-Meteo (clima y búsqueda de ciudades), Nager.Date (feriados), Wikimedia (obras de arte) y GitHub (actualizaciones: `api.github.com`, `github.com`, CDN de releases y fondos de temporada bajo demanda en `raw.githubusercontent.com`). Si desactivas "Actualizaciones automáticas", GitHub solo se consulta cuando lo pides.
 - Configuración, favoritas y fondos importados quedan en el almacenamiento de la app.
 - Permisos: `INTERNET`, `ACCESS_NETWORK_STATE`, `READ_TV_LISTINGS` y `READ_EPG_DATA` (Continuar viendo), alarmas y arranque, `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` en Android 13+ y `READ_EXTERNAL_STORAGE` en Android <= 12 (para Mis fondos), `REQUEST_INSTALL_PACKAGES` (actualizador), `REQUEST_DELETE_PACKAGES` (desinstalar desde el menú de una app) y los opcionales concedidos por ADB o por Configuración sin PC (`WRITE_SECURE_SETTINGS`, `SYSTEM_ALERT_WINDOW`).
 - Servicio de accesibilidad opcional: solo recibe teclas del control (no lee la pantalla) y vigila el estado de los HDMI con la API pública de TV.
