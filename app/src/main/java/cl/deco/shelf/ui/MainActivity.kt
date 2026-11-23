@@ -350,7 +350,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
         settingsPages = SettingsPages(this, settings, prefs, this, "Lienzo $ver")
         topBar.setWeatherEnabled(prefs.weatherOn)
-        netWatcher = NetworkWatcher(this, main) { onNetChanged(it) }
+        netWatcher = NetworkWatcher(this, main, { onNetChanged(it) }, { topBar.setVpn(it) })
         Theme.listeners.add(themeListener)
         hint = tv(this, 14f).apply {
             setPadding(dp(18), dp(8), dp(18), dp(8))
@@ -414,8 +414,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         })
         reloadApps()
         // Red: el callback vive solo mientras el home está visible (se retira en onStop)
-        if (BuildConfig.FORCE_OFFLINE) topBar.setOnline(false)
-        else netWatcher?.let { it.start(); topBar.setOnline(it.online) }
+        if (BuildConfig.FORCE_OFFLINE) { topBar.setOnline(false); topBar.setVpn(false) }
+        else netWatcher?.let { it.start(); topBar.setOnline(it.online); topBar.setVpn(it.vpn) }
+        cl.deco.shelf.clock.SleepTimer.restoreTimeoutIfNeeded(this)
+        ioData.execute { cl.deco.shelf.service.ServiceRepair.repairIfNeeded(applicationContext) }
+        scheduleOpenOnStart()
         pollArtProgress()
         // La obra rota cada 30 min o al volver tras más de 10 min fuera; si no, se recarga la misma
         checkLowSpace()
@@ -1763,7 +1766,40 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val nextAlarm = store.alarms().filter { it.enabled }.mapNotNull { ClockScheduler.nextTime(it, now) }.minOrNull()
             ?.takeIf { it - now < 12 * 3600_000L }
         val alarmTxt = nextAlarm?.let { java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(it)) }
-        topBar.setStatus(timerTxt, alarmTxt, NightMode.active(prefs)) // lee night_active en cada actualización: la luna sigue al evento nocturno aunque no haya onStart
+        val sleepTxt = cl.deco.shelf.clock.SleepTimer.formatChip(prefs.sleepUntilMs, now, Es.english)
+        topBar.setStatus(timerTxt, alarmTxt, NightMode.active(prefs), sleepTxt) // lee night_active en cada actualización: la luna sigue al evento nocturno aunque no haya onStart
+    }
+
+    private val openOnStartRun = Runnable { runOpenOnStart() }
+
+    private fun scheduleOpenOnStart() {
+        main.removeCallbacks(openOnStartRun)
+        val mode = prefs.openOnStart
+        if (mode == "home") return
+        val bootMs = prefs.sp.getLong("boot_pending_ms", 0L)
+        if (bootMs <= 0L) return
+        val age = android.os.SystemClock.elapsedRealtime() - bootMs
+        prefs.sp.edit().putLong("boot_pending_ms", 0L).apply()
+        if (age in 0..90_000L) main.postDelayed(openOnStartRun, 4000L)
+    }
+
+    private fun runOpenOnStart() {
+        if (!started || settings.isOpen || menu.visibility == View.VISIBLE || inputsPopup.isOpen || today.visibility == View.VISIBLE) return
+        when (prefs.openOnStart) {
+            "livetv" -> cl.deco.shelf.service.KeyMap.liveTvApp(this)?.let { pkg ->
+                releaseVideoForPlayback()
+                cl.deco.shelf.service.KeyMap.launch(this, pkg)
+            }
+            "last_input" -> {
+                val lastId = prefs.sp.getString("last_input_id", null) ?: return
+                ioShelf.execute {
+                    val src = try { TvInputs.sources(this).firstOrNull { it.id == lastId } } catch (_: Throwable) { null }
+                    if (src != null) main.post {
+                        if (started) { releaseVideoForPlayback(); TvInputs.launch(this, src) }
+                    }
+                }
+            }
+        }
     }
 
     /** Lectura de salud; en builds con -PlienzoForceHealth (solo pruebas) simula CMA baja (60 MB) y usa tiempos de 1/360. */
@@ -2195,6 +2231,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (!ready) return super.dispatchKeyEvent(e)
+        main.removeCallbacks(openOnStartRun)
         val down = e.action == KeyEvent.ACTION_DOWN
         val k = e.keyCode
         scheduleArtMode()

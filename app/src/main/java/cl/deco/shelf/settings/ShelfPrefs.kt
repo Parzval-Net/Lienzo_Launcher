@@ -69,6 +69,15 @@ class ShelfPrefs(context: Context) {
     var sundayFirst: Boolean get() = bool(SUNDAY_FIRST, false); set(v) = put(SUNDAY_FIRST, v)
     /** Actualizaciones automáticas: true = buscar y avisar (por defecto), false = desactivadas (solo manual desde Info). */
     var updateAuto: Boolean get() = bool(UPDATE_AUTO, true); set(v) = put(UPDATE_AUTO, v)
+    // Control remoto y multi-TV
+    var gamepadPassthrough: Boolean get() = bool(GAMEPAD_PASSTHROUGH, true); set(v) = put(GAMEPAD_PASSTHROUGH, v)
+    var volumePausesFilter: Boolean get() = bool(VOLUME_PAUSES_FILTER, false); set(v) = put(VOLUME_PAUSES_FILTER, v)
+    var keyServiceDesired: Boolean get() = bool(KEY_SERVICE_DESIRED, false); set(v) = put(KEY_SERVICE_DESIRED, v)
+    var openOnStart: String get() = str(OPEN_ON_START, "home"); set(v) = put(OPEN_ON_START, v)
+    var sleepUntilMs: Long get() = sp.getLong(SLEEP_UNTIL_MS, 0L); set(v) { sp.edit().putLong(SLEEP_UNTIL_MS, v).apply() }
+    var disabledByLienzo: Set<String>
+        get() = sp.getStringSet(DISABLED_BY_LIENZO, emptySet())?.toSet().orEmpty()
+        set(v) { sp.edit().putStringSet(DISABLED_BY_LIENZO, v).apply() }
 
     fun setCity(name: String, lat: Double, lon: Double, tz: String) {
         sp.edit().putString(CITY_NAME, name)
@@ -108,10 +117,14 @@ class ShelfPrefs(context: Context) {
         const val HOL_CC = "hol_cc"; const val HOL_REGION = "hol_region"
         const val UPDATE_AUTO = "update_auto"
         const val FAHRENHEIT = "fahrenheit"; const val ENGLISH = "english"; const val SUNDAY_FIRST = "sunday_first"
+        const val GAMEPAD_PASSTHROUGH = "gamepad_passthrough"; const val VOLUME_PAUSES_FILTER = "volume_pauses_filter"
+        const val KEY_SERVICE_DESIRED = "key_service_desired"; const val OPEN_ON_START = "open_on_start"
+        const val SLEEP_UNTIL_MS = "sleep_until_ms"; const val DISABLED_BY_LIENZO = "disabled_by_lienzo"
         private val ALL = listOf(
             BG_INTERVAL, BG_ONLINE, BG_SOURCE, VIDEO_CHOICE, COLLECTION, BG_BRIGHT, NIGHT_DIM, BLUR_LEVEL, DYN_COLORS, SEASONAL, ART_ON, ART_WAIT, ART_VIDEO, DREAM_VIDEO, DREAM_INTERVAL, TOP_SHELF, CONTINUE_ROW, CLOCK24,
             WEATHER_ON, DOCK_MAX, ICON_ORIGINAL, CITY_NAME, CITY_LAT, CITY_LON, CITY_TZ, HOL_CC, HOL_REGION,
             FAHRENHEIT, ENGLISH, SUNDAY_FIRST, UPDATE_AUTO, NIGHT_ON, NIGHT_FROM, NIGHT_TO, NIGHT_IDLE,
+            GAMEPAD_PASSTHROUGH, VOLUME_PAUSES_FILTER, OPEN_ON_START,
         )
     }
 }

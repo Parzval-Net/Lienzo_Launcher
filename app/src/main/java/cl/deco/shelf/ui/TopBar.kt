@@ -52,6 +52,17 @@ class TopBar(
     private val timerChip = chip(ctx, cl.deco.shelf.R.drawable.ic_timer)
     private val alarmChip = chip(ctx, cl.deco.shelf.R.drawable.ic_alarm)
     private val moonChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
+    private val sleepChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
+    private val vpnChip = tv(ctx, 11f, Ui.TEXT, "sans-serif-medium").apply {
+        text = "VPN"
+        visibility = GONE
+        setPadding(ctx.dp(7), ctx.dp(3), ctx.dp(7), ctx.dp(3))
+        background = GradientDrawable().apply {
+            setColor(0x664A5466)
+            cornerRadius = ctx.dpf(10f)
+            setStroke(ctx.dp(1), 0x59FFFFFF)
+        }
+    }
 
     /** Fondos con foco de píldoras y avisos: se retiñen con el acento vigente en [setAccent]. */
     private val accentBgs = ArrayList<GradientDrawable>()
@@ -119,6 +130,7 @@ class TopBar(
         gravity = Gravity.CENTER_VERTICAL
         addView(timerChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
         addView(alarmChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
+        addView(sleepChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
         addView(moonChip)
     }
     private val rain = tv(ctx, 16f, Ui.TEXT).apply { alpha = 0.7f; visibility = GONE; setShadowLayer(8f, 0f, 2f, 0x80000000.toInt()); compoundDrawablePadding = context.dp(3) }
@@ -241,6 +253,7 @@ class TopBar(
                 this@TopBar.wifiPill = it
             }
             addView(wifiPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8) })
+            addView(vpnChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(6) })
             val setPill = pill(cl.deco.shelf.R.drawable.ic_q_settings, "Ajustes", onSettings).also { settingsPill = it }
             addView(setPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8); rightMargin = context.dp(10) })
             addView(this@TopBar.right)
@@ -276,10 +289,15 @@ class TopBar(
         rain.compoundDrawableTintList = android.content.res.ColorStateList.valueOf(light)
     }
 
-    fun setStatus(timer: String?, alarm: String?, night: Boolean) {
+    fun setStatus(timer: String?, alarm: String?, night: Boolean, sleep: String? = null) {
         timerChip.text = timer.orEmpty(); timerChip.visibility = if (timer == null) GONE else VISIBLE
         alarmChip.text = alarm.orEmpty(); alarmChip.visibility = if (alarm == null) GONE else VISIBLE
+        sleepChip.text = sleep.orEmpty(); sleepChip.visibility = if (sleep == null) GONE else VISIBLE
         moonChip.visibility = if (night) VISIBLE else GONE
+    }
+
+    fun setVpn(on: Boolean) {
+        vpnChip.visibility = if (on) VISIBLE else GONE
     }
 
     fun setWifiSsid(name: String?) {

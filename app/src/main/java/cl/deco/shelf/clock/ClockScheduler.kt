@@ -14,6 +14,7 @@ object ClockScheduler {
     const val KIND_ALARM = "alarm"
     const val KIND_SNOOZE = "snooze"
     const val KIND_NIGHT = "night"
+    const val KIND_SLEEP = "sleep"
     private const val ACTION = "cl.deco.shelf.CLOCK_EVENT"
     private const val TAG = "ShelfClock"
 
@@ -71,7 +72,12 @@ object ClockScheduler {
         store.timers().forEach { if (it.running && it.endAt > now) scheduleTimer(ctx, it) }
         store.alarms().forEach { scheduleAlarm(ctx, it) }
         NightMode.scheduleEvents(ctx)
+        val sleepUntil = cl.deco.shelf.settings.ShelfPrefs(ctx).sleepUntilMs
+        if (sleepUntil > now) scheduleSleep(ctx, sleepUntil)
     }
+
+    fun scheduleSleep(ctx: Context, atMs: Long) = set(ctx, atMs, pi(ctx, 3003, KIND_SLEEP, 3003))
+    fun cancelSleep(ctx: Context) = cancel(ctx, pi(ctx, 3003, KIND_SLEEP, 3003))
 
     /** Evento diario del apagado nocturno: [code] 3001 = desde, 3002 = hasta. */
     fun scheduleNightAt(ctx: Context, code: Int, minuteOfDay: Int) {

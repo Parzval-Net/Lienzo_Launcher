@@ -114,9 +114,10 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
 
         body.addView(section("Acciones"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(2); leftMargin = ctx.dp(8) })
         val free = action(if (busy) "Liberando cachés de Lienzo..." else "Liberar cachés de Lienzo", "No cierra otras apps. Para la memoria de video, reinicia") { liberar() }
+        val killBg = action("Cerrar apps en segundo plano (ADB)", "Usa LocalAdb para detener apps de usuario ociosas") { cerrarAppsFondo() }
         val how = action("Cómo reiniciar", "Pasos para reiniciar el deco") { howTo = true; build() }
         val later = action("Recordarme más tarde", "Oculta el aviso 24 h") { onSnooze() }
-        for (v in listOf(free, how, later)) body.addView(v, LinearLayout.LayoutParams(-1, ctx.dp(42)))
+        for (v in listOf(free, killBg, how, later)) body.addView(v, LinearLayout.LayoutParams(-1, ctx.dp(42)))
 
         // Foco inicial en la acción recomendada
         val target = when (reco.action) { DeviceHealth.Action.RESTART -> how; else -> free }
@@ -189,6 +190,28 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
             "Después: RAM ${DeviceHealth.mbText(r.availKb)}, CMA ${DeviceHealth.mbText(s.cmaFreeKb)}\n" +
             DeviceHealth.freeVerdict(b.second.availKb, r.availKb, b.first.cmaFreeKb, s.cmaFreeKb)
         build()
+    }
+
+    private fun cerrarAppsFondo() {
+        if (busy) return
+        busy = true
+        val appCtx = context.applicationContext
+        val b = snapshot() to DeviceHealth.readRam(context)
+        result = "Cerrando apps en segundo plano vía ADB local..."
+        build()
+        Thread({
+            val msg = cl.deco.shelf.service.SelfSetup.forceStopBackgroundApps(appCtx) {
+                main.post { if (isOpen) { result = "Acepta \"Permitir depuración por USB\" en la TV"; build() } }
+            }
+            main.postDelayed({
+                if (!isOpen) return@postDelayed
+                busy = false
+                val s = snapshot(); val r = DeviceHealth.readRam(context)
+                result = "$msg\nAntes: RAM ${DeviceHealth.mbText(b.second.availKb)}, CMA ${DeviceHealth.mbText(b.first.cmaFreeKb)} · " +
+                    "Ahora: RAM ${DeviceHealth.mbText(r.availKb)}, CMA ${DeviceHealth.mbText(s.cmaFreeKb)}"
+                build()
+            }, 1500)
+        }, "lienzo-kill-bg").apply { isDaemon = true }.start()
     }
 
     // ---- Cómo reiniciar ----

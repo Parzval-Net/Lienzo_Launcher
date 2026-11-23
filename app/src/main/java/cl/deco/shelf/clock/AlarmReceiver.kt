@@ -26,6 +26,12 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             ClockScheduler.KIND_SNOOZE -> AlarmService.fire(ctx, "Alarma", i.getStringExtra("label").orEmpty())
             ClockScheduler.KIND_NIGHT -> NightMode.refresh(ctx) // evalúa y reprograma los dos eventos del día siguiente
+            ClockScheduler.KIND_SLEEP -> {
+                val pending = goAsync()
+                Thread({
+                    try { SleepTimer.execute(ctx.applicationContext) } finally { pending.finish() }
+                }, "lienzo-sleep").start()
+            }
         }
     }
 }
@@ -39,6 +45,16 @@ class BootReceiver : BroadcastReceiver() {
         // La zona por defecto de la JVM se actualiza antes de entregar el broadcast; se refresca por si acaso
         if (i.action == Reschedule.TIMEZONE) java.util.TimeZone.setDefault(null)
         Reschedule.onEvent(i.action, { ClockScheduler.scheduleAll(ctx) }, { NightMode.evaluate(ctx) })
+        if (i.action == Intent.ACTION_BOOT_COMPLETED || i.action == Reschedule.QUICKBOOT) {
+            cl.deco.shelf.settings.ShelfPrefs(ctx).sp.edit()
+                .putLong("boot_pending_ms", android.os.SystemClock.elapsedRealtime())
+                .apply()
+        }
+        SleepTimer.restoreTimeoutIfNeeded(ctx)
+        val pending = goAsync()
+        Thread({
+            try { cl.deco.shelf.service.ServiceRepair.repairIfNeeded(ctx.applicationContext) } finally { pending.finish() }
+        }, "lienzo-repair").start()
         if (i.action == Reschedule.PACKAGE_REPLACED) reopenAfterUpdate(ctx)
     }
 

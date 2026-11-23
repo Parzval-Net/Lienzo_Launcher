@@ -22,10 +22,21 @@ import android.view.accessibility.AccessibilityEvent
 class KeyService : AccessibilityService() {
 
     private var hdmi: HdmiWatcher? = null
+    private var gamepad: GamepadPassthrough? = null
+    private val prefs by lazy { cl.deco.shelf.settings.ShelfPrefs(this) }
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == cl.deco.shelf.settings.ShelfPrefs.GAMEPAD_PASSTHROUGH ||
+            key == cl.deco.shelf.settings.ShelfPrefs.VOLUME_PAUSES_FILTER
+        ) {
+            gamepad?.refresh()
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         hdmi = HdmiWatcher(this).also { it.start() }
+        gamepad = GamepadPassthrough(this, prefs).also { it.start() }
+        prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
         // Avisos del sistema al cambiar volumen o silencio (acciones ocultas de AudioManager, públicas en la práctica)
         val volFilter = android.content.IntentFilter().apply {
             addAction("android.media.VOLUME_CHANGED_ACTION")
@@ -36,8 +47,10 @@ class KeyService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        runCatching { prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener) }
         runCatching { unregisterReceiver(volumeReceiver) }
         main.removeCallbacksAndMessages(null)
+        gamepad?.stop(); gamepad = null
         hdmi?.stop(); hdmi = null
         super.onDestroy()
     }
@@ -113,7 +126,10 @@ class KeyService : AccessibilityService() {
     /** Último cambio de volumen o silencio informado por el sistema (uptime), para no aplicar dos veces la misma tecla. */
     @Volatile private var lastVolumeChange = 0L
     private val volumeReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(c: Context?, i: Intent?) { lastVolumeChange = android.os.SystemClock.uptimeMillis() }
+        override fun onReceive(c: Context?, i: Intent?) {
+            lastVolumeChange = android.os.SystemClock.uptimeMillis()
+            if (i?.action == "android.media.VOLUME_CHANGED_ACTION") gamepad?.onVolumeChanged()
+        }
     }
 
     private var longFired = false

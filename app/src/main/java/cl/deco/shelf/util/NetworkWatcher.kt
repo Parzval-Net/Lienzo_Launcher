@@ -12,11 +12,19 @@ import android.os.Handler
  * Los callbacks llegan por [handler] (main). "En línea" = red por defecto con capacidad INTERNET (no exige VALIDATED, para no
  * marcar "sin conexión" en redes con portal o validación lenta).
  */
-class NetworkWatcher(ctx: Context, private val handler: Handler, private val onChange: (Boolean) -> Unit) {
+class NetworkWatcher(
+    ctx: Context,
+    private val handler: Handler,
+    private val onChange: (Boolean) -> Unit,
+    private val onVpnChange: (Boolean) -> Unit = {},
+) {
     private val cm = ctx.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private var cb: ConnectivityManager.NetworkCallback? = null
 
     @Volatile var online = true
+        private set
+
+    @Volatile var vpn = false
         private set
 
     private fun current(): Boolean {
@@ -24,11 +32,25 @@ class NetworkWatcher(ctx: Context, private val handler: Handler, private val onC
         return cm.getNetworkCapabilities(net)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 
-    private fun set(v: Boolean) { if (v != online) { online = v; onChange(v) } }
+    private fun currentVpn(): Boolean = try {
+        @Suppress("DEPRECATION")
+        cm.allNetworks.any { n -> cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
+    } catch (_: Exception) { false }
+
+    private fun refreshVpn() {
+        val v = currentVpn()
+        if (v != vpn) { vpn = v; onVpnChange(v) }
+    }
+
+    private fun set(v: Boolean) {
+        if (v != online) { online = v; onChange(v) }
+        refreshVpn()
+    }
 
     fun start() {
         if (cb != null) return
         online = current() // el estado inicial lo lee quien llama (sin callback); solo los cambios posteriores notifican
+        vpn = currentVpn()
         val c = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) = set(true)
             override fun onLost(network: Network) = set(false)

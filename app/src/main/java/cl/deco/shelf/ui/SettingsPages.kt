@@ -118,6 +118,9 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         rows += Row.Act("Restablecer valores iniciales", { if (confirmKeyReset) "OK de nuevo para confirmar" else "" }) {
             if (confirmKeyReset) { confirmKeyReset = false; KeyMap.resetDefaults(ctx); panel.replace(remotePage()) } else confirmKeyReset = true
         }
+        rows += Row.Section("Compatibilidad")
+        rows += toggle("Passthrough de gamepad", ShelfPrefs.GAMEPAD_PASSTHROUGH, "Activado", "Desactivado", { p.gamepadPassthrough }, { p.gamepadPassthrough = it })
+        rows += toggle("Pausar filtro al subir/bajar volumen", ShelfPrefs.VOLUME_PAUSES_FILTER, "Activado (Android 14)", "Desactivado", { p.volumePausesFilter }, { p.volumePausesFilter = it })
         rows += Row.Info("") { "Flechas, OK, Atrás, Inicio, volumen y encendido no se reasignan. Los botones sin asignar mantienen su función original." }
         return Page("Control remoto", rows, onShow = { KeyMap.stopLearning(); confirmKeyReset = false })
     }
@@ -267,6 +270,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     ))
 
     fun powerAndSystemPage(): Page = Page("Sistema y energía", listOfNotNull(
+        Row.Section("Inicio al encender"),
+        choice("Al encender el equipo", ShelfPrefs.OPEN_ON_START, listOf("Inicio (Lienzo)", "TV en vivo", "Última entrada"), listOf("home", "livetv", "last_input"), { p.openOnStart }, { p.openOnStart = it }),
         Row.Section("Apagado nocturno"),
         toggle("Apagado por inactividad", ShelfPrefs.NIGHT_ON, "Activado", "Desactivado", { p.nightOn }, { p.nightOn = it }),
         Row.Choice("Desde", halfHours, { (p.nightFromMin / 30).coerceIn(0, 47) }, { p.nightFromMin = it * 30; host.changed(ShelfPrefs.NIGHT_FROM) }),
@@ -297,6 +302,15 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             runSetup { cl.deco.shelf.service.SelfSetup.permissionsAndKeys(ctx, it) }
         },
         Row.Act("Usar Lienzo como inicio y protector") { runSetup { cl.deco.shelf.service.SelfSetup.makeDefault(ctx, it) } },
+        Row.Act("Deshabilitar launcher original (ahorra RAM)", { "Libera 150-250 MB en Google TV; reversible" }) {
+            runSetup { cl.deco.shelf.service.SelfSetup.disableStockLauncher(ctx, it) }
+        },
+        Row.Act("Limpiar bloatware (reversible)", { "Deshabilita apps de relleno conocidas sin borrar datos" }) {
+            runSetup { cl.deco.shelf.service.SelfSetup.debloat(ctx, it) }
+        },
+        Row.Act("Restaurar apps deshabilitadas", { val n = p.disabledByLienzo.size; if (n == 0) "Ninguna registrada" else "$n deshabilitadas por Lienzo" }) {
+            runSetup { cl.deco.shelf.service.SelfSetup.restoreDebloat(ctx, it) }
+        },
         Row.Act("Volver al launcher original", { if (confirmStock) "OK de nuevo para confirmar" else "Lienzo queda instalado" }) {
             if (!confirmStock) { confirmStock = true; panel.rebuild() }
             else { confirmStock = false; runSetup { cl.deco.shelf.service.SelfSetup.restoreStock(ctx, it) } }

@@ -102,9 +102,25 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
         body.addView(custom)
         body.addView(tv(ctx, 12f, Ui.TEXT2).apply { text = "Con el foco en horas o minutos: ARRIBA y ABAJO cambian el valor" },
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(4) })
+        body.addView(PageUi.title(ctx, if (Es.english) "Sleep TV timer" else "Apagar TV en"))
+        val sleepRow = PageUi.row(ctx)
+        sleepRow.addView(PageUi.chip(ctx, if (Es.english) "Off" else "Apagado", 96) { setSleep(0) })
+        for (m in listOf(15, 30, 45, 60, 90, 120)) sleepRow.addView(PageUi.chip(ctx, "$m min", 76) { setSleep(m) })
+        body.addView(sleepRow)
         body.addView(PageUi.title(ctx, "Activos (máx. ${ClockStore.MAX_TIMERS})"))
         body.addView(list)
         view = PageUi.scroll(ctx, body)
+    }
+
+    private fun setSleep(minutes: Int) {
+        cl.deco.shelf.clock.SleepTimer.set(ctx, minutes)
+        val msg = if (minutes <= 0) {
+            if (Es.english) "Sleep timer cancelled" else "Apagado programado cancelado"
+        } else {
+            if (Es.english) "TV will sleep in $minutes min" else "La TV se apagará en $minutes min"
+        }
+        Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+        onChanged()
     }
 
     fun show() { shown = true; bindList(); main.removeCallbacks(ticker); main.postDelayed(ticker, 1000) }
