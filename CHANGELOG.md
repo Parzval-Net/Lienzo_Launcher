@@ -2,6 +2,17 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## [Unreleased]
+- Tamaño del APK (< 950 KB): fondos de Halloween servidos bajo demanda vía Wikimedia Commons salvo `001.webp` embebido como fallback; blur precalculado guardado en WebP (`lastblur.webp`) + paleta cacheada para evitar doble decodificación 1080p al volver al Home.
+- Rendimiento y memoria: scale-first blur directo en `RGB_565` (elimina el arreglo `dv` de ~1,1 MB), caché de disco LRU (8 MB) para pósters remotos de Top Shelf y tiles `.webp` (`RENDER_REV = 7`).
+- Seguridad en `ImageLoader`: validación HTTPS estricta, bloqueo de rangos locales/loopback y verificación de redirecciones; guard atómico y caché de versión en `TileRenderer`.
+- Permisos y protector OLED: soporte granular de `READ_MEDIA_IMAGES` y `READ_MEDIA_VIDEO` para Android 13+; desplazamiento anti burn-in por píxeles/esquinas y escalado acotado a la pantalla en `ArtDreamService`.
+- Control remoto y energía: modo passthrough para gamepads (`L2`/`R2`/`A`/`B`/`Select`/DPAD), opción para pausar filtro de volumen (Android 14), temporizador de apagado del televisor ("Apagar TV en" con chip de cuenta regresiva), indicador `VPN` en la barra superior y selección de inicio tras arranque (Home, TV en vivo o Última entrada).
+- Mantenimiento y ADB local: deshabilitar launcher original y bloatware conocido de forma reversible (`SelfSetup`, `DebloatRules`), reparación automática del servicio de botones (`ServiceRepair`) y botón en Salud para cerrar apps en segundo plano vía ADB local.
+- Transferencia por Wi-Fi + QR (`LanTransferServer`, `QrCode`): micro-servidor HTTP efímero con código QR para subir fondos/videos o descargar/restaurar respaldos JSON desde el celular en la misma red.
+- Soporte Air-Mouse e idioma: enfoque al pasar puntero (`ACTION_HOVER_ENTER`), navegación con rueda (`AXIS_VSCROLL`), interfaz bilingüe ES/EN reactiva (`L10n`), refactorización modular de `ArtController` y `BackupManager`.
+- CI/CD: verificación de build release + tope de 950 KB en CI y asset estable `Lienzo.apk` en releases.
+
 ## 1.2.2 (2026-10-31)
 - Skin de Halloween más visible, basada en el pack de CleanYourTV (cleanyour.tv/halloween): la píldora Wi-Fi es una calabaza (encendida con red, apagada sin red), Ajustes un fantasma que sube al enfocarlo y Entradas un murciélago que bate las alas. En el primer Home del día suben murciélagos por la pantalla.
 - Fondos de temporada: las 8 imágenes nocturnas del tema Halloween de CleanYourTV, ya en 1920x1080 y compuestas para que el dock y el reloj se lean, vienen en el APK y rotan en el fondo y el protector. Reemplazan las 4 obras de la 1.2.1, que se recortaban mal. Al terminar la temporada se borran del equipo.

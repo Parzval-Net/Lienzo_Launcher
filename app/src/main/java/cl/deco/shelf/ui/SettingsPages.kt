@@ -34,6 +34,8 @@ interface SettingsHost {
     fun openHealth()
     /** "Importar desde USB": pide el permiso de medios si falta y abre la grilla de importación. */
     fun importFromUsb()
+    /** Abre el servidor efímero LAN + QR para subir fondos o respaldos desde el celular. */
+    fun openLanTransfer()
     /** Cambió el contenido de Mis fondos (borrado) o la fuente: recargar el fondo si corresponde. */
     fun fondosChanged()
     /** "Buscar actualizaciones": consulta GitHub ahora y, si hay versión nueva, abre el panel de actualización. */
@@ -63,27 +65,30 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     // Sin emojis: la fuente de color se cargaría solo para esto (varios MB de PSS) y no combina con los íconos del sistema
     // Lienzo primero (es lo que se abre desde "Ajustes de Lienzo") y una sola sección Televisor sin repetidos: antes Imagen,
     // Sonido y Ajustes de Android aparecían dos veces (Televisor y Accesos rápidos)
-    fun root(): Page = Page("Ajustes", listOf(
+    fun root(): Page = Page(t("Ajustes", "Settings"), listOf(
         Row.Section("Lienzo"),
-        Row.Act("Pantalla y fondos", { sourceName() }) { panel.push(screenAndBackgroundPage()) },
-        Row.Act("Modo arte y protector", { if (p.artEnabled) "Activado" else "Desactivado" }) { panel.push(artAndScreensaverPage()) },
-        Row.Act("Barra superior e inicio", { "${if (p.clock24) "24 h" else "12 h"} · ${p.dockMax} en el dock" }) { panel.push(interfacePage()) },
-        Row.Act("Apps e íconos", { val n = host.hiddenCount(); if (n == 0) "Ninguna oculta" else "$n ${if (n == 1) "oculta" else "ocultas"}" }) { confirmReset = false; panel.push(appsAndIconsPage()) },
-        Row.Act("Control remoto", { if (KeyMap.serviceRunning(ctx)) "Botones activos" else "Requiere activar" }) { panel.push(remotePage()) },
-        Row.Act("Sistema y energía", { if (p.nightOn) "Apagado nocturno activo" else "Apagado nocturno inactivo" }) { panel.push(powerAndSystemPage()) },
-        Row.Act("Mantenimiento e información", { version }) { panel.push(aboutAndMaintenancePage()) },
+        Row.Act(t("Pantalla y fondos", "Display & backgrounds"), { sourceName() }) { panel.push(screenAndBackgroundPage()) },
+        Row.Act(t("Modo arte y protector", "Art mode & screensaver"), { if (p.artEnabled) t("Activado", "On") else t("Desactivado", "Off") }) { panel.push(artAndScreensaverPage()) },
+        Row.Act(t("Barra superior e inicio", "Top bar & home"), { "${if (p.clock24) "24 h" else "12 h"} · ${p.dockMax} ${t("en el dock", "in dock")}" }) { panel.push(interfacePage()) },
+        Row.Act(t("Apps e íconos", "Apps & icons"), { val n = host.hiddenCount(); if (n == 0) t("Ninguna oculta", "None hidden") else "$n ${if (n == 1) t("oculta", "hidden") else t("ocultas", "hidden")}" }) { confirmReset = false; panel.push(appsAndIconsPage()) },
+        Row.Act(t("Control remoto", "Remote control"), { if (KeyMap.serviceRunning(ctx)) t("Botones activos", "Buttons active") else t("Requiere activar", "Setup needed") }) { panel.push(remotePage()) },
+        Row.Act(t("Sistema y energía", "System & power"), { if (p.nightOn) t("Apagado nocturno activo", "Night auto-off on") else t("Apagado nocturno inactivo", "Night auto-off off") }) { panel.push(powerAndSystemPage()) },
+        Row.Act(t("Mantenimiento e información", "Maintenance & about"), { version }) { panel.push(aboutAndMaintenancePage()) },
     ) + tvRows())
+
+    /** Pila de páginas para reconstruir en caliente al cambiar idioma desde Ubicación y región. */
+    fun localeStack(): List<Page> = listOf(root(), interfacePage(), locationPage())
 
     /** Sección "Televisor": ajustes rápidos del fabricante (si existen) y accesos del sistema, cada uno una sola vez. */
     private fun tvRows(): List<Row> {
         val rows = ArrayList<Row>()
-        rows += Row.Section("Televisor")
+        rows += Row.Section(t("Televisor", "TV"))
         QuickAccess.tvQuick(ctx)?.let { quick ->
-            rows += Row.Act("Ajustes rápidos", { "Brillo, imagen, sonido, temporizador" }) { host.finishSettings(); openActivity(quick) }
+            rows += Row.Act(t("Ajustes rápidos", "Quick settings"), { t("Brillo, imagen, sonido, temporizador", "Brightness, picture, sound, timer") }) { host.finishSettings(); openActivity(quick) }
         }
         // Wi-Fi, Bluetooth, Imagen, Sonido, Almacenamiento y, al final, todos los ajustes del sistema
         for (q in QuickAccess.items) {
-            val label = if (q === QuickAccess.items.last()) "Todos los ajustes del sistema" else q.label
+            val label = if (q === QuickAccess.items.last()) t("Todos los ajustes del sistema", "All system settings") else q.label
             rows += Row.Act(label) { QuickAccess.launch(ctx, q) }
         }
         return rows
@@ -95,41 +100,41 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     /** Asignación dinámica de botones (cualquier control): aprender, cambiar acción, app de TV en vivo y restablecer. */
     fun remotePage(): Page {
         val rows = ArrayList<Row>()
-        rows += Row.Section("Estado")
-        rows += Row.Info("Servicio de botones") {
+        rows += Row.Section(t("Estado", "Status"))
+        rows += Row.Info(t("Servicio de botones", "Button service")) {
             when {
-                KeyMap.serviceRunning(ctx) -> "Activo"
-                KeyMap.serviceEnabled(ctx) -> "Habilitado pero detenido por el sistema (en TCL falta el permiso de arranque)"
-                else -> "Inactivo"
+                KeyMap.serviceRunning(ctx) -> t("Activo", "Active")
+                KeyMap.serviceEnabled(ctx) -> t("Habilitado pero detenido por el sistema (en TCL falta el permiso de arranque)", "Enabled but stopped by system (TCL needs autostart permission)")
+                else -> t("Inactivo", "Inactive")
             }
         }
         if (!KeyMap.serviceRunning(ctx)) {
-            rows += Row.Act("Activar sin PC", { "Con la depuración por red del equipo" }) { panel.push(setupPage()) }
-            rows += Row.Act("Abrir ajustes de accesibilidad") { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            rows += Row.Act(t("Activar sin PC", "Activate without PC"), { t("Con la depuración por red del equipo", "Via device network debugging") }) { panel.push(setupPage()) }
+            rows += Row.Act(t("Abrir ajustes de accesibilidad", "Open accessibility settings")) { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
-        rows += Row.Section("Asignar")
-        rows += Row.Act("Asignar un botón", { "Presiona el botón y elige qué hace" }) { panel.push(learnPage()) }
-        rows += Row.Act("App de TV en vivo", { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: "Sin app (función original)" }) { panel.push(liveTvPage()) }
+        rows += Row.Section(t("Asignar", "Assign"))
+        rows += Row.Act(t("Asignar un botón", "Assign a button"), { t("Presiona el botón y elige qué hace", "Press a button and pick an action") }) { panel.push(learnPage()) }
+        rows += Row.Act(t("App de TV en vivo", "Live TV app"), { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: t("Sin app (función original)", "No app (system default)") }) { panel.push(liveTvPage()) }
         val map = KeyMap.all(ctx).toList().sortedBy { KeyMap.name(it.first) }
         if (map.isNotEmpty()) {
-            rows += Row.Section("Botones asignados")
+            rows += Row.Section(t("Botones asignados", "Assigned buttons"))
             for ((code, action) in map) rows += Row.Act(KeyMap.name(code), { KeyMap.actionLabel(ctx, action) }) { panel.push(actionPage(code)) }
         }
-        rows += Row.Act("Restablecer valores iniciales", { if (confirmKeyReset) "OK de nuevo para confirmar" else "" }) {
+        rows += Row.Act(t("Restablecer valores iniciales", "Reset to defaults"), { if (confirmKeyReset) t("OK de nuevo para confirmar", "Press OK again to confirm") else "" }) {
             if (confirmKeyReset) { confirmKeyReset = false; KeyMap.resetDefaults(ctx); panel.replace(remotePage()) } else confirmKeyReset = true
         }
-        rows += Row.Section("Compatibilidad")
-        rows += toggle("Passthrough de gamepad", ShelfPrefs.GAMEPAD_PASSTHROUGH, "Activado", "Desactivado", { p.gamepadPassthrough }, { p.gamepadPassthrough = it })
-        rows += toggle("Pausar filtro al subir/bajar volumen", ShelfPrefs.VOLUME_PAUSES_FILTER, "Activado (Android 14)", "Desactivado", { p.volumePausesFilter }, { p.volumePausesFilter = it })
-        rows += Row.Info("") { "Flechas, OK, Atrás, Inicio, volumen y encendido no se reasignan. Los botones sin asignar mantienen su función original." }
-        return Page("Control remoto", rows, onShow = { KeyMap.stopLearning(); confirmKeyReset = false })
+        rows += Row.Section(t("Compatibilidad", "Compatibility"))
+        rows += toggle(t("Passthrough de gamepad", "Gamepad passthrough"), ShelfPrefs.GAMEPAD_PASSTHROUGH, t("Activado", "On"), t("Desactivado", "Off"), { p.gamepadPassthrough }, { p.gamepadPassthrough = it })
+        rows += toggle(t("Pausar filtro al subir/bajar volumen", "Pause filter on volume keys"), ShelfPrefs.VOLUME_PAUSES_FILTER, t("Activado (Android 14)", "On (Android 14)"), t("Desactivado", "Off"), { p.volumePausesFilter }, { p.volumePausesFilter = it })
+        rows += Row.Info("") { t("Flechas, OK, Atrás, Inicio, volumen y encendido no se reasignan. Los botones sin asignar mantienen su función original.", "Arrows, OK, Back, Home, volume and power are never remapped. Unassigned buttons keep their default behavior.") }
+        return Page(t("Control remoto", "Remote control"), rows, onShow = { KeyMap.stopLearning(); confirmKeyReset = false })
     }
 
     private fun learnPage(): Page {
-        val title = "Asignar un botón"
+        val title = t("Asignar un botón", "Assign a button")
         return Page(title, listOf(
-            Row.Info("") { "Presiona ahora en el control el botón que quieres asignar." },
-            Row.Info("") { "Funciona con cualquier control: botones de apps, colores, Guía, Asistente o propios del fabricante." },
+            Row.Info("") { t("Presiona ahora en el control el botón que quieres asignar.", "Press the remote button you want to assign now.") },
+            Row.Info("") { t("Funciona con cualquier control: botones de apps, colores, Guía, Asistente o propios del fabricante.", "Works with any remote: app shortcuts, color keys, Guide, Assistant, or OEM buttons.") },
         ), onShow = {
             KeyMap.startLearning { code ->
                 if (panel.isOpen && panel.currentTitle() == title) { panel.back(); panel.push(actionPage(code)) }
@@ -142,28 +147,28 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         // Vuelve a Control remoto con la lista recalculada (un botón recién aprendido aparece en "Botones asignados")
         fun pick(action: String?) { KeyMap.set(ctx, code, action); panel.back(); panel.replace(remotePage()) }
         val rows = ArrayList<Row>()
-        rows += Row.Info("Ahora") { KeyMap.actionLabel(ctx, KeyMap.all(ctx)[code]) }
-        rows += Row.Section("Acciones")
-        rows += Row.Act("Entradas de Lienzo") { pick(KeyMap.INPUTS) }
-        rows += Row.Act("Menú de ajustes", { "Lienzo, rápidos o del televisor" }) { pick(KeyMap.SETTINGS) }
-        rows += Row.Act("TV en vivo", { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: "Sin app (función original)" }) { pick(KeyMap.LIVETV) }
-        rows += Row.Act("Todas las apps", { "Grilla de Lienzo" }) { pick(KeyMap.APPS) }
-        rows += Row.Act("Modo arte", { "Obra a pantalla completa" }) { pick(KeyMap.ART) }
-        rows += Row.Act("Función original del sistema") { pick(null) }
-        rows += Row.Section("Abrir una app")
+        rows += Row.Info(t("Ahora", "Current")) { KeyMap.actionLabel(ctx, KeyMap.all(ctx)[code]) }
+        rows += Row.Section(t("Acciones", "Actions"))
+        rows += Row.Act(t("Entradas de Lienzo", "Lienzo Inputs")) { pick(KeyMap.INPUTS) }
+        rows += Row.Act(t("Menú de ajustes", "Settings menu"), { t("Lienzo, rápidos o del televisor", "Lienzo, quick settings, or TV settings") }) { pick(KeyMap.SETTINGS) }
+        rows += Row.Act(t("TV en vivo", "Live TV"), { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: t("Sin app (función original)", "No app (system default)") }) { pick(KeyMap.LIVETV) }
+        rows += Row.Act(t("Todas las apps", "All apps"), { t("Grilla de Lienzo", "Lienzo app grid") }) { pick(KeyMap.APPS) }
+        rows += Row.Act(t("Modo arte", "Art mode"), { t("Obra a pantalla completa", "Fullscreen artwork") }) { pick(KeyMap.ART) }
+        rows += Row.Act(t("Función original del sistema", "Original system action")) { pick(null) }
+        rows += Row.Section(t("Abrir una app", "Launch an app"))
         for ((label, pkg) in launchableApps()) rows += Row.Act(label) { pick(KeyMap.app(pkg)) }
-        return Page("Botón: ${KeyMap.name(code)}", rows)
+        return Page(t("Botón: ${KeyMap.name(code)}", "Button: ${KeyMap.name(code)}"), rows)
     }
 
     private fun liveTvPage(): Page {
         val rows = ArrayList<Row>()
-        rows += Row.Act("Predeterminado", { if (KeyMap.installed(ctx, KeyMap.DEFAULT_LIVETV)) "Movistar TV" else "Sin app (función original)" }) {
+        rows += Row.Act(t("Predeterminado", "Default"), { if (KeyMap.installed(ctx, KeyMap.DEFAULT_LIVETV)) "Movistar TV" else t("Sin app (función original)", "No app (system default)") }) {
             KeyMap.setLiveTvApp(ctx, null); panel.back(); panel.replace(remotePage())
         }
-        rows += Row.Section("Apps")
+        rows += Row.Section(t("Apps", "Apps"))
         for ((label, pkg) in launchableApps()) rows += Row.Act(label) { KeyMap.setLiveTvApp(ctx, pkg); panel.back(); panel.replace(remotePage()) }
-        rows += Row.Info("") { "Se usa en el botón TV del control y en la opción TV en vivo de Entradas." }
-        return Page("App de TV en vivo", rows)
+        rows += Row.Info("") { t("Se usa en el botón TV del control y en la opción TV en vivo de Entradas.", "Used by the remote's TV button and Live TV option in Inputs.") }
+        return Page(t("App de TV en vivo", "Live TV app"), rows)
     }
 
     /** Apps con ícono en el launcher (TV o móvil), ordenadas por nombre, sin Lienzo. */
@@ -176,19 +181,19 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             .map { it.second to it.first }.sortedBy { it.first.lowercase() }
     }
 
-    fun screenAndBackgroundPage(): Page = Page("Pantalla y fondos", listOf(
-        Row.Section("Fondo"),
+    fun screenAndBackgroundPage(): Page = Page(t("Pantalla y fondos", "Display & backgrounds"), listOf(
+        Row.Section(t("Fondo", "Background")),
         // Fuente: obras de arte, imágenes propias o "Color dinámico" (fondo oscuro con el color de la app enfocada)
-        choice("Fuente del fondo", ShelfPrefs.BG_SOURCE, sourceNames, listOf(0, 1, 2, ShelfPrefs.BG_DYNAMIC), { p.bgSource }, { p.bgSource = it }),
+        choice(t("Fuente del fondo", "Background source"), ShelfPrefs.BG_SOURCE, sourceNames, listOf(0, 1, 2, ShelfPrefs.BG_DYNAMIC), { p.bgSource }, { p.bgSource = it }),
     ) + collectionRows() + listOf(
-        choice("Rotación de obra", ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", "Diario"), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
-        Row.Act("Cambiar obra ahora") { host.nextArt() },
-        Row.Act("Mis fondos", { "Importar y gestionar imágenes y videos propios" }) { panel.push(myBackgroundsPage()) },
-        choice("Brillo del fondo", ShelfPrefs.BG_BRIGHTNESS, listOf("60%", "70%", "80%", "90%", "100%"), listOf(60, 70, 80, 90, 100), { p.bgBrightness }, { p.bgBrightness = it }),
-        toggle("Atenuar de noche", ShelfPrefs.NIGHT_DIM, "Sí", "No", { p.nightDim }, { p.nightDim = it }),
-        choice("Desenfoque en grilla", ShelfPrefs.BLUR_LEVEL, listOf("Ninguno", "Bajo", "Medio", "Alto"), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
-        toggle("Colores", ShelfPrefs.DYNAMIC_COLORS, "Dinámicos desde la obra", "Neutros", { p.dynamicColors }, { p.dynamicColors = it }),
-        toggle("Temporada", ShelfPrefs.SEASONAL, "Halloween (24 oct a 1 nov)", "Apagada", { p.seasonal }, { p.seasonal = it }),
+        choice(t("Rotación de obra", "Artwork rotation"), ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", t("Diario", "Daily")), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
+        Row.Act(t("Cambiar obra ahora", "Next artwork now")) { host.nextArt() },
+        Row.Act(t("Mis fondos", "My backgrounds"), { t("Importar y gestionar imágenes y videos propios", "Import and manage custom images & videos") }) { panel.push(myBackgroundsPage()) },
+        choice(t("Brillo del fondo", "Background brightness"), ShelfPrefs.BG_BRIGHTNESS, listOf("60%", "70%", "80%", "90%", "100%"), listOf(60, 70, 80, 90, 100), { p.bgBrightness }, { p.bgBrightness = it }),
+        toggle(t("Atenuar de noche", "Dim at night"), ShelfPrefs.NIGHT_DIM, t("Sí", "Yes"), t("No", "No"), { p.nightDim }, { p.nightDim = it }),
+        choice(t("Desenfoque en grilla", "App grid blur"), ShelfPrefs.BLUR_LEVEL, listOf(t("Ninguno", "None"), t("Bajo", "Low"), t("Medio", "Medium"), t("Alto", "High")), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
+        toggle(t("Colores", "Colors"), ShelfPrefs.DYNAMIC_COLORS, t("Dinámicos desde la obra", "Dynamic from artwork"), t("Neutros", "Neutral"), { p.dynamicColors }, { p.dynamicColors = it }),
+        toggle(t("Temporada", "Seasonal"), ShelfPrefs.SEASONAL, t("Halloween (24 oct a 1 nov)", "Halloween (Oct 24 - Nov 1)"), t("Apagada", "Off"), { p.seasonal }, { p.seasonal = it }),
     ))
 
     /** Todas las colecciones (imágenes o videos), General primero. */
@@ -204,18 +209,18 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         if (p.collection.isNotEmpty() && p.collection !in cols) p.collection = ""
         if (cols.isEmpty()) return emptyList()
         val values = listOf("") + cols
-        val names = listOf("Todas") + cols
-        return listOf(choice("Colección de Mis fondos", ShelfPrefs.COLLECTION, names, values, { p.collection }, { p.collection = it }))
+        val names = listOf(t("Todas", "All")) + cols
+        return listOf(choice(t("Colección de Mis fondos", "My backgrounds collection"), ShelfPrefs.COLLECTION, names, values, { p.collection }, { p.collection = it }))
     }
 
-    fun artAndScreensaverPage(): Page = Page("Modo arte y protector", listOf(
-        Row.Section("Modo arte"),
-        toggle("Modo arte", ShelfPrefs.ART_ON, "Activado", "Desactivado", { p.artEnabled }, { p.artEnabled = it }),
-        choice("Espera", ShelfPrefs.ART_WAIT, listOf("30 s", "45 s", "2 min", "5 min"), listOf(30, 45, 120, 300), { p.artWaitSec }, { p.artWaitSec = it }),
-        toggle("Usar video", ShelfPrefs.ART_VIDEO, "Sí", "No", { p.artVideo }, { p.artVideo = it }),
-        Row.Section("Protector de pantalla"),
-        toggle("Usar video", ShelfPrefs.DREAM_VIDEO, "Sí", "No", { p.dreamVideo }, { p.dreamVideo = it }),
-        choice("Intervalo de obras", ShelfPrefs.DREAM_INTERVAL, listOf("1 min", "3 min", "5 min"), listOf(1, 3, 5), { p.dreamIntervalMin }, { p.dreamIntervalMin = it }),
+    fun artAndScreensaverPage(): Page = Page(t("Modo arte y protector", "Art mode & screensaver"), listOf(
+        Row.Section(t("Modo arte", "Art mode")),
+        toggle(t("Modo arte", "Art mode"), ShelfPrefs.ART_ON, t("Activado", "On"), t("Desactivado", "Off"), { p.artEnabled }, { p.artEnabled = it }),
+        choice(t("Espera", "Idle delay"), ShelfPrefs.ART_WAIT, listOf("30 s", "45 s", "2 min", "5 min"), listOf(30, 45, 120, 300), { p.artWaitSec }, { p.artWaitSec = it }),
+        toggle(t("Usar video", "Use video"), ShelfPrefs.ART_VIDEO, t("Sí", "Yes"), t("No", "No"), { p.artVideo }, { p.artVideo = it }),
+        Row.Section(t("Protector de pantalla", "Screensaver")),
+        toggle(t("Usar video", "Use video"), ShelfPrefs.DREAM_VIDEO, t("Sí", "Yes"), t("No", "No"), { p.dreamVideo }, { p.dreamVideo = it }),
+        choice(t("Intervalo de obras", "Artwork interval"), ShelfPrefs.DREAM_INTERVAL, listOf("1 min", "3 min", "5 min"), listOf(1, 3, 5), { p.dreamIntervalMin }, { p.dreamIntervalMin = it }),
     ) + videoRows())
 
     /**
@@ -226,10 +231,10 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val (tokens, names) = videoOptions()
         val rows = ArrayList<Row>()
         rows += Row.Section("Video")
-        if (tokens.isEmpty()) rows += Row.Info("Sin videos en el equipo") { "Importa uno propio para que el modo arte y el protector muestren video." }
+        if (tokens.isEmpty()) rows += Row.Info(t("Sin videos en el equipo", "No videos on device")) { t("Importa uno propio para que el modo arte y el protector muestren video.", "Import your own video so Art Mode and Screensaver can play it.") }
         else rows += Row.Choice("Video", names, { tokens.indexOf(p.videoChoice).coerceAtLeast(0) }, { p.videoChoice = tokens[it]; host.changed(ShelfPrefs.VIDEO_CHOICE) })
-        rows += Row.Act("Agregar o quitar videos", { "Mis fondos" }) { panel.push(myBackgroundsPage()) }
-        rows += Row.Info("") { "MP4, MOV, M4V o MKV (H.264 o H.265) hasta 1080p. Puedes bajarlo con Downloader al almacenamiento y luego importarlo." }
+        rows += Row.Act(t("Agregar o quitar videos", "Add or remove videos"), { t("Mis fondos", "My backgrounds") }) { panel.push(myBackgroundsPage()) }
+        rows += Row.Info("") { t("MP4, MOV, M4V o MKV (H.264 o H.265) hasta 1080p. Puedes bajarlo con Downloader al almacenamiento y luego importarlo.", "MP4, MOV, M4V or MKV (H.264 or H.265) up to 1080p. Download to storage or transfer via QR.") }
         return rows
     }
 
@@ -239,46 +244,46 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val videos = VideoLibrary.userVideos(ctx)
         val tokens = ArrayList<String>(); val names = ArrayList<String>()
         if (monet) { tokens += VideoPolicy.MONET; names += "Monet" }
-        for (v in videos) { tokens += VideoPolicy.userChoice(v.name); names += "Propio: " + short(v.file.nameWithoutExtension, 22) }
-        if (tokens.size > 1) { tokens += VideoPolicy.ALL; names += "Alternar todos" }
+        for (v in videos) { tokens += VideoPolicy.userChoice(v.name); names += t("Propio: ", "Custom: ") + short(v.file.nameWithoutExtension, 22) }
+        if (tokens.size > 1) { tokens += VideoPolicy.ALL; names += t("Alternar todos", "Shuffle all") }
         return tokens to names
     }
 
-    fun interfacePage(): Page = Page("Barra superior e inicio", listOf(
-        Row.Section("Reloj y barra superior"),
-        choice("Reloj", ShelfPrefs.CLOCK24, listOf("24 h", "12 h"), listOf(true, false), { p.clock24 }, { p.clock24 = it }),
-        toggle("Clima", ShelfPrefs.WEATHER_ON, "Activado", "Desactivado", { p.weatherOn }, { p.weatherOn = it }),
-        Row.Act("Ubicación y región", { p.cityName }) { panel.push(locationPage()) },
-        Row.Section("Pantalla de inicio"),
-        choice("Favoritas en el dock (máx.)", ShelfPrefs.DOCK_MAX, listOf("4", "5", "6", "7"), listOf(4, 5, 6, 7), { p.dockMax }, { p.dockMax = it }),
-        Row.Section("Contenido de las apps"),
+    fun interfacePage(): Page = Page(t("Barra superior e inicio", "Top bar & home"), listOf(
+        Row.Section(t("Reloj y barra superior", "Clock & top bar")),
+        choice(t("Reloj", "Clock"), ShelfPrefs.CLOCK24, listOf("24 h", "12 h"), listOf(true, false), { p.clock24 }, { p.clock24 = it }),
+        toggle(t("Clima", "Weather"), ShelfPrefs.WEATHER_ON, t("Activado", "On"), t("Desactivado", "Off"), { p.weatherOn }, { p.weatherOn = it }),
+        Row.Act(t("Ubicación y región", "Location & region"), { p.cityName }) { panel.push(locationPage()) },
+        Row.Section(t("Pantalla de inicio", "Home screen")),
+        choice(t("Favoritas en el dock (máx.)", "Dock favorites (max)"), ShelfPrefs.DOCK_MAX, listOf("4", "5", "6", "7"), listOf(4, 5, 6, 7), { p.dockMax }, { p.dockMax = it }),
+        Row.Section(t("Contenido de las apps", "App channels")),
         // Al cambiar se redibuja la página: el texto de abajo depende de ambos ajustes
-        toggle("Recomendados al enfocar una app", ShelfPrefs.TOP_SHELF, "Mostrar", "Ocultar", { p.topShelf }, { p.topShelf = it; main.post { panel.rebuild() } }),
-        toggle("Continuar viendo (Todas las apps)", ShelfPrefs.CONTINUE_ROW, "Mostrar", "Ocultar", { p.continueRow }, { p.continueRow = it; main.post { panel.rebuild() } }),
-        Row.Info("") { if (!p.topShelf && !p.continueRow) "Con ambos ocultos Lienzo no lee el historial ni las recomendaciones de tus apps." else "Lo que muestran viene de cada app (Netflix, YouTube, Disney+ y otras)." },
+        toggle(t("Recomendados al enfocar una app", "Top Shelf on app focus"), ShelfPrefs.TOP_SHELF, t("Mostrar", "Show"), t("Ocultar", "Hide"), { p.topShelf }, { p.topShelf = it; main.post { panel.rebuild() } }),
+        toggle(t("Continuar viendo (Todas las apps)", "Continue Watching (All apps)"), ShelfPrefs.CONTINUE_ROW, t("Mostrar", "Show"), t("Ocultar", "Hide"), { p.continueRow }, { p.continueRow = it; main.post { panel.rebuild() } }),
+        Row.Info("") { if (!p.topShelf && !p.continueRow) t("Con ambos ocultos Lienzo no lee el historial ni las recomendaciones de tus apps.", "When both are hidden, Lienzo does not read app playback history or recommendations.") else t("Lo que muestran viene de cada app (Netflix, YouTube, Disney+ y otras).", "Content comes from each installed app (Netflix, YouTube, Disney+, etc.).") },
     ))
 
-    fun appsAndIconsPage(): Page = Page("Apps e íconos", listOf(
-        Row.Section("Íconos"),
-        choice("Estilo de íconos", ShelfPrefs.ICON_ORIGINAL, listOf("Adaptado", "Original sin procesar"), listOf(false, true), { p.iconOriginal }, { p.iconOriginal = it }),
-        Row.Act("Regenerar íconos") { host.regenerateIcons() },
-        Row.Section("Gestión de apps"),
-        Row.Act("Restaurar apps ocultas", { val n = host.hiddenCount(); if (n == 0) "Ninguna oculta" else "$n ${if (n == 1) "oculta" else "ocultas"}" }) { host.restoreHidden() },
-        Row.Act("Restablecer orden y favoritas", { if (confirmReset) "OK de nuevo para confirmar" else "" }) {
+    fun appsAndIconsPage(): Page = Page(t("Apps e íconos", "Apps & icons"), listOf(
+        Row.Section(t("Íconos", "Icons")),
+        choice(t("Estilo de íconos", "Icon style"), ShelfPrefs.ICON_ORIGINAL, listOf(t("Adaptado", "Adapted"), t("Original sin procesar", "Unprocessed original")), listOf(false, true), { p.iconOriginal }, { p.iconOriginal = it }),
+        Row.Act(t("Regenerar íconos", "Regenerate icons")) { host.regenerateIcons() },
+        Row.Section(t("Gestión de apps", "App management")),
+        Row.Act(t("Restaurar apps ocultas", "Restore hidden apps"), { val n = host.hiddenCount(); if (n == 0) t("Ninguna oculta", "None hidden") else "$n ${if (n == 1) t("oculta", "hidden") else t("ocultas", "hidden")}" }) { host.restoreHidden() },
+        Row.Act(t("Restablecer orden y favoritas", "Reset order & favorites"), { if (confirmReset) t("OK de nuevo para confirmar", "Press OK again to confirm") else "" }) {
             if (confirmReset) { confirmReset = false; host.resetOrder() } else confirmReset = true
         },
     ))
 
-    fun powerAndSystemPage(): Page = Page("Sistema y energía", listOfNotNull(
-        Row.Section("Inicio al encender"),
-        choice("Al encender el equipo", ShelfPrefs.OPEN_ON_START, listOf("Inicio (Lienzo)", "TV en vivo", "Última entrada"), listOf("home", "livetv", "last_input"), { p.openOnStart }, { p.openOnStart = it }),
-        Row.Section("Apagado nocturno"),
-        toggle("Apagado por inactividad", ShelfPrefs.NIGHT_ON, "Activado", "Desactivado", { p.nightOn }, { p.nightOn = it }),
-        Row.Choice("Desde", halfHours, { (p.nightFromMin / 30).coerceIn(0, 47) }, { p.nightFromMin = it * 30; host.changed(ShelfPrefs.NIGHT_FROM) }),
-        Row.Choice("Hasta", halfHours, { (p.nightToMin / 30).coerceIn(0, 47) }, { p.nightToMin = it * 30; host.changed(ShelfPrefs.NIGHT_TO) }),
-        choice("Inactividad", ShelfPrefs.NIGHT_IDLE, listOf("30 min", "60 min", "90 min", "120 min"), listOf(30, 60, 90, 120), { p.nightIdleMin }, { p.nightIdleMin = it }),
-        Row.Info("Permiso") { if (NightMode.hasPermission(ctx)) "Concedido" else "Falta el permiso de ajustes seguros" },
-        if (NightMode.hasPermission(ctx)) null else Row.Act("Conceder sin PC", { "Con la depuración por red del equipo" }) { panel.push(setupPage()) },
+    fun powerAndSystemPage(): Page = Page(t("Sistema y energía", "System & power"), listOfNotNull(
+        Row.Section(t("Inicio al encender", "Startup behavior")),
+        choice(t("Al encender el equipo", "On power on"), ShelfPrefs.OPEN_ON_START, listOf(t("Inicio (Lienzo)", "Home (Lienzo)"), t("TV en vivo", "Live TV"), t("Última entrada", "Last input")), listOf("home", "livetv", "last_input"), { p.openOnStart }, { p.openOnStart = it }),
+        Row.Section(t("Apagado nocturno", "Night auto-off")),
+        toggle(t("Apagado por inactividad", "Idle sleep"), ShelfPrefs.NIGHT_ON, t("Activado", "On"), t("Desactivado", "Off"), { p.nightOn }, { p.nightOn = it }),
+        Row.Choice(t("Desde", "From"), halfHours, { (p.nightFromMin / 30).coerceIn(0, 47) }, { p.nightFromMin = it * 30; host.changed(ShelfPrefs.NIGHT_FROM) }),
+        Row.Choice(t("Hasta", "Until"), halfHours, { (p.nightToMin / 30).coerceIn(0, 47) }, { p.nightToMin = it * 30; host.changed(ShelfPrefs.NIGHT_TO) }),
+        choice(t("Inactividad", "Idle timeout"), ShelfPrefs.NIGHT_IDLE, listOf("30 min", "60 min", "90 min", "120 min"), listOf(30, 60, 90, 120), { p.nightIdleMin }, { p.nightIdleMin = it }),
+        Row.Info(t("Permiso", "Permission")) { if (NightMode.hasPermission(ctx)) t("Concedido", "Granted") else t("Falta el permiso de ajustes seguros", "Missing WRITE_SECURE_SETTINGS permission") },
+        if (NightMode.hasPermission(ctx)) null else Row.Act(t("Conceder sin PC", "Grant without PC"), { t("Con la depuración por red del equipo", "Via device network debugging") }) { panel.push(setupPage()) },
     ))
 
     // ---- Configuración sin PC (ADB local) ----
@@ -288,76 +293,82 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     private var confirmStock = false
 
     /** Lo que antes pedía adb desde un computador: permisos, servicio de botones, inicio/protector y volver al original. */
-    fun setupPage(): Page = Page("Configuración sin PC", listOf(
-        Row.Section("Estado"),
-        Row.Info("Permisos") {
+    fun setupPage(): Page = Page(t("Configuración sin PC", "PC-free setup"), listOf(
+        Row.Section(t("Estado", "Status")),
+        Row.Info(t("Permisos", "Permissions")) {
             val ok = listOf("android.permission.READ_TV_LISTINGS", "android.permission.WRITE_SECURE_SETTINGS")
                 .count { ctx.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
-            if (ok == 2) "Concedidos" else "Faltan ${2 - ok} de 2"
+            if (ok == 2) t("Concedidos", "Granted") else t("Faltan ${2 - ok} de 2", "Missing ${2 - ok} of 2")
         },
-        Row.Info("Servicio de botones") { if (KeyMap.serviceRunning(ctx)) "Activo" else "Inactivo" },
-        Row.Info("Resultado") { setupStatus.ifEmpty { "Sin ejecutar" } },
-        Row.Section("Acciones"),
-        Row.Act("Conceder permisos y activar botones", { "Top Shelf, apagado nocturno, alarma y control" }) {
+        Row.Info(t("Servicio de botones", "Button service")) { if (KeyMap.serviceRunning(ctx)) t("Activo", "Active") else t("Inactivo", "Inactive") },
+        Row.Info(t("Resultado", "Result")) { setupStatus.ifEmpty { t("Sin ejecutar", "Not run yet") } },
+        Row.Section(t("Acciones", "Actions")),
+        Row.Act(t("Conceder permisos y activar botones", "Grant permissions & enable buttons"), { t("Top Shelf, apagado nocturno, alarma y control", "Top Shelf, night sleep, alarm, and remote") }) {
             runSetup { cl.deco.shelf.service.SelfSetup.permissionsAndKeys(ctx, it) }
         },
-        Row.Act("Usar Lienzo como inicio y protector") { runSetup { cl.deco.shelf.service.SelfSetup.makeDefault(ctx, it) } },
-        Row.Act("Deshabilitar launcher original (ahorra RAM)", { "Libera 150-250 MB en Google TV; reversible" }) {
+        Row.Act(t("Usar Lienzo como inicio y protector", "Set Lienzo as Home & screensaver")) { runSetup { cl.deco.shelf.service.SelfSetup.makeDefault(ctx, it) } },
+        Row.Act(t("Deshabilitar launcher original (ahorra RAM)", "Disable stock launcher (saves RAM)"), { t("Libera 150-250 MB en Google TV; reversible", "Frees 150-250 MB on Google TV; reversible") }) {
             runSetup { cl.deco.shelf.service.SelfSetup.disableStockLauncher(ctx, it) }
         },
-        Row.Act("Limpiar bloatware (reversible)", { "Deshabilita apps de relleno conocidas sin borrar datos" }) {
+        Row.Act(t("Limpiar bloatware (reversible)", "Debloat bloatware (reversible)"), { t("Deshabilita apps de relleno conocidas sin borrar datos", "Disables known bloatware without deleting data") }) {
             runSetup { cl.deco.shelf.service.SelfSetup.debloat(ctx, it) }
         },
-        Row.Act("Restaurar apps deshabilitadas", { val n = p.disabledByLienzo.size; if (n == 0) "Ninguna registrada" else "$n deshabilitadas por Lienzo" }) {
+        Row.Act(t("Restaurar apps deshabilitadas", "Restore disabled apps"), { val n = p.disabledByLienzo.size; if (n == 0) t("Ninguna registrada", "None recorded") else t("$n deshabilitadas por Lienzo", "$n disabled by Lienzo") }) {
             runSetup { cl.deco.shelf.service.SelfSetup.restoreDebloat(ctx, it) }
         },
-        Row.Act("Volver al launcher original", { if (confirmStock) "OK de nuevo para confirmar" else "Lienzo queda instalado" }) {
+        Row.Act(t("Volver al launcher original", "Restore stock launcher"), { if (confirmStock) t("OK de nuevo para confirmar", "Press OK again to confirm") else t("Lienzo queda instalado", "Lienzo remains installed") }) {
             if (!confirmStock) { confirmStock = true; panel.rebuild() }
             else { confirmStock = false; runSetup { cl.deco.shelf.service.SelfSetup.restoreStock(ctx, it) } }
         },
-        Row.Info("Requisito") { "Depuración por red (o USB) activa en Opciones de desarrollador. La primera vez la TV pregunta \"¿Permitir depuración por USB?\": marca \"Permitir siempre\" y elige Permitir." },
-        Row.Info("Seguridad") { "Lienzo solo ejecuta estos comandos fijos. Si no usas la depuración, desactívala al terminar: deja el equipo abierto a la red local." },
+        Row.Info(t("Requisito", "Requirement")) { t("Depuración por red (o USB) activa en Opciones de desarrollador. La primera vez la TV pregunta \"¿Permitir depuración por USB?\": marca \"Permitir siempre\" y elige Permitir.", "Network (or USB) debugging enabled in Developer Options. On first run TV prompts \"Allow USB debugging?\": check \"Always allow\" and tap Allow.") },
+        Row.Info(t("Seguridad", "Security")) { t("Lienzo solo ejecuta estos comandos fijos. Si no usas la depuración, desactívala al terminar: deja el equipo abierto a la red local.", "Lienzo runs only these fixed commands. Disable debugging afterward if you don't need it.") },
     ), onShow = { confirmStock = false })
 
     /** Ejecuta un paso de SelfSetup en segundo plano y muestra el avance en la fila Resultado. */
     private fun runSetup(task: (() -> Unit) -> String) {
         if (setupBusy) return
         setupBusy = true
-        setupStatus = "Conectando…"
+        setupStatus = t("Conectando…", "Connecting…")
         panel.rebuild()
         io.execute {
-            val r = task { main.post { setupStatus = "En la TV marca \"Permitir siempre\" y elige Permitir (hasta 60 s)"; panel.rebuild() } }
+            val r = task { main.post { setupStatus = t("En la TV marca \"Permitir siempre\" y elige Permitir (hasta 60 s)", "On TV check \"Always allow\" and tap Allow (up to 60 s)"); panel.rebuild() } }
             main.post { setupBusy = false; setupStatus = r; panel.rebuild() }
         }
     }
 
-    fun aboutAndMaintenancePage(): Page = Page("Mantenimiento e información", listOf(
+    fun aboutAndMaintenancePage(): Page = Page(t("Mantenimiento e información", "Maintenance & about"), listOf(
         // Memoria de video, RAM, tiempo encendido y "Liberar cachés" viven en el panel Salud (antes se repetían aquí)
-        Row.Section("Diagnóstico y salud"),
-        Row.Act("Salud del equipo", { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) "Reinicio recomendado" else "Memoria, encendido y cachés" }) { host.openHealth() },
-        Row.Bar("Almacenamiento (/data)", { storageText() }, { storageUsed() }),
-        Row.Info("Memoria de Lienzo (PSS)") { "${host.pss()} · objetivo en reposo < 40 MB" },
-        Row.Section("Actualizaciones"),
-        Row.Act("Buscar actualizaciones", { host.updateStatus() }) { host.checkUpdates() },
-        choice("Actualizaciones automáticas", ShelfPrefs.UPDATE_AUTO, listOf("Buscar y avisar", "Desactivadas"), listOf(true, false), { p.updateAuto }, { p.updateAuto = it }),
-        Row.Section("Copia de seguridad"),
-        Row.Act("Exportar configuración") { lastBackup = host.exportBackup(); panel.rebuild() },
-        Row.Info("Respaldo") { lastBackup.ifEmpty { "Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)" } },
-        Row.Act("Restaurar configuración") { panel.push(restorePage()) },
-        Row.Act("Asistente de configuración") { panel.push(wizard()) },
-        Row.Act("Configuración sin PC", { if (cl.deco.shelf.service.SelfSetup.needed(ctx)) "Permisos o botones pendientes" else "Todo concedido" }) { panel.push(setupPage()) },
-        Row.Section("Acerca de Lienzo"),
-        Row.Info("Versión") { version },
-        Row.Info("Créditos") { "Obras de dominio público vía Wikimedia Commons; feriados Nager.Date; watchdog y ADB local: Free My TV y OmarchyTV (MIT)" },
-        Row.Info("Clima") { "Weather data by Open-Meteo.com, licencia CC BY 4.0" },
+        Row.Section(t("Diagnóstico y salud", "Diagnostics & health")),
+        Row.Act(t("Salud del equipo", "Device health"), { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) t("Reinicio recomendado", "Restart recommended") else t("Memoria, encendido y cachés", "Memory, uptime & caches") }) { host.openHealth() },
+        Row.Bar(t("Almacenamiento (/data)", "Storage (/data)"), { storageText() }, { storageUsed() }),
+        Row.Info(t("Memoria de Lienzo (PSS)", "Lienzo memory (PSS)")) { "${host.pss()} · ${t("objetivo en reposo < 40 MB", "idle target < 40 MB")}" },
+        Row.Section(t("Actualizaciones", "Updates")),
+        Row.Act(t("Buscar actualizaciones", "Check for updates"), { host.updateStatus() }) { host.checkUpdates() },
+        choice(t("Actualizaciones automáticas", "Automatic updates"), ShelfPrefs.UPDATE_AUTO, listOf(t("Buscar y avisar", "Check & notify"), t("Desactivadas", "Off")), listOf(true, false), { p.updateAuto }, { p.updateAuto = it }),
+        Row.Section(t("Copia de seguridad", "Backup")),
+        Row.Act(t("Exportar configuración", "Export settings")) { lastBackup = host.exportBackup(); panel.rebuild() },
+        Row.Info(t("Respaldo", "Backup path")) { lastBackup.ifEmpty { t("Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)", "Folder: Android/data/cl.deco.shelf/files/backup (adb pull)") } },
+        Row.Act(t("Restaurar configuración", "Restore settings")) { panel.push(restorePage()) },
+        Row.Act(t("Respaldo desde el celular (QR)", "Phone backup (QR)"), { t("Descargar o restaurar JSON por Wi-Fi", "Download or restore JSON over Wi-Fi") }) { host.openLanTransfer() },
+        Row.Act(t("Asistente de configuración", "Setup wizard")) { panel.push(wizard()) },
+        Row.Act(t("Configuración sin PC", "PC-free setup"), { if (cl.deco.shelf.service.SelfSetup.needed(ctx)) t("Permisos o botones pendientes", "Permissions or buttons pending") else t("Todo concedido", "All granted") }) { panel.push(setupPage()) },
+        Row.Section(t("Acerca de Lienzo", "About Lienzo")),
+        Row.Info(t("Versión", "Version")) { version },
+        Row.Info(t("Créditos", "Credits")) { t("Obras de dominio público vía Wikimedia Commons; feriados Nager.Date; watchdog y ADB local: Free My TV y OmarchyTV (MIT)", "Public-domain artworks via Wikimedia Commons; holidays by Nager.Date; watchdog & local ADB inspired by Free My TV & OmarchyTV (MIT)") },
+        Row.Info(t("Clima", "Weather")) { "Weather data by Open-Meteo.com, licencia CC BY 4.0" },
     ))
 
     // ---- Mis fondos ----
 
-    private val sourceNames = listOf("Colección curada", "Mis fondos", "Ambas", "Color dinámico")
+    private val sourceNames get() = listOf(
+        t("Colección curada", "Curated collection"),
+        t("Mis fondos", "My backgrounds"),
+        t("Ambas", "Both"),
+        t("Color dinámico", "Dynamic color"),
+    )
     private fun sourceName() = sourceNames[p.bgSource.coerceIn(0, sourceNames.size - 1)]
 
-    private fun counts(i: Int, v: Int) = "$i ${if (i == 1) "imagen" else "imágenes"}, $v ${if (v == 1) "video" else "videos"}"
+    private fun counts(i: Int, v: Int) = "$i ${if (i == 1) t("imagen", "image") else t("imágenes", "images")}, $v ${if (v == 1) t("video", "video") else t("videos", "videos")}"
 
     private fun short(n: String, max: Int = 28) = if (n.length <= max) n else n.take(max - 1) + "…"
 
@@ -365,27 +376,28 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     fun myBackgroundsPage(): Page {
         val ua = Graph.from(ctx).userArt
-        return Page("Mis fondos", listOf(
-            Row.Section("Importar"),
-            Row.Act("Importar imágenes y videos", { "USB o almacenamiento del equipo" }) { host.importFromUsb() },
-            Row.Act("Gestionar mis fondos", {
+        return Page(t("Mis fondos", "My backgrounds"), listOf(
+            Row.Section(t("Importar", "Import")),
+            Row.Act(t("Importar imágenes y videos", "Import images & videos"), { t("USB o almacenamiento del equipo", "USB or internal storage") }) { host.importFromUsb() },
+            Row.Act(t("Enviar desde el celular (QR)", "Send from phone (QR)"), { t("Subir fondos o videos por Wi-Fi", "Upload wallpapers or videos over Wi-Fi") }) { host.openLanTransfer() },
+            Row.Act(t("Gestionar mis fondos", "Manage my backgrounds"), {
                 val n = allCollections().size
-                counts(ua.entries().size, VideoLibrary.all(ctx).size) + if (n > 0) " · $n ${if (n == 1) "colección" else "colecciones"}" else ""
+                counts(ua.entries().size, VideoLibrary.all(ctx).size) + if (n > 0) " · $n ${if (n == 1) t("colección", "collection") else t("colecciones", "collections")}" else ""
             }) { pendingDelete = null; panel.push(managePage()) },
-            Row.Section("Uso"),
-            Row.Info("Uso") { "La fuente del fondo (obras, Mis fondos, ambas o color dinámico) se elige en Pantalla y fondos." },
-            Row.Info("Video") { "El video del modo arte y del protector se elige en Modo arte y protector." },
-            Row.Section("Cómo preparar los archivos"),
-            Row.Info("Colecciones") { "Cada carpeta es una colección: lo que copies en Pictures/Lienzo-Warhammer 40k queda en \"Warhammer 40k\". Se elige en Pantalla y fondos." },
-            Row.Info("Imágenes") { "JPG, PNG o WebP en cualquier carpeta. Se ajustan a 1920x1080 (recorte centrado; las verticales llevan passe-partout y solo salen en el protector)." },
-            Row.Info("Videos") { "MP4, MOV, M4V o MKV con H.264 o H.265, hasta 1920x1080 y 60 fps. 4K u otros formatos pueden afectar la reproducción de Netflix y se rechazan." },
-            Row.Info("Espacio") { "Lienzo deja siempre al menos 500 MB libres en el equipo." },
+            Row.Section(t("Uso", "Usage")),
+            Row.Info(t("Uso", "Source")) { t("La fuente del fondo (obras, Mis fondos, ambas o color dinámico) se elige en Pantalla y fondos.", "Choose the background source (artworks, My backgrounds, both, or dynamic color) in Display & backgrounds.") },
+            Row.Info("Video") { t("El video del modo arte y del protector se elige en Modo arte y protector.", "Choose the ambient video for Art Mode and Screensaver in Art mode & screensaver.") },
+            Row.Section(t("Cómo preparar los archivos", "Preparing files")),
+            Row.Info(t("Colecciones", "Collections")) { t("Cada carpeta es una colección: lo que copies en Pictures/Lienzo-Warhammer 40k queda en \"Warhammer 40k\". Se elige en Pantalla y fondos.", "Each folder is a collection: files under Pictures/Lienzo-Name appear under \"Name\" in Display & backgrounds.") },
+            Row.Info(t("Imágenes", "Images")) { t("JPG, PNG o WebP en cualquier carpeta. Se ajustan a 1920x1080 (recorte centrado; las verticales llevan passe-partout y solo salen en el protector).", "JPG, PNG, or WebP in any folder. Scaled to 1920x1080 (center crop; portrait photos get a gallery mat in the screensaver).") },
+            Row.Info(t("Videos", "Videos")) { t("MP4, MOV, M4V o MKV con H.264 o H.265, hasta 1920x1080 y 60 fps. 4K u otros formatos pueden afectar la reproducción de Netflix y se rechazan.", "MP4, MOV, M4V or MKV (H.264/H.265), up to 1920x1080 @ 60 fps. 4K or other codecs are rejected to protect video decoders.") },
+            Row.Info(t("Espacio", "Storage")) { t("Lienzo deja siempre al menos 500 MB libres en el equipo.", "Lienzo always preserves at least 500 MB free on the device.") },
         ))
     }
 
     /** Tras importar: reconstruye la página Mis fondos para que las opciones de video y los conteos queden al día. */
     fun refreshFondos() {
-        if (panel.isOpen && panel.currentTitle() == "Mis fondos") { panel.back(); panel.push(myBackgroundsPage()) }
+        if (panel.isOpen && panel.currentTitle() == t("Mis fondos", "My backgrounds")) { panel.back(); panel.push(myBackgroundsPage()) }
     }
 
     private fun managePage(): Page {
@@ -393,8 +405,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val allImgs = ua.entries()
         val allVids = VideoLibrary.all(ctx)
         val rows = ArrayList<Row>()
-        if (allImgs.isEmpty() && allVids.isEmpty()) rows += Row.Info("") { "Todavía no importaste nada. Usa Importar imágenes y videos." }
-        fun confirmable(key: String, label: String, size: Long, delete: () -> Unit) = Row.Act(short(label), { if (pendingDelete == key) "OK de nuevo para borrar" else SpaceRules.format(size) }) {
+        if (allImgs.isEmpty() && allVids.isEmpty()) rows += Row.Info("") { t("Todavía no importaste nada. Usa Importar imágenes y videos.", "Nothing imported yet. Use Import images & videos.") }
+        fun confirmable(key: String, label: String, size: Long, delete: () -> Unit) = Row.Act(short(label), { if (pendingDelete == key) t("OK de nuevo para borrar", "Press OK again to delete") else SpaceRules.format(size) }) {
             if (pendingDelete == key) {
                 pendingDelete = null
                 io.execute {
@@ -413,12 +425,12 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             val imgs = allImgs.filter { it.collection == col }
             val vids = allVids.filter { it.collection == col }
             rows += Row.Section("$col (${counts(imgs.size, vids.size)})")
-            rows += confirmable("c:$col", "Borrar colección completa", imgs.sumOf { it.bytes } + vids.sumOf { it.file.length() }) {
+            rows += confirmable("c:$col", t("Borrar colección completa", "Delete whole collection"), imgs.sumOf { it.bytes } + vids.sumOf { it.file.length() }) {
                 ua.removeCollection(col)
                 VideoLibrary.removeCollection(ctx, col)
                 if (p.collection == col) p.collection = ""
             }
-            imgs.forEach { e -> rows += confirmable("i:${e.id}", e.title + if (e.home) "" else " (vertical)", e.bytes) { ua.remove(e.id) } }
+            imgs.forEach { e -> rows += confirmable("i:${e.id}", e.title + if (e.home) "" else t(" (vertical)", " (portrait)"), e.bytes) { ua.remove(e.id) } }
             vids.forEach { v ->
                 rows += confirmable("v:${v.name}", "Video: " + v.file.name, v.file.length()) {
                     VideoLibrary.delete(ctx, v.name)
@@ -426,8 +438,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
                 }
             }
         }
-        rows += Row.Info("") { "OK sobre un elemento lo marca; OK de nuevo lo borra." }
-        return Page("Gestionar mis fondos", rows)
+        rows += Row.Info("") { t("OK sobre un elemento lo marca; OK de nuevo lo borra.", "Press OK on an item to arm delete; OK again to confirm.") }
+        return Page(t("Gestionar mis fondos", "Manage my backgrounds"), rows)
     }
 
     // ---- Asistente de configuración ----
@@ -440,32 +452,32 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     private fun openActivity(i: Intent): Boolean = try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (_: Exception) { false }
 
     private fun artState(): Pair<Boolean, String> {
-        val (d, t) = try { Graph.from(ctx).art.downloadProgress() } catch (_: Throwable) { 0 to 0 }
+        val (d, tCnt) = try { Graph.from(ctx).art.downloadProgress() } catch (_: Throwable) { 0 to 0 }
         return when {
-            t == 0 -> true to "Listo"
-            d >= t -> true to "Listo: $d obras"
-            else -> false to "$d de $t obras"
+            tCnt == 0 -> true to t("Listo", "Ready")
+            d >= tCnt -> true to t("Listo: $d obras", "Ready: $d artworks")
+            else -> false to t("$d de $tCnt obras", "$d of $tCnt artworks")
         }
     }
 
-    fun wizard(): Page = Page("Bienvenido a Lienzo", listOf(
-        Row.Info("") { "Lienzo es tu pantalla de inicio: una obra de arte de fondo, tus apps favoritas en el dock y lo que estabas viendo." },
-        Row.Info("") { "Este asistente tarda un minuto. Puedes repetirlo desde Ajustes, en Mantenimiento e información." },
-        Row.Act("Comenzar") { panel.push(wizardTopShelf()) },
+    fun wizard(): Page = Page(t("Bienvenido a Lienzo", "Welcome to Lienzo"), listOf(
+        Row.Info("") { t("Lienzo es tu pantalla de inicio: una obra de arte de fondo, tus apps favoritas en el dock y lo que estabas viendo.", "Lienzo is your home screen: curated fine art behind your favorite dock apps and Watch Next channels.") },
+        Row.Info("") { t("Este asistente tarda un minuto. Puedes repetirlo desde Ajustes, en Mantenimiento e información.", "This setup takes one minute. You can re-run it anytime from Settings > Maintenance & about.") },
+        Row.Act(t("Comenzar", "Get started")) { panel.push(wizardTopShelf()) },
     ))
 
-    private fun wizardTopShelf(): Page = Page("Contenido de tus apps", listOf(
-        Row.Info("Permiso de lectura de Top Shelf") { if (ctx.checkSelfPermission("android.permission.READ_TV_LISTINGS") == android.content.pm.PackageManager.PERMISSION_GRANTED) "Concedido" else "Pendiente" },
-        Row.Info("") { "Con este permiso Lienzo muestra lo que sigues viendo (Watch Next) de Netflix, YouTube, Disney+ y otras." },
-        Row.Act("Conceder permiso") { host.requestTvPermission() },
-        Row.Act("Siguiente") { panel.push(wizardArt()) },
+    private fun wizardTopShelf(): Page = Page(t("Contenido de tus apps", "App content"), listOf(
+        Row.Info(t("Permiso de lectura de Top Shelf", "Top Shelf read permission")) { if (ctx.checkSelfPermission("android.permission.READ_TV_LISTINGS") == android.content.pm.PackageManager.PERMISSION_GRANTED) t("Concedido", "Granted") else t("Pendiente", "Pending") },
+        Row.Info("") { t("Con este permiso Lienzo muestra lo que sigues viendo (Watch Next) de Netflix, YouTube, Disney+ y otras.", "Allows Lienzo to show Watch Next rows from Netflix, YouTube, Disney+, and other apps.") },
+        Row.Act(t("Conceder permiso", "Grant permission")) { host.requestTvPermission() },
+        Row.Act(t("Siguiente", "Next")) { panel.push(wizardArt()) },
     ))
 
     /** Un solo refresco pendiente del asistente: rebuild() vuelve a llamar onShow y antes cada tick duplicaba la cadena (ANR). */
     private var wizardTick: Runnable? = null
 
     private fun wizardArt(): Page {
-        val title = "Colección de arte"
+        val title = t("Colección de arte", "Art collection")
         val (ready, _) = artState()
         fun tick() {
             wizardTick?.let { main.removeCallbacks(it) }
@@ -478,43 +490,43 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             main.postDelayed(r, 1000)
         }
         val rows = ArrayList<Row>()
-        rows += Row.Info("Estado") { artState().second }
-        rows += Row.Bar("Descarga", { artState().second }, { Graph.from(ctx).art.downloadProgress().let { (d, t) -> if (t > 0) d.toFloat() / t else 1f } })
+        rows += Row.Info(t("Estado", "Status")) { artState().second }
+        rows += Row.Bar(t("Descarga", "Download"), { artState().second }, { Graph.from(ctx).art.downloadProgress().let { (d, tot) -> if (tot > 0) d.toFloat() / tot else 1f } })
         // Total real del catálogo (~0,4 MB por obra a 1920x1080)
         val total = try { Graph.from(ctx).art.downloadProgress().second } catch (_: Throwable) { 0 }
-        if (!ready) rows += Row.Act(if (total > 0) "Descargar $total obras (~${(total * 0.4).toInt()} MB)" else "Descargar la colección") {
+        if (!ready) rows += Row.Act(if (total > 0) t("Descargar $total obras (~${(total * 0.4).toInt()} MB)", "Download $total artworks (~${(total * 0.4).toInt()} MB)") else t("Descargar la colección", "Download collection")) {
             try { Graph.from(ctx).art.startFullDownload() } catch (_: Throwable) {}
             tick()
         }
-        rows += Row.Info("") { "La descarga sigue en segundo plano aunque salgas de esta pantalla." }
-        rows += Row.Act("Siguiente") { panel.push(wizardHome()) }
-        return Page(title, rows, onShow = { if (!ready && artState().second != "Listo" && Graph.from(ctx).art.downloadProgress().first > 0) tick() })
+        rows += Row.Info("") { t("La descarga sigue en segundo plano aunque salgas de esta pantalla.", "Downloads continue in the background even if you leave this screen.") }
+        rows += Row.Act(t("Siguiente", "Next")) { panel.push(wizardHome()) }
+        return Page(title, rows, onShow = { if (!ready && artState().second != t("Listo", "Ready") && Graph.from(ctx).art.downloadProgress().first > 0) tick() })
     }
 
     private fun wizardHome(): Page {
         val rows = ArrayList<Row>()
-        rows += Row.Info("Lienzo como pantalla de inicio") { if (isHome()) "Sí, Lienzo ya es tu Home" else "No" }
+        rows += Row.Info(t("Lienzo como pantalla de inicio", "Lienzo as Home screen")) { if (isHome()) t("Sí, Lienzo ya es tu Home", "Yes, Lienzo is already your Home") else t("No", "No") }
         if (!isHome()) {
-            rows += Row.Act("Abrir ajustes de Home") {
-                if (!openActivity(Intent(Settings.ACTION_HOME_SETTINGS))) panel.push(Page("Elegir Lienzo como Home", listOf(
-                    Row.Info("") { "Pulsa el botón Home del control y, cuando Android pregunte, elige Lienzo y marca \"Siempre\"." },
+            rows += Row.Act(t("Abrir ajustes de Home", "Open Home settings")) {
+                if (!openActivity(Intent(Settings.ACTION_HOME_SETTINGS))) panel.push(Page(t("Elegir Lienzo como Home", "Set Lienzo as Home"), listOf(
+                    Row.Info("") { t("Pulsa el botón Home del control y, cuando Android pregunte, elige Lienzo y marca \"Siempre\".", "Press Home on your remote and when prompted, pick Lienzo and choose \"Always\".") },
                 )))
             }
         }
-        rows += Row.Act("Siguiente") { panel.push(wizardAdb()) }
-        return Page("Pantalla de inicio", rows)
+        rows += Row.Act(t("Siguiente", "Next")) { panel.push(wizardAdb()) }
+        return Page(t("Pantalla de inicio", "Home screen"), rows)
     }
 
-    private fun wizardAdb(): Page = Page("Funciones avanzadas", listOf(
-        Row.Info("Apagado nocturno") { if (NightMode.hasPermission(ctx)) "Concedido" else "Falta: adb shell pm grant cl.deco.shelf android.permission.WRITE_SECURE_SETTINGS" },
-        Row.Info("Alarma sobre otras apps") { if (Settings.canDrawOverlays(ctx)) "Concedido" else "Falta: adb shell appops set cl.deco.shelf SYSTEM_ALERT_WINDOW allow" },
-        Row.Info("") { "Sin ADB todo lo demás funciona; la alarma y el temporizador abren Lienzo a pantalla completa en lugar de aparecer sobre otras apps." },
-        Row.Act("Siguiente") { panel.push(wizardEnd()) },
+    private fun wizardAdb(): Page = Page(t("Funciones avanzadas", "Advanced features"), listOf(
+        Row.Info(t("Apagado nocturno", "Night auto-off")) { if (NightMode.hasPermission(ctx)) t("Concedido", "Granted") else "Missing: adb shell pm grant cl.deco.shelf android.permission.WRITE_SECURE_SETTINGS" },
+        Row.Info(t("Alarma sobre otras apps", "Alarm overlay")) { if (Settings.canDrawOverlays(ctx)) t("Concedido", "Granted") else "Missing: adb shell appops set cl.deco.shelf SYSTEM_ALERT_WINDOW allow" },
+        Row.Info("") { t("Sin ADB todo lo demás funciona; la alarma y el temporizador abren Lienzo a pantalla completa en lugar de aparecer sobre otras apps.", "Without ADB everything else works; alarms & timers open Lienzo fullscreen instead of overlaying active apps.") },
+        Row.Act(t("Siguiente", "Next")) { panel.push(wizardEnd()) },
     ))
 
-    private fun wizardEnd(): Page = Page("Todo listo", listOf(
-        Row.Info("") { "Pulsa MENU sobre una app para fijarla, renombrarla u ocultarla, y abre Ajustes de Lienzo desde la grilla cuando quieras." },
-        Row.Act("Terminar") { host.finishSettings() },
+    private fun wizardEnd(): Page = Page(t("Todo listo", "All set"), listOf(
+        Row.Info("") { t("Pulsa MENU sobre una app para fijarla, renombrarla u ocultarla, y abre Ajustes de Lienzo desde la grilla cuando quieras.", "Press MENU on any app to pin, rename, or hide it, and open Lienzo Settings from the grid anytime.") },
+        Row.Act(t("Terminar", "Finish")) { host.finishSettings() },
     ))
 
     private fun storage(): Pair<Long, Long> {
@@ -554,30 +566,30 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     )
 
     private fun countryName(cc: String) = countries.firstOrNull { it.second == cc }?.first ?: cc
-    private fun regionName(code: String) = if (code.isEmpty()) "Solo nacionales" else regions.firstOrNull { it.second == code }?.first ?: code
+    private fun regionName(code: String) = if (code.isEmpty()) t("Solo nacionales", "National only") else regions.firstOrNull { it.second == code }?.first ?: code
 
-    fun locationPage(): Page = Page("Ubicación y región", listOf(
-        Row.Section("Clima"),
-        Row.Act("Ciudad", { p.cityName }) { panel.push(cityPage()) },
-        choice("Unidades", ShelfPrefs.FAHRENHEIT, listOf("°C", "°F"), listOf(false, true), { p.fahrenheit }, { p.fahrenheit = it }),
-        Row.Section("Feriados"),
-        Row.Act("País", { countryName(p.holidaysCountry) }) { panel.push(countryPage()) },
-        Row.Act("Región (feriados regionales)", { if (p.holidaysCountry == "CL") regionName(p.holidaysRegion) else "Solo para Chile" }) {
+    fun locationPage(): Page = Page(t("Ubicación y región", "Location & region"), listOf(
+        Row.Section(t("Clima", "Weather")),
+        Row.Act(t("Ciudad", "City"), { p.cityName }) { panel.push(cityPage()) },
+        choice(t("Unidades", "Units"), ShelfPrefs.FAHRENHEIT, listOf("°C", "°F"), listOf(false, true), { p.fahrenheit }, { p.fahrenheit = it }),
+        Row.Section(t("Feriados", "Holidays")),
+        Row.Act(t("País", "Country"), { countryName(p.holidaysCountry) }) { panel.push(countryPage()) },
+        Row.Act(t("Región (feriados regionales)", "Region (regional holidays)"), { if (p.holidaysCountry == "CL") regionName(p.holidaysRegion) else t("Solo para Chile", "Chile only") }) {
             if (p.holidaysCountry == "CL") panel.push(regionPage())
         },
-        Row.Section("Fecha"),
-        choice("Idioma de la fecha", ShelfPrefs.ENGLISH, listOf("Español (Chile)", "English"), listOf(false, true), { p.english }, { p.english = it }),
-        choice("Primer día de la semana", ShelfPrefs.SUNDAY_FIRST, listOf("Lunes", "Domingo"), listOf(false, true), { p.sundayFirst }, { p.sundayFirst = it }),
+        Row.Section(t("Fecha", "Date & Language")),
+        choice("Idioma / Language", ShelfPrefs.ENGLISH, listOf("Español (Chile)", "English"), listOf(false, true), { p.english }, { p.english = it }),
+        choice(t("Primer día de la semana", "First day of week"), ShelfPrefs.SUNDAY_FIRST, listOf(t("Lunes", "Monday"), t("Domingo", "Sunday")), listOf(false, true), { p.sundayFirst }, { p.sundayFirst = it }),
     ))
 
     private fun cityPage(): Page {
         val rows = ArrayList<Row>()
-        rows += Row.Act("Buscar ciudad…") { panel.push(searchPage()) }
-        rows += Row.Section("Ciudades de Chile")
-        for (c in cities) rows += Row.Act(c.name, { if (c.name == p.cityName) "Actual" else "" }) {
+        rows += Row.Act(t("Buscar ciudad…", "Search city…")) { panel.push(searchPage()) }
+        rows += Row.Section(t("Ciudades de Chile", "Chilean cities"))
+        for (c in cities) rows += Row.Act(c.name, { if (c.name == p.cityName) t("Actual", "Current") else "" }) {
             p.setCity(c.name, c.lat, c.lon, c.tz); host.changed(ShelfPrefs.CITY_NAME); panel.back(); panel.rebuild()
         }
-        return Page("Ciudad del clima", rows)
+        return Page(t("Ciudad del clima", "Weather city"), rows)
     }
 
     private fun searchPage(): Page {
@@ -586,14 +598,14 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         lateinit var page: Page
         fun search(q: String) {
             if (q.length < 2) return
-            panel.fillSlot(status, listOf(Row.Info("") { "Buscando…" }))
+            panel.fillSlot(status, listOf(Row.Info("") { t("Buscando…", "Searching…") }))
             io.execute {
                 val res = try { Geocoding.search(ctx, q) } catch (_: Throwable) { null }
                 main.post {
                     if (!panel.isOpen) return@post
                     when {
-                        res == null -> { panel.fillSlot(status, listOf(Row.Info("") { "Sin conexión. Intenta de nuevo." })); panel.fillSlot(slot, emptyList()) }
-                        res.isEmpty() -> { panel.fillSlot(status, listOf(Row.Info("") { "Sin resultados para \"$q\"" })); panel.fillSlot(slot, emptyList()) }
+                        res == null -> { panel.fillSlot(status, listOf(Row.Info("") { t("Sin conexión. Intenta de nuevo.", "No connection. Try again.") })); panel.fillSlot(slot, emptyList()) }
+                        res.isEmpty() -> { panel.fillSlot(status, listOf(Row.Info("") { t("Sin resultados para \"$q\"", "No results for \"$q\"") })); panel.fillSlot(slot, emptyList()) }
                         else -> {
                             panel.fillSlot(status, emptyList())
                             panel.fillSlot(slot, res.map { g ->
@@ -607,18 +619,18 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
                 }
             }
         }
-        page = Page("Buscar ciudad", listOf(Row.Input("Escribe una ciudad y pulsa Buscar", "", true, ::search), status, slot))
+        page = Page(t("Buscar ciudad", "Search city"), listOf(Row.Input(t("Escribe una ciudad y pulsa Buscar", "Enter a city and press Search"), "", true, ::search), status, slot))
         return page
     }
 
     private fun countryPage(): Page {
         val rows = ArrayList<Row>()
-        for ((n, cc) in countries) rows += Row.Act(n, { if (p.holidaysCountry == cc) "Actual" else "" }) { setCountry(cc) }
-        rows += Row.Act("Otro (código ISO)") { panel.push(Page("Código de país (ISO 3166-1)", listOf(Row.Input("Ej.: BR, DE, UY", "", false) { code ->
+        for ((n, cc) in countries) rows += Row.Act(n, { if (p.holidaysCountry == cc) t("Actual", "Current") else "" }) { setCountry(cc) }
+        rows += Row.Act(t("Otro (código ISO)", "Other (ISO code)")) { panel.push(Page(t("Código de país (ISO 3166-1)", "Country code (ISO 3166-1)"), listOf(Row.Input(t("Ej.: BR, DE, UY", "E.g.: US, BR, DE"), "", false) { code ->
             val cc = code.trim().uppercase()
             if (cc.length == 2 && cc.all { it in 'A'..'Z' }) setCountry(cc)
         }))) }
-        return Page("País de feriados", rows)
+        return Page(t("País de feriados", "Holidays country"), rows)
     }
 
     private fun setCountry(cc: String) {
@@ -630,13 +642,13 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         panel.rebuild()
     }
 
-    private fun panelTitleIsLocation() = panel.currentTitle() == "Ubicación y región"
+    private fun panelTitleIsLocation() = panel.currentTitle() == t("Ubicación y región", "Location & region")
 
     private fun regionPage(): Page {
         val rows = ArrayList<Row>()
-        rows += Row.Act("Solo feriados nacionales", { if (p.holidaysRegion.isEmpty()) "Actual" else "" }) { setRegion("") }
-        for ((n, code) in regions) rows += Row.Act(n, { if (p.holidaysRegion == code) "Actual" else "" }) { setRegion(code) }
-        return Page("Región de feriados (Chile)", rows)
+        rows += Row.Act(t("Solo feriados nacionales", "National holidays only"), { if (p.holidaysRegion.isEmpty()) t("Actual", "Current") else "" }) { setRegion("") }
+        for ((n, code) in regions) rows += Row.Act(n, { if (p.holidaysRegion == code) t("Actual", "Current") else "" }) { setRegion(code) }
+        return Page(t("Región de feriados (Chile)", "Holidays region (Chile)"), rows)
     }
 
     private fun setRegion(code: String) {
@@ -649,8 +661,8 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     private fun restorePage(): Page {
         val files = host.backups()
-        val rows: List<Row> = if (files.isEmpty()) listOf(Row.Info("") { "No hay respaldos en Android/data/cl.deco.shelf/files/backup. Copia uno con adb push." })
+        val rows: List<Row> = if (files.isEmpty()) listOf(Row.Info("") { t("No hay respaldos en Android/data/cl.deco.shelf/files/backup. Copia uno con adb push.", "No backups found in Android/data/cl.deco.shelf/files/backup. Push one via adb or QR upload.") })
         else files.map { f -> Row.Act(f.name) { host.restoreBackup(f) } }
-        return Page("Restaurar configuración", rows)
+        return Page(t("Restaurar configuración", "Restore settings"), rows)
     }
 }

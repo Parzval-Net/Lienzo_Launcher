@@ -29,6 +29,7 @@ class SafeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        cl.deco.shelf.ui.Es.english = getSharedPreferences("shelf", MODE_PRIVATE).getBoolean("english", false)
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d + 0.5f).toInt()
         val root = LinearLayout(this).apply {
@@ -37,18 +38,21 @@ class SafeActivity : Activity() {
             setPadding(dp(48), dp(28), dp(48), dp(16))
         }
         root.addView(TextView(this).apply {
-            text = "Lienzo se recuperó de un error"
+            text = cl.deco.shelf.ui.t("Lienzo se recuperó de un error", "Lienzo recovered from an error")
             setTextColor(Color.WHITE); textSize = 26f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         })
         root.addView(TextView(this).apply {
-            text = "Modo seguro: sin fondos de arte, datos de red ni contenido de las apps. Se desactiva solo tras 10 minutos sin errores."
+            text = cl.deco.shelf.ui.t(
+                "Modo seguro: sin fondos de arte, datos de red ni contenido de las apps. Se desactiva solo tras 10 minutos sin errores.",
+                "Safe mode: art backgrounds, network data, and app channels disabled. Resets automatically after 10 error-free minutes.",
+            )
             setTextColor(0xFFB8B8C0.toInt()); textSize = 15f
             setPadding(0, dp(4), 0, dp(12))
         })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val back = button("Volver al modo normal") { leaveSafeMode() }
+        val back = button(cl.deco.shelf.ui.t("Volver al modo normal", "Return to normal mode")) { leaveSafeMode() }
         row.addView(back, LinearLayout.LayoutParams(-2, dp(44)).apply { rightMargin = dp(12) })
-        row.addView(button("Abrir Ajustes de Android") {
+        row.addView(button(cl.deco.shelf.ui.t("Abrir Ajustes de Android", "Open Android Settings")) {
             try { startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) { }
         }, LinearLayout.LayoutParams(-2, dp(44)))
         root.addView(row)

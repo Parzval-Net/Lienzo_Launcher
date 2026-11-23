@@ -9,23 +9,14 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.TransitionDrawable
-import android.media.MediaPlayer
 import android.os.Debug
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import cl.deco.shelf.settings.ShelfPrefs
 import cl.deco.shelf.clock.AlarmService
 import cl.deco.shelf.clock.ClockScheduler
 import cl.deco.shelf.clock.ClockStore
 import cl.deco.shelf.clock.NightMode
 import cl.deco.shelf.util.Seasonal
-import cl.deco.shelf.util.Palette
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import android.net.Uri
 import android.os.Bundle
@@ -34,7 +25,9 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.net.wifi.WifiManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -52,18 +45,13 @@ import cl.deco.shelf.guard.CrashLog
 import cl.deco.shelf.guard.SafeActivity
 import cl.deco.shelf.apps.AppEntry
 import cl.deco.shelf.apps.AppRepository
-import cl.deco.shelf.apps.BitmapUtil
 import cl.deco.shelf.apps.FavoritesStore
 import cl.deco.shelf.apps.IconOverrides
 import cl.deco.shelf.apps.ImageLoader
-import cl.deco.shelf.data.art.Artwork
 import cl.deco.shelf.data.art.MediaImporter
-import cl.deco.shelf.data.art.VideoLibrary
 import cl.deco.shelf.data.holidays.Holiday
-import cl.deco.shelf.data.weather.SunDim
 import cl.deco.shelf.data.weather.Weather
 import cl.deco.shelf.shelf.TopShelfItem
-import cl.deco.shelf.util.Blur
 import cl.deco.shelf.util.NetworkWatcher
 import cl.deco.shelf.util.HealthNotice
 import cl.deco.shelf.util.HealthNoticeStore
@@ -76,6 +64,7 @@ import cl.deco.shelf.update.UpdateStore
 import cl.deco.shelf.data.art.ArtProgress
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlin.math.abs
 
 /**
  * Home estilo tvOS: la obra de arte es la protagonista. En reposo solo se ven reloj, clima y un dock compacto
@@ -116,17 +105,16 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var settings: SettingsPanel
     private lateinit var health: HealthPanel
     private lateinit var importPanel: ImportPanel
+    private lateinit var lanPanel: LanTransferPanel
     private lateinit var updatePanel: UpdatePanel
     private var pendingImport = false
     private lateinit var settingsPages: SettingsPages
     private lateinit var dockBg: GradientDrawable
-    private var artPlayer: MediaPlayer? = null
-    private var pendingFree: Runnable? = null
+    private lateinit var artController: ArtController
     private var netWatcher: NetworkWatcher? = null
     private var artPolling = false
     private val artProgressTick = Runnable { artPolling = false; pollArtProgress() }
     private val secTick: Runnable = object : Runnable { override fun run() { updateClockStatus() } }
-    private var artSurface: SurfaceView? = null
     private val themeListener: () -> Unit = { applyTheme() }
     private val shelfSettingsEntry = AppEntry("Ajustes de Lienzo", android.content.ComponentName(IconOverrides.SHELF_PKG, IconOverrides.SHELF_SETTINGS_CLASS))
 
@@ -138,26 +126,22 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private var started = false
     /** true cuando onCreate terminó de armar la UI; antes (modo seguro, finish() temprano o una excepción) ningún callback toca las vistas. */
     private var ready = false
+    @Volatile private var appsReloading = false
+    @Volatile private var appsReloadPending = false
     private var allApps: List<AppEntry> = emptyList()
     private var weather: Weather? = null
-    private var lastArt = 0L
     private var lastWeather = 0L
     private var lastDate: LocalDate? = null
     private var holidayName: String? = null
     private val holidayCache = HashMap<Int, List<Holiday>>()
     private val holidayLoading = HashSet<Int>()
 
-    private var artBmp: Bitmap? = null
-    private var blurBmp: Bitmap? = null
-    private var artId: String? = null
-    private var palette: Palette? = null
     private lateinit var rootView: FrameLayout
     private enum class HomeState { DOCK, GRID, TOPBAR, ART_MODE }
     private var state = HomeState.DOCK
     private var stateBeforeArt = HomeState.DOCK
     private val gridOpen get() = state == HomeState.GRID
     private val artMode get() = state == HomeState.ART_MODE
-    private var currentArt: Artwork? = null
     private var stopAt = 0L
     private var lastDockSlot = 0
     private var pendingPkg: String? = null
@@ -208,14 +192,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             colors = intArrayOf(Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0x2E), Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0))
         }
         root.background = android.graphics.drawable.LayerDrawable(arrayOf(base, glow))
-        // "Color dinámico": fondo casi negro con un resplandor ambiental que toma el color de la app enfocada
-        dynBase = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xFF0E1016.toInt(), 0xFF07080B.toInt()))
-        dynGlow = GradientDrawable().apply {
-            gradientType = GradientDrawable.RADIAL_GRADIENT
-            gradientRadius = screenH * 1.25f
-            setGradientCenter(0.32f, 0.78f)
-            colors = intArrayOf(Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0x66), Theme.withAlpha(Theme.NEUTRAL_ACCENT, 0))
-        }
         window.setBackgroundDrawable(null)
         rootView = root
         content = FrameLayout(this)
@@ -226,6 +202,26 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         blurView = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
         content.addView(artView, ViewGroup.LayoutParams(-1, -1))
         content.addView(blurView, ViewGroup.LayoutParams(-1, -1))
+        artController = ArtController(
+            this, main, ioArt, ioShelf, graph, prefs, loader,
+            rootView, content, artView, blurView, screenH,
+            object : ArtController.Callbacks {
+                override fun isStarted() = started
+                override fun isGrid() = state == HomeState.GRID
+                override fun isArtMode() = artMode
+                override fun weather() = weather
+                override fun onEnterArtMode() {
+                    if (state != HomeState.DOCK && state != HomeState.TOPBAR) applyState(HomeState.DOCK, animate = false)
+                    stateBeforeArt = HomeState.DOCK
+                    applyState(HomeState.ART_MODE)
+                }
+                override fun onExitArtMode() {
+                    if (artMode) applyState(stateBeforeArt, animate = false)
+                }
+                override fun onThemeDirty() = applyTheme()
+                override fun onPollArtProgress() = pollArtProgress()
+            },
+        )
 
         // Grilla de todas las apps: oculta abajo, sube con DPAD_DOWN
         gridRv = ShelfRecycler(this).apply {
@@ -249,7 +245,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Ancho completo: sangra hasta el borde derecho; el margen seguro (96 px) va como padding en la propia fila
         content.addView(contRv, FrameLayout.LayoutParams(-1, dp(146), Gravity.TOP).apply { topMargin = dp(126) })
         contHeader = tv(this, 20f, Ui.TEXT, "sans-serif-medium").apply {
-            text = "Continuar viendo"
+            text = t("Continuar viendo", "Continue watching")
             setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
             alpha = 0f; visibility = View.INVISIBLE
         }
@@ -265,7 +261,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             visibility = View.INVISIBLE
         }
         gridHeader = tv(this, 20f, Ui.TEXT, "sans-serif-medium").apply {
-            text = "Todas las apps"
+            text = t("Todas las apps", "All apps")
             setShadowLayer(8f, 0f, 1f, 0x99000000.toInt())
             alpha = 0f
             visibility = View.INVISIBLE
@@ -328,7 +324,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onPick = { s ->
                 closeInputs()
                 releaseVideoForPlayback()
-                if (!TvInputs.launch(this@MainActivity, s)) Toast.makeText(this@MainActivity, "No se pudo abrir ${s.label}", Toast.LENGTH_SHORT).show()
+                if (!TvInputs.launch(this@MainActivity, s)) Toast.makeText(this@MainActivity, t("No se pudo abrir ${s.label}", "Could not open ${s.label}"), Toast.LENGTH_SHORT).show()
             }
         }
         hdmiNotice = HdmiNotice(this)
@@ -347,6 +343,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             onClose = { closeImport() }
             onImported = { fondosChanged(); settingsPages.refreshFondos() }
         }
+        lanPanel = LanTransferPanel(this).apply {
+            onClose = { closeLanTransfer() }
+            onMediaImported = { fondosChanged(); settingsPages.refreshFondos() }
+            onBackupRestored = {
+                dropLanTransfer()
+                if (settings.isOpen) settings.close()
+                recreate()
+            }
+        }
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
         settingsPages = SettingsPages(this, settings, prefs, this, "Lienzo $ver")
         topBar.setWeatherEnabled(prefs.weatherOn)
@@ -355,7 +360,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         hint = tv(this, 14f).apply {
             setPadding(dp(18), dp(8), dp(18), dp(8))
             background = GradientDrawable().apply { setColor(0xCC000000.toInt()); cornerRadius = dpf(20f) }
-            text = "Mueve con las flechas. OK para confirmar"
+            text = t("Mueve con las flechas. OK para confirmar", "Use arrows to move. OK to confirm")
             visibility = View.GONE
         }
         root.addView(today, ViewGroup.LayoutParams(-1, -1))
@@ -365,6 +370,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         root.addView(settings, ViewGroup.LayoutParams(-1, -1))
         root.addView(health, ViewGroup.LayoutParams(-1, -1))
         root.addView(importPanel, ViewGroup.LayoutParams(-1, -1))
+        root.addView(lanPanel, ViewGroup.LayoutParams(-1, -1))
         root.addView(updatePanel, ViewGroup.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(16) })
         setContentView(root)
@@ -393,7 +399,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             val wanted = pendingImport
             pendingImport = false
             if (wanted && ok) openImport()
-            else if (wanted) Toast.makeText(this, "Sin el permiso de medios Lienzo no puede leer el pendrive", Toast.LENGTH_LONG).show()
+            else if (wanted) Toast.makeText(this, t("Sin el permiso de medios Lienzo no puede leer el pendrive", "Without media permission, Lienzo cannot read USB storage"), Toast.LENGTH_LONG).show()
             return
         }
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) reloadApps()
@@ -430,12 +436,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Asistente de primer inicio: una sola vez; después, desde Ajustes
         if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
         updateClockStatus() // alarmas y apagado nocturno ya se reprograman en App.onCreate, BootReceiver y al cambiar ajustes
-        scheduleSun()
-        // También rota si el intervalo venció estando fuera: así el tick inmediato no decodifica una segunda obra
-        val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS) ||
-            (lastArt > 0 && System.currentTimeMillis() - lastArt >= prefs.bgIntervalMin * 60_000L)
-        if (rotate) lastArt = System.currentTimeMillis()
-        if (!restoreLastArt(skipFullLoad = !rotate)) loadArt(rotate)
+        artController.onStart(stopAt)
         topBar.setWifiSsid(getWifiSsid())
         try { tvInputs?.registerCallback(inputsCallback, main) } catch (_: Throwable) {}
         if (!cl.deco.shelf.service.KeyMap.serviceRunning(this)) homeHdmiWatcher = cl.deco.shelf.service.HdmiWatcher(this).also { it.start() }
@@ -459,7 +460,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         cl.deco.shelf.service.KeyMap.ACTION_ART_MODE -> {
             val video = i.getBooleanExtra(cl.deco.shelf.service.KeyMap.EXTRA_ART_VIDEO, false)
             // Pedido explícito con un botón: entra aunque el modo arte automático esté desactivado en Ajustes
-            main.postDelayed({ if (started) artButton(video) }, delay)
+            main.postDelayed({ if (started) artController.artButton(video) }, delay)
             true
         }
         cl.deco.shelf.service.KeyMap.ACTION_INPUT_CONNECTED -> {
@@ -497,11 +498,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 hdmiNotice.onSwitch = {
                     closeHdmiNotice(restore = false)
                     releaseVideoForPlayback()
-                    if (!TvInputs.launch(this, s)) Toast.makeText(this, "No se pudo abrir $port", Toast.LENGTH_SHORT).show()
+                    if (!TvInputs.launch(this, s)) Toast.makeText(this, t("No se pudo abrir $port", "Could not open $port"), Toast.LENGTH_SHORT).show()
                 }
                 hdmiNotice.onDismiss = { closeHdmiNotice() }
-                hdmiNotice.show(s.device ?: "Dispositivo conectado",
-                    if (s.device != null) "Conectado en $port" else "Se conectó un equipo en $port", port)
+                hdmiNotice.show(s.device ?: t("Dispositivo conectado", "Device connected"),
+                    if (s.device != null) t("Conectado en $port", "Connected on $port") else t("Se conectó un equipo en $port", "A device connected on $port"), port)
             }
         }
     }
@@ -521,15 +522,15 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         prevFocus = currentFocus
         blockContent(true)
         val opts = ArrayList<MenuPanel.Opt>()
-        opts += MenuPanel.Opt("Ajustes de Lienzo") { closeMenu(restore = false); openSettings(keepPrev = true) }
+        opts += MenuPanel.Opt(t("Ajustes de Lienzo", "Lienzo settings")) { closeMenu(restore = false); openSettings(keepPrev = true) }
         QuickAccess.tvQuick(this)?.let { quick ->
-            opts += MenuPanel.Opt("Ajustes rápidos", "Brillo, imagen, sonido") {
+            opts += MenuPanel.Opt(t("Ajustes rápidos", "Quick settings"), t("Brillo, imagen, sonido", "Brightness, picture, sound")) {
                 closeMenu()
                 try { startActivity(quick.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
             }
         }
-        opts += MenuPanel.Opt("Ajustes del televisor", "Sistema") { closeMenu(); QuickAccess.launch(this, QuickAccess.items.last()) }
-        menu.showList("Ajustes", opts)
+        opts += MenuPanel.Opt(t("Ajustes del televisor", "TV settings"), t("Sistema", "System")) { closeMenu(); QuickAccess.launch(this, QuickAccess.items.last()) }
+        menu.showList(t("Ajustes", "Settings"), opts)
     }
 
     override fun onResume() {
@@ -557,10 +558,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     /** Prioridad a la reproducción: suelta el decodificador del modo arte de inmediato, sin animación. */
-    private fun releaseVideoForPlayback() {
-        if (artMode) applyState(stateBeforeArt, animate = false)
-        stopArtVideo(animate = false)
-    }
+    private fun releaseVideoForPlayback() = artController.releaseVideoForPlayback()
 
     override fun onStop() {
         if (!ready) { super.onStop(); return }
@@ -575,14 +573,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (today.visibility == View.VISIBLE) closeToday()
         closeInputs(restore = false)
         closeHdmiNotice(restore = false)
+        dropLanTransfer()
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
         if (updatePanel.isOpen && !updatePanel.keepAcrossStop) closeUpdate()
         if (artMode) applyState(stateBeforeArt, animate = false)
-        stopArtVideo(animate = false)
-        pendingFree?.run()
-        releaseArt()
+        artController.onStop()
         // Se conserva la mitad más reciente de la caché (tiles del dock, tarjetas del Top Shelf): al volver no se redibujan
         loader.trimTo(0.5f)
         super.onStop()
@@ -615,6 +612,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         closeInputs(restore = false)
         closeHdmiNotice(restore = false)
         if (today.visibility == View.VISIBLE) closeToday()
+        dropLanTransfer()
         dropImport()
         if (settings.isOpen) closeSettings()
         if (health.isOpen) closeHealth()
@@ -633,8 +631,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!ready) return
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             // Shelf ya no está visible: soltar el blur; la caché de íconos se recorta y solo se vacía con presión de memoria real
-            blurView.setImageDrawable(null)
-            blurBmp?.recycle(); blurBmp = null
+            artController.onTrimMemoryUiHidden()
             if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) loader.trim() else loader.trimTo(0.5f)
         }
     }
@@ -646,6 +643,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ioShelf.shutdownNow()
         ioArt.shutdownNow()
         loader.shutdown()
+        lanPanel.close()
         updatePanel.close()
         super.onDestroy()
     }
@@ -672,7 +670,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             }
             updateClockStatus()
             pollArtProgress()
-            if (now - lastArt >= prefs.bgIntervalMin * 60_000L) { lastArt = now; loadArt(true) }
+            artController.onMinuteTick(now)
             if (prefs.weatherOn && now - lastWeather >= WEATHER_MS) { lastWeather = now; refreshWeather() }
             main.postDelayed(this, 60_000L - now % 60_000L + 50L)
         }
@@ -713,7 +711,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         ioData.execute {
             val w = if (BuildConfig.FORCE_OFFLINE) null else try { graph.weather.get(false) } catch (_: Throwable) { null }
             main.post {
-                if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w); scheduleSun() }
+                if (started && w != null) { weather = w; topBar.setWeather(w); today.setWeather(w); artController.scheduleSun() }
                 // Sin datos (red lenta o caída): reintenta en ~1 min en vez de esperar el ciclo completo
                 else if (w == null) lastWeather = System.currentTimeMillis() - WEATHER_MS + 60_000L
             }
@@ -733,8 +731,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (s === Theme.season) return
         Theme.season = s
         topBar.setSeason(s != null)
-        applyPalette(animate = true)
-        if (ready) { lastArt = System.currentTimeMillis(); loadArt(true) } // cambia a (o sale de) las obras de temporada
+        artController.applyPalette(animate = true)
+        if (ready) artController.nextArtNow() // cambia a (o sale de) las obras de temporada
     }
 
     private fun loadHolidays(year: Int) {
@@ -750,290 +748,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
     }
 
-    private val artRetry = Runnable { if (started && artBmp == null) loadArt(true) }
-
-    // ---------- Fondo "Color dinámico" ----------
-
-    private lateinit var dynBase: GradientDrawable
-    private lateinit var dynGlow: GradientDrawable
-    private var glowColor = Theme.NEUTRAL_ACCENT
-    private var glowAnim: android.animation.ValueAnimator? = null
-    /** Color dominante por app (k-means sobre su tile, una vez): mover el foco no recalcula nada. */
-    private val appColors = HashMap<String, Int>()
-
-    /** Activa el fondo dinámico: suelta la obra (menos memoria) y pinta el fondo oscuro con resplandor. */
-    private fun showDynamicBackground() {
-        artView.animate().cancel()
-        releaseArt()
-        currentArt = null
-        artView.alpha = 1f
-        rootView.background = android.graphics.drawable.LayerDrawable(arrayOf(dynBase, dynGlow))
-        Theme.animateTo(Theme.neutral(), 400L, true)
-    }
-
-    /** Lleva el resplandor al color de la app enfocada con una transición de 450 ms (sin capas extra: un solo drawable). */
-    private var glowTarget: String? = null
-
-    private fun glowFor(e: AppEntry) {
-        if (!prefs.dynamicBg) return
-        glowTarget = e.key
-        appColors[e.key]?.let { animateGlow(it); return }
-        val tile = loader.cached(e) ?: return
-        ioShelf.execute {
-            val c = try { cl.deco.shelf.util.Palette.from(tile).accent } catch (_: Throwable) { return@execute }
-            // Solo si el foco sigue en esa app (al navegar rápido no se pinta el color de una app ya dejada atrás)
-            main.post { appColors[e.key] = c; if (started && prefs.dynamicBg && glowTarget == e.key) animateGlow(c) }
-        }
-    }
-
-    private fun animateGlow(to: Int) {
-        if (to == glowColor) return
-        glowAnim?.cancel()
-        val from = glowColor
-        glowColor = to
-        val ev = android.animation.ArgbEvaluator()
-        glowAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 450L
-            interpolator = Ui.DECEL
-            addUpdateListener {
-                val c = ev.evaluate(it.animatedFraction, from, to) as Int
-                dynGlow.colors = intArrayOf(Theme.withAlpha(c, 0x66), Theme.withAlpha(c, 0))
-            }
-            start()
-        }
-    }
-
-    private fun loadArt(rotate: Boolean) {
-        if (prefs.dynamicBg) { showDynamicBackground(); return } // sin obras: fondo de color dinámico
-        ioArt.execute {
-            var a = if (!rotate) currentArt else null
-            if (a == null) a = try { graph.art.next() } catch (_: Throwable) { null }
-            if (a == null) {
-                // cache vacía: descarga unas pocas obras y reintenta
-                try { graph.art.prefetch(3) } catch (_: Throwable) {}
-                a = try { graph.art.next() } catch (_: Throwable) { null }
-            }
-            var bmp: Bitmap? = null
-            var blur: Bitmap? = null
-            var pal: Palette? = null
-            fun decode(art: Artwork) {
-                val tDecode = android.os.SystemClock.elapsedRealtime()
-                // Blur y paleta salen de la obra limpia; el scrim inferior se hornea después (una capa menos en GPU)
-                var tmpBlur: Bitmap? = null
-                var tmpPal: Palette? = null
-                bmp = try {
-                    BitmapUtil.coverFile(art.file.path, 1920, 1080) { b ->
-                        tmpBlur = makeBlur(b)
-                        tmpPal = try { Palette.from(b) } catch (_: Throwable) { null }
-                        bakeScrim(b)
-                    }
-                } catch (_: Throwable) { null }
-                blur = tmpBlur; pal = tmpPal
-                Log.i("Shelf", "loadArt: decodificar, paleta y scrim ${android.os.SystemClock.elapsedRealtime() - tDecode} ms (rotar=$rotate)")
-            }
-            if (a != null) decode(a)
-            // La obra vigente ya no existe (p. ej. se borró en Mis fondos): se elige otra en vez de quedar sin fondo
-            if (a != null && bmp == null && !rotate) {
-                a = try { graph.art.next() } catch (_: Throwable) { null }
-                if (a != null) decode(a)
-            }
-            val art = a
-            main.post {
-                if (!started || art == null || bmp == null) { bmp?.recycle(); blur?.recycle() } else applyArt(art, bmp!!, blur, pal)
-                // Sin ninguna obra local (descarga pausada o primer inicio): un solo reintento pendiente cada 30 s
-                if (started && art == null && artBmp == null) { main.removeCallbacks(artRetry); main.postDelayed(artRetry, 30_000L) }
-            }
-            // repone cache para las próximas rotaciones
-            if (art != null) try { graph.art.prefetch(2) } catch (_: Throwable) {}
-            main.post { pollArtProgress() } // si prefetch arrancó la descarga, el chip "Obras n/total" empieza a seguirla
-        }
-    }
-
-    private val lastBgFile get() = File(filesDir, "lastbg.jpg")
-    private val lastBlurFile get() = File(filesDir, "lastblur.webp")
-
-    /** Guarda el fondo ya escalado y horneado, su blur y la paleta para evitar decodificar de nuevo al volver al home. */
-    private fun saveLastArt(a: Artwork, bmp: Bitmap, blur: Bitmap?, pal: Palette?) {
-        val ed = prefs.sp.edit().putString("last_art_id", a.id).putString("last_art_path", a.file.path)
-            .putLong("last_art_ts", System.currentTimeMillis())
-            .putInt("last_art_blur_level", prefs.blurLevel)
-        if (pal != null) {
-            ed.putBoolean("last_art_pal_ok", true)
-                .putInt("last_art_pal_a", pal.accent)
-                .putInt("last_art_pal_l", pal.light)
-                .putInt("last_art_pal_d", pal.dark)
-        } else {
-            ed.putBoolean("last_art_pal_ok", false)
-        }
-        ed.apply()
-        val copy = try { bmp.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null } ?: return
-        val blurCopy = blur?.let { try { it.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null } }
-        ioArt.execute {
-            BitmapUtil.saveJpeg(copy, lastBgFile)
-            copy.recycle()
-            if (blurCopy != null) {
-                BitmapUtil.saveWebp(blurCopy, lastBlurFile, 88)
-                blurCopy.recycle()
-            } else {
-                lastBlurFile.delete()
-            }
-        }
-    }
-
-    /**
-     * Arranque en frío y regreso en caliente: pinta el último fondo cacheado (JPEG + blur WebP + paleta) en una sola pasada.
-     * Si [skipFullLoad] es true y la caché está completa y vigente, omite re-decodificar la obra completa en 1080p.
-     */
-    private fun restoreLastArt(skipFullLoad: Boolean = false): Boolean {
-        if (artBmp != null || prefs.dynamicBg) return false
-        val path = prefs.sp.getString("last_art_path", null) ?: return false
-        if ((Theme.season != null) != path.contains("/seasonal/")) return false
-        val ts = prefs.sp.getLong("last_art_ts", 0L)
-        val f = File(path)
-        if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return false
-        if (!lastBgFile.exists()) return false
-        val wantPal = prefs.sp.getBoolean("last_art_pal_ok", false)
-        if (skipFullLoad && !wantPal) return false
-        if (currentArt == null) {
-            currentArt = Artwork(prefs.sp.getString("last_art_id", "last") ?: "last", "", "", null, "", f)
-            lastArt = ts
-        }
-        val wantBlur = prefs.blurLevel
-        val cachedBlurLevel = prefs.sp.getInt("last_art_blur_level", -1)
-        val cachedPal = if (wantPal) Palette(
-            prefs.sp.getInt("last_art_pal_a", Theme.NEUTRAL_ACCENT),
-            prefs.sp.getInt("last_art_pal_l", Theme.NEUTRAL_LIGHT),
-            prefs.sp.getInt("last_art_pal_d", Theme.NEUTRAL_DARK),
-        ) else null
-        ioArt.execute {
-            val b = BitmapUtil.loadJpeg565(lastBgFile)
-            if (b == null) {
-                if (skipFullLoad) main.post { if (started && artBmp == null) loadArt(false) }
-                return@execute
-            }
-            var blur: Bitmap? = null
-            if (wantBlur > 0) {
-                blur = if (cachedBlurLevel == wantBlur && lastBlurFile.exists()) BitmapUtil.loadJpeg565(lastBlurFile) else null
-                if (blur == null) {
-                    blur = makeBlur(b)
-                    if (blur != null) {
-                        val bc = try { blur.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null }
-                        if (bc != null) { BitmapUtil.saveWebp(bc, lastBlurFile, 88); bc.recycle() }
-                        prefs.sp.edit().putInt("last_art_blur_level", wantBlur).apply()
-                    }
-                }
-            }
-            main.post {
-                if (artBmp != null || !started) { b.recycle(); blur?.recycle(); return@post }
-                artBmp = b
-                artView.setImageBitmap(b)
-                artView.alpha = 1f
-                rootView.background = null
-                artId = currentArt?.id
-                if (cachedPal != null) {
-                    palette = cachedPal
-                    applyPalette(animate = false)
-                }
-                val oldBlur = blurBmp
-                blurBmp = blur
-                blurView.setImageBitmap(blur)
-                if (oldBlur != null && oldBlur !== blur) oldBlur.recycle()
-            }
-        }
-        return true
-    }
-
-    private fun bakeScrim(b: Bitmap) {
-        val h = b.height.toFloat()
-        val cv = android.graphics.Canvas(b)
-        cv.drawRect(0f, 0f, b.width.toFloat(), h, android.graphics.Paint().apply {
-            shader = android.graphics.LinearGradient(0f, 0f, 0f, h, intArrayOf(0, 0, 0x99000000.toInt()), floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
-        })
-        // Halos oscuros en las esquinas superiores (detrás del reloj y del clima), horneados en el fondo
-        val r = b.width * 380f / 1920f
-        for (cx in floatArrayOf(b.width * 300f / 1920f, b.width * 1740f / 1920f)) {
-            cv.drawCircle(cx, h * 80f / 1080f, r, android.graphics.Paint().apply {
-                shader = android.graphics.RadialGradient(cx, h * 80f / 1080f, r, 0x4D000000, 0, android.graphics.Shader.TileMode.CLAMP)
-            })
-        }
-    }
-
-    /** Blur precalculado una vez: escala directo a 120x67, aplica stack blur y desatura en RGB_565. */
-    private fun makeBlur(bmp: Bitmap): Bitmap? = if (prefs.blurLevel == 0) null else try {
-        Blur.blurredDesaturated(bmp, 120, 67, BLUR_RADII[prefs.blurLevel], 0.55f)
-    } catch (_: Throwable) { null }
-
-    /** Cambió el nivel de desenfoque: recalcula solo el blur a partir de la obra actual y actualiza la caché en disco. */
-    private fun rebuildBlur() {
-        val src = artBmp ?: return
-        val level = prefs.blurLevel
-        // artBmp se recicla en ioArt (ver recycleArt): este hilo único serializa la lectura y el reciclaje, sin use-after-free
-        ioArt.execute {
-            val b = try { if (src.isRecycled) null else makeBlur(src) } catch (_: Throwable) { null }
-            if (b != null) {
-                val bc = try { b.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null }
-                if (bc != null) { BitmapUtil.saveWebp(bc, lastBlurFile, 88); bc.recycle() }
-                prefs.sp.edit().putInt("last_art_blur_level", level).apply()
-            }
-            main.post {
-                // Blur de una obra que ya cambió: se descarta en vez de pisar el de la nueva
-                if (b == null || !started || artBmp !== src) { b?.recycle(); return@post }
-                val old = blurBmp
-                blurBmp = b
-                blurView.setImageBitmap(b)
-                if (old != null) main.postDelayed({ old.recycle() }, 400)
-                if (state == HomeState.GRID) blurView.animate().alpha(1f).setDuration(200).start() // sin cortar la subida de la grilla
-            }
-        }
-    }
-
-    private fun applyArt(a: Artwork, bmp: Bitmap, blur: Bitmap?, pal: Palette? = null) {
-        currentArt = a
-        palette = pal
-        // Solo una obra nueva (o sin caché completa) se persiste como último fondo
-        if (a.id != prefs.sp.getString("last_art_id", null) || !prefs.sp.getBoolean("last_art_pal_ok", false)) {
-            saveLastArt(a, bmp, blur, pal)
-        }
-        applyPalette(animate = artBmp != null)
-        val old = artBmp
-        val sameArt = old != null && a.id == artId // misma obra (JPEG del regreso al home -> decodificación completa)
-        val newD = BitmapDrawable(resources, bmp)
-        artBmp = bmp
-        artId = a.id
-        if (sameArt) {
-            // Es la misma imagen: se reemplaza sin fundido, así volver de una app no se ve como una recarga del fondo
-            artView.setImageDrawable(newD)
-            recycleArt(old!!)
-        } else if (old == null) {
-            artView.setImageDrawable(newD)
-            if (artPlayer == null) {
-                // Primera obra: crossfade desde el degradado; después se retira la capa de fondo (la obra opaca cubre todo)
-                artView.animate().cancel()
-                artView.alpha = 0f
-                artView.animate().alpha(1f).setDuration(700).setInterpolator(Ui.DECEL).start()
-                main.postDelayed({ if (artBmp != null && artPlayer == null) rootView.background = null }, 900)
-            }
-        } else {
-            val td = TransitionDrawable(arrayOf(BitmapDrawable(resources, old), newD))
-            artView.setImageDrawable(td)
-            td.startTransition(350)
-            main.postDelayed({
-                artView.setImageDrawable(newD)
-                recycleArt(old)
-            }, 400)
-        }
-        val oldBlur = blurBmp
-        blurBmp = blur
-        blurView.setImageBitmap(blur)
-        if (oldBlur != null && oldBlur !== blur) main.postDelayed({ oldBlur.recycle() }, 400)
-    }
-
-    /** Paleta dinámica de la obra o neutra, según el ajuste. */
-    private fun applyPalette(animate: Boolean) {
-        val p = if (prefs.dynamicColors && Theme.season == null) palette else null
-        Theme.animateTo(p ?: Theme.neutral(), 400L, animate)
-    }
-
     private fun applyTheme() {
         dockBg.setColor(Theme.dockTint())
         // Scrim: negro uniforme con 10% de mezcla del color oscuro de la paleta (neutro, no café)
@@ -1041,25 +755,6 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val tint = android.graphics.Color.rgb((android.graphics.Color.red(d) * 0.10f).toInt(), (android.graphics.Color.green(d) * 0.10f).toInt(), (android.graphics.Color.blue(d) * 0.10f).toInt())
         scrimBg.colors = intArrayOf(Theme.withAlpha(tint, 0), Theme.withAlpha(tint, 0x66), Theme.withAlpha(tint, 0x66))
         topBar.setAccent(Theme.accent, Theme.light)
-    }
-
-    private fun lastArtFresh(): Boolean {
-        val path = prefs.sp.getString("last_art_path", null) ?: return false
-        if ((Theme.season != null) != path.contains("/seasonal/")) return false // entra o sale de temporada: fondo nuevo
-        return File(path).exists() && System.currentTimeMillis() - prefs.sp.getLong("last_art_ts", 0L) <= prefs.bgIntervalMin * 60_000L
-    }
-
-    private fun releaseArt() {
-        artView.setImageDrawable(null)
-        blurView.setImageDrawable(null)
-        artBmp?.let { recycleArt(it) }; artBmp = null
-        blurBmp?.recycle(); blurBmp = null
-        artId = null
-    }
-
-    /** La obra se recicla en ioArt: si un rebuildBlur la está leyendo, el reciclaje espera a que termine (hilo único). */
-    private fun recycleArt(b: Bitmap) {
-        try { ioArt.execute { b.recycle() } } catch (_: java.util.concurrent.RejectedExecutionException) { b.recycle() }
     }
 
     // ---------- Apps ----------
@@ -1075,18 +770,32 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun reloadApps() {
+        if (appsReloading) {
+            appsReloadPending = true
+            return
+        }
+        appsReloading = true
+        appsReloadPending = false
         ioData.execute {
-            val apps = repo.load()
-            // Las apps se muestran primero; el TvProvider (lento en frío) no retrasa el dock
-            main.post { if (started) { allApps = apps; rebuild() } }
-            // Watch Next: una sola pasada al iniciar y al cambiar paquetes; nada si el usuario ocultó Top Shelf y Continuar viendo
-            if (!prefs.topShelf && !prefs.continueRow) return@execute
-            val t0 = android.os.SystemClock.elapsedRealtime()
-            try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
-            Log.i("Shelf", "preload TvProvider: ${android.os.SystemClock.elapsedRealtime() - t0} ms (${apps.size} apps)")
-            if (BuildConfig.TV_DUMP) cl.deco.shelf.shelf.TvDump.run(applicationContext)
-            // Con la caché recién llena, el Top Shelf del tile enfocado se pinta sin esperar otro cambio de foco
-            main.post { if (started && pendingPkg != null && state == HomeState.DOCK) { main.removeCallbacks(shelfRun); main.post(shelfRun) } }
+            try {
+                val apps = repo.load()
+                // Las apps se muestran primero; el TvProvider (lento en frío) no retrasa el dock
+                main.post { if (started) { allApps = apps; rebuild() } }
+                // Watch Next: una sola pasada al iniciar y al cambiar paquetes; nada si el usuario ocultó Top Shelf y Continuar viendo
+                if (!started || (!prefs.topShelf && !prefs.continueRow)) return@execute
+                val t0 = android.os.SystemClock.elapsedRealtime()
+                try { graph.shelf.preload(apps.map { it.component.packageName }.distinct()) } catch (e: Throwable) { warnOnce("preload", e) }
+                Log.i("Shelf", "preload TvProvider: ${android.os.SystemClock.elapsedRealtime() - t0} ms (${apps.size} apps)")
+                if (BuildConfig.TV_DUMP) cl.deco.shelf.shelf.TvDump.run(applicationContext)
+                // Con la caché recién llena, el Top Shelf del tile enfocado se pinta sin esperar otro cambio de foco
+                main.post { if (started && pendingPkg != null && state == HomeState.DOCK) { main.removeCallbacks(shelfRun); main.post(shelfRun) } }
+            } finally {
+                appsReloading = false
+                if (appsReloadPending) {
+                    appsReloadPending = false
+                    main.post { if (started) reloadApps() }
+                }
+            }
         }
     }
 
@@ -1118,7 +827,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Máximo de favoritas del ajuste: las que sobran se muestran en la grilla
         val favs = favKeys.orEmpty().mapNotNull { byKey[it] }.distinctBy { it.key }.take(prefs.dockMax)
         val favSet = favs.map { it.key }.toSet()
-        val grid = visible.filter { it.key !in favSet }.sortedWith(compareBy({ it.key in newSet }, { idx[it.key] ?: Int.MAX_VALUE })) + shelfSettingsEntry
+        val grid = visible.filter { it.key !in favSet }.sortedWith(compareBy({ it.key in newSet }, { idx[it.key] ?: Int.MAX_VALUE })) +
+            shelfSettingsEntry.copy(label = t("Ajustes de Lienzo", "Lienzo settings"))
         layoutGrid(grid.size)
         val prev = focusedSlot()
         if (!adapter.submit(favs, grid)) return
@@ -1191,8 +901,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val prev = state
         state = new
         if (prev == HomeState.ART_MODE && new != HomeState.ART_MODE) {
-            main.removeCallbacks(artVideoRun)
-            stopArtVideo(animate)
+            artController.onLeaveArtMode(animate)
         }
         val grid = new == HomeState.GRID
         val art = new == HomeState.ART_MODE
@@ -1211,14 +920,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             v.animate().alpha(a).translationY(ty).setDuration(dur).setInterpolator(Ui.DECEL)
                 .withEndAction { v.visibility = endVis }.start()
         }
-        if (!(art && artPlayer != null)) set(artView, 1f)
+        if (!(art && artController.hasVideoPlayer)) set(artView, 1f)
         // La obra se mantiene nítida en GRID; con desenfoque elegido (y bitmap generado) se funde a la versión blur.
         // Capas a pantalla completa con alpha 0 pasan a INVISIBLE: la GPU ni las considera
-        if (grid && prefs.blurLevel > 0 && blurBmp == null) rebuildBlur() // se soltó con "Liberar cachés de Lienzo"
-        val blurOn = grid && prefs.blurLevel > 0 && blurBmp != null
+        val blurOn = grid && artController.ensureBlurForGrid()
         set(blurView, if (blurOn) 1f else 0f, 0f, if (blurOn) View.VISIBLE else View.INVISIBLE)
         // Brillo del fondo: filtro de color sobre la propia obra (sin capa a pantalla completa extra para la GPU)
-        applyDim(animate = false)
+        artController.applyDim(animate = false)
         // Scrim en degradado solo detrás de la grilla: 0% en y=220 a 45% en y=520
         set(gridScrim, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         set(gridFade, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
@@ -1238,56 +946,12 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val chrome = if (art) 0f else 1f
         set(topBar, chrome)
         set(shelfView, if (new == HomeState.DOCK) 1f else 0f)
-        if (art) main.postDelayed(artVideoRun, ART_VIDEO_DELAY_MS)
+        if (art) artController.scheduleArtVideo()
         if (grid) {
             main.removeCallbacks(shelfRun)
             shelfView.clear()
             shelfPkg = null
         }
-    }
-
-    // ---------- Brillo del fondo y atenuación nocturna ----------
-
-    private var night = false
-    private var dimFactor = -1f
-    private var dimAnim: android.animation.ValueAnimator? = null
-    private val sunRun = Runnable { scheduleSun() }
-
-    private fun dimTarget() = prefs.bgBrightness / 100f * (if (night && prefs.nightDim) NIGHT_FACTOR else 1f)
-
-    /** Multiplica el color de la obra (y del blur) por el factor de brillo; con 100% no hay filtro y no cuesta nada. */
-    private fun setDimFactor(f: Float) {
-        dimFactor = f
-        val c = (f * 255f).toInt().coerceIn(0, 255)
-        val filter = if (f >= 0.999f) null else android.graphics.LightingColorFilter(android.graphics.Color.rgb(c, c, c), 0)
-        artView.colorFilter = filter
-        blurView.colorFilter = filter
-    }
-
-    private fun applyDim(animate: Boolean) {
-        val to = dimTarget()
-        dimAnim?.cancel()
-        if (!animate || dimFactor < 0f || !started) { setDimFactor(to); return }
-        dimAnim = android.animation.ValueAnimator.ofFloat(dimFactor, to).apply {
-            duration = 2500L
-            addUpdateListener { setDimFactor(it.animatedValue as Float) }
-            start()
-        }
-    }
-
-    /**
-     * Día/noche según el atardecer y el amanecer de Open-Meteo (los mismos datos del clima). Una sola alarma calculada
-     * (postDelayed hasta el próximo evento solar), sin ciclos periódicos; la transición es suave solo al cruzar la hora.
-     */
-    private fun scheduleSun() {
-        main.removeCallbacks(sunRun)
-        val st = weather?.let { SunDim.state(it.days, System.currentTimeMillis()) } ?: return
-        val changed = st.night != night
-        night = st.night
-        Theme.night = night && prefs.nightDim
-        applyTheme()
-        if (changed || dimFactor < 0f) applyDim(animate = changed)
-        st.nextChange?.let { main.postDelayed(sunRun, (it - System.currentTimeMillis()).coerceAtLeast(1000L) + 1000L) }
     }
 
     private fun openGrid(focusSlot: Int = AppAdapter.GRID) {
@@ -1339,7 +1003,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
         releaseVideoForPlayback()
         try { startActivity(repo.launchIntent(e)) } catch (_: Exception) {
-            Toast.makeText(this, "No se pudo abrir ${e.label}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, t("No se pudo abrir ${e.label}", "Could not open ${e.label}"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1350,7 +1014,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     override fun onFocus(e: AppEntry, slot: Int) {
-        glowFor(e) // fondo "Color dinámico": el resplandor sigue a la app enfocada (dock y grilla)
+        artController.glowFor(e) // fondo "Color dinámico": el resplandor sigue a la app enfocada (dock y grilla)
         if (!adapter.isFav(slot)) {
             gridName.text = e.label
             main.post {
@@ -1426,7 +1090,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         try {
             startActivity(Intent.parseUri(uri, Intent.URI_INTENT_SCHEME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: Exception) {
-            Toast.makeText(this, "No se pudo abrir el contenido", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, t("No se pudo abrir el contenido", "Could not open content"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1439,95 +1103,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (prefs.artEnabled) main.postDelayed(artModeRun, prefs.artWaitSec * 1000L)
     }
 
-    private val artVideoRun = Runnable { startArtVideo() }
-
-    /**
-     * Botón de Modo arte (Perfil en TCL). Corta: entra con la obra o, ya dentro, pasa a la siguiente (si había video vuelve
-     * a la obra). Mantenida: entra directo al video; si el video ya corre, vuelve a la obra. Elegir una obra a mano
-     * reinicia la espera del video automático para que no la tape enseguida.
-     */
-    private fun artButton(video: Boolean) {
-        if (!artMode) {
-            if (state != HomeState.DOCK && state != HomeState.TOPBAR) applyState(HomeState.DOCK, animate = false)
-            stateBeforeArt = HomeState.DOCK
-            applyState(HomeState.ART_MODE)
-            if (video) { main.removeCallbacks(artVideoRun); startArtVideo(force = true) }
-            return
-        }
-        main.removeCallbacks(artVideoRun)
-        if (video) {
-            if (artPlayer != null || artSurface != null) stopArtVideo(true) else startArtVideo(force = true)
-            return
-        }
-        stopArtVideo(true)
-        nextArt()
-        if (prefs.artVideo) main.postDelayed(artVideoRun, ART_VIDEO_DELAY_MS)
-    }
-
-    /**
-     * Video detrás del fondo: SurfaceView en el índice 0 de content (la obra queda encima) y MediaPlayer en loop sin audio.
-     * Al primer frame real se funde la obra de alpha 1 a 0 en 1200 ms. Sin video o con el ajuste apagado, el modo arte
-     * queda como siempre.
-     */
-    private fun startArtVideo(force: Boolean = false) {
-        if (state != HomeState.ART_MODE || artPlayer != null || artSurface != null || !started || !(prefs.artVideo || force)) return
-        val file = VideoLibrary.pick(this, prefs) ?: return // Monet, video propio o rotación de todos (ver ajustes: Mis fondos)
-        val sv = SurfaceView(this)
-        artSurface = sv
-        content.addView(sv, 0, ViewGroup.LayoutParams(-1, -1))
-        sv.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(h: SurfaceHolder) {
-                if (artSurface !== sv || artPlayer != null) return
-                val mp = MediaPlayer()
-                artPlayer = mp
-                try {
-                    mp.setDataSource(file.path)
-                    mp.setSurface(h.surface)
-                    mp.setVolume(0f, 0f)
-                    mp.isLooping = true
-                    mp.setOnPreparedListener { it.start(); main.postDelayed(fadeArtOut, 1500) }
-                    mp.setOnInfoListener { _, what, _ ->
-                        if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) fadeArtOut.run()
-                        false
-                    }
-                    mp.setOnErrorListener { _, w, x -> Log.w("Shelf", "video modo arte: $w/$x"); stopArtVideo(true); true }
-                    mp.prepareAsync()
-                } catch (e: Exception) {
-                    Log.w("Shelf", "video modo arte: $e")
-                    stopArtVideo(true)
-                }
-            }
-            override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {}
-            override fun surfaceDestroyed(h: SurfaceHolder) {}
-        })
-    }
-
-    private val fadeArtOut: Runnable = object : Runnable { override fun run() {
-        main.removeCallbacks(fadeArtOut)
-        if (artPlayer != null && state == HomeState.ART_MODE) artView.animate().alpha(0f).setDuration(1200).start()
-    } }
-
-    /** Vuelve la obra a alpha 1 (200 ms) y recién entonces detiene, libera y quita el SurfaceView. */
-    private fun stopArtVideo(animate: Boolean) {
-        main.removeCallbacks(fadeArtOut)
-        pendingFree?.let { main.removeCallbacks(it); it.run() }
-        val mp = artPlayer; val sv = artSurface
-        artPlayer = null; artSurface = null
-        if (mp == null && sv == null) return
-        artView.animate().cancel()
-        val free = object : Runnable { override fun run() {
-            pendingFree = null
-            if (mp != null) { runCatching { mp.stop() }; runCatching { mp.release() } }
-            if (sv != null) runCatching { content.removeView(sv) }
-        } }
-        // La liberación va por timer (no por withEndAction): applyState cancela las animaciones de artView
-        pendingFree = free
-        if (animate && started) { artView.animate().alpha(1f).setDuration(200).start(); main.postDelayed(free, 260) }
-        else { artView.alpha = 1f; free.run() }
-    }
-
     private fun enterArtMode() {
-        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || inputsPopup.isOpen || hdmiNotice.isOpen || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen) return
+        if (!started || !prefs.artEnabled || moving || menu.visibility == View.VISIBLE || inputsPopup.isOpen || hdmiNotice.isOpen || today.visibility == View.VISIBLE || settings.isOpen || health.isOpen || updatePanel.isOpen || importPanel.isOpen || lanPanel.isOpen) return
         if (state != HomeState.DOCK && state != HomeState.TOPBAR) return
         stateBeforeArt = state
         applyState(HomeState.ART_MODE)
@@ -1616,7 +1193,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (sources.isEmpty()) {
             val panel = TvInputs.systemPanel(this)
             if (panel != null) try { startActivity(panel.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Exception) {}
-            Toast.makeText(this, "Este equipo no tiene entradas de video", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, t("Este equipo no tiene entradas de video", "No video inputs on this device"), Toast.LENGTH_SHORT).show()
             return
         }
         if (artMode) applyState(stateBeforeArt, animate = false)
@@ -1675,9 +1252,27 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         settings.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
     }
 
+    override fun openLanTransfer() {
+        if (lanPanel.isOpen) return
+        if (!settings.isOpen) { prevFocus = currentFocus; blockContent(true) }
+        settings.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        lanPanel.open()
+    }
+
+    private fun closeLanTransfer() {
+        if (lanPanel.isOpen) lanPanel.close()
+        settings.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+        if (settings.isOpen) settings.rebuild() else { blockContent(false); prevFocus?.requestFocus() }
+    }
+
+    private fun dropLanTransfer() {
+        if (lanPanel.isOpen) lanPanel.close()
+        settings.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+    }
+
     /** Se importó o borró algo: si el fondo usa Mis fondos se vuelve a elegir obra. */
     override fun fondosChanged() {
-        if (prefs.bgSource != 0) { lastArt = System.currentTimeMillis(); loadArt(true) }
+        if (prefs.bgSource != 0) artController.nextArtNow()
     }
 
     private fun closeSettings() {
@@ -1693,27 +1288,22 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val pkg = e.component.packageName
         val orig = allApps.firstOrNull { it.component.packageName == pkg }?.label ?: e.label
         fun done(name: String?) { store.setName(pkg, name); closeSettings(); rebuild() }
-        settings.open(Page("Renombrar ${orig}", listOf(
-            Row.Input("Nuevo nombre", e.label, false) { done(it.ifBlank { null }) },
-            Row.Act("Restaurar nombre original", { orig }) { done(null) },
+        settings.open(Page(t("Renombrar ${orig}", "Rename ${orig}"), listOf(
+            Row.Input(t("Nuevo nombre", "New name"), e.label, false) { done(it.ifBlank { null }) },
+            Row.Act(t("Restaurar nombre original", "Restore original name"), { orig }) { done(null) },
         )))
     }
 
     override fun changed(key: String) {
         when (key) {
-            ShelfPrefs.BG_ONLINE, ShelfPrefs.BG_SOURCE, ShelfPrefs.COLLECTION -> { lastArt = System.currentTimeMillis(); loadArt(true) }
-            ShelfPrefs.BG_BRIGHTNESS -> applyDim(animate = true)
-            ShelfPrefs.NIGHT_DIM -> { scheduleSun(); applyDim(animate = true) }
+            ShelfPrefs.BG_ONLINE, ShelfPrefs.BG_SOURCE, ShelfPrefs.COLLECTION -> artController.nextArtNow()
+            ShelfPrefs.BG_BRIGHTNESS -> artController.applyDim(animate = true)
+            ShelfPrefs.NIGHT_DIM -> { artController.scheduleSun(); artController.applyDim(animate = true) }
             ShelfPrefs.BLUR_LEVEL -> {
-                if (prefs.blurLevel == 0) {
-                    // Ninguno: se suelta el bitmap blur y su caché en disco
-                    blurView.setImageDrawable(null); blurBmp?.recycle(); blurBmp = null
-                    prefs.sp.edit().putInt("last_art_blur_level", 0).apply()
-                    ioArt.execute { lastBlurFile.delete() }
-                } else rebuildBlur()
+                if (prefs.blurLevel == 0) artController.clearBlur() else artController.rebuildBlur()
                 applyState(state, animate = false)
             }
-            ShelfPrefs.DYNAMIC_COLORS -> { Theme.dynamic = prefs.dynamicColors; applyPalette(animate = true) }
+            ShelfPrefs.DYNAMIC_COLORS -> { Theme.dynamic = prefs.dynamicColors; artController.applyPalette(animate = true) }
             ShelfPrefs.SEASONAL -> { val d = LocalDate.now(); applySeason(d); updateHoliday(d) }
             ShelfPrefs.ART_ON, ShelfPrefs.ART_WAIT -> scheduleArtMode()
             ShelfPrefs.TOP_SHELF, ShelfPrefs.CONTINUE_ROW -> {
@@ -1748,6 +1338,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 lastDate = null
                 main.removeCallbacks(tick); main.post(tick)
                 today.refresh()
+                if (key == ShelfPrefs.ENGLISH) {
+                    topBar.refreshLocale()
+                    contHeader.text = t("Continuar viendo", "Continue watching")
+                    gridHeader.text = t("Todas las apps", "All apps")
+                    hint.text = t("Mueve con las flechas. OK para confirmar", "Use arrows to move. OK to confirm")
+                    rebuild()
+                    if (settings.isOpen) settings.replacePages(settingsPages.localeStack())
+                }
             }
         }
     }
@@ -1784,7 +1382,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private fun runOpenOnStart() {
-        if (!started || settings.isOpen || menu.visibility == View.VISIBLE || inputsPopup.isOpen || today.visibility == View.VISIBLE) return
+        if (!started || settings.isOpen || menu.visibility == View.VISIBLE || inputsPopup.isOpen || today.visibility == View.VISIBLE || lanPanel.isOpen) return
         when (prefs.openOnStart) {
             "livetv" -> cl.deco.shelf.service.KeyMap.liveTvApp(this)?.let { pkg ->
                 releaseVideoForPlayback()
@@ -1824,7 +1422,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         val up = android.os.SystemClock.elapsedRealtime()
         var st = healthStore.load()
         if (HealthNotice.rebooted(st, up)) st = HealthNotice.afterReboot(st, up)
-        val blocked = artPlayer != null || artMode || MemoryCleaner.playbackActive(this)
+        val blocked = artController.hasVideoPlayer || artMode || MemoryCleaner.playbackActive(this)
         if (confirming && !blocked) {
             val h2 = healthSnapshot()
             st = HealthNotice.onEvaluation(st, now, h2.cmaFreeKb, h2.cmaTotalKb, h2.uptimeMs, t)
@@ -1886,7 +1484,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun evaluateUpdate() {
         if (!started) return
         val now = System.currentTimeMillis()
-        val blocked = artPlayer != null || artMode || MemoryCleaner.playbackActive(this)
+        val blocked = artController.hasVideoPlayer || artMode || MemoryCleaner.playbackActive(this)
         var st = UpdateRules.afterInstalled(updateStore.load(), updateChecker.installedCode())
         if (!prefs.updateAuto) { topBar.setUpdateHint(null) {}; updateStore.save(st); return }
         val online = netWatcher?.online ?: true
@@ -1923,7 +1521,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 } else st = st.copy(lastCheckMs = now) // un fallo también cuenta: no se reintenta antes de 24 h (la búsqueda manual siempre está)
                 updateStore.save(st)
                 updateStore.status = when (out) {
-                    is UpdateChecker.Outcome.Available -> "${UpdateRules.displayVersion(out.info.versionName)} disponible: OK para instalar"
+                    is UpdateChecker.Outcome.Available -> t("${UpdateRules.displayVersion(out.info.versionName)} disponible: OK para instalar", "${UpdateRules.displayVersion(out.info.versionName)} available: press OK to install")
                     is UpdateChecker.Outcome.UpToDate -> out.text
                     is UpdateChecker.Outcome.Failed -> out.text
                 }
@@ -1932,7 +1530,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                     if (out is UpdateChecker.Outcome.Available) { if (started) openUpdate(out.info) }
                     else Toast.makeText(this, updateStore.status, Toast.LENGTH_SHORT).show()
                 } else if (started) {
-                    showUpdateChip(st, now, artPlayer != null || artMode || MemoryCleaner.playbackActive(this))
+                    showUpdateChip(st, now, artController.hasVideoPlayer || artMode || MemoryCleaner.playbackActive(this))
                 }
             }
         }
@@ -1943,11 +1541,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (known != null && UpdateRules.isApplicable(known, updateChecker.installedCode(), android.os.Build.VERSION.SDK_INT) && updateStore.load().availableCode > 0) {
             openUpdate(known); return
         }
-        Toast.makeText(this, "Buscando actualizaciones...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, t("Buscando actualizaciones...", "Checking for updates..."), Toast.LENGTH_SHORT).show()
         runUpdateCheck(manual = true)
     }
 
-    override fun updateStatus(): String = if (updateChecking) "Buscando..." else updateStore.status.ifEmpty { "Nunca" }
+    override fun updateStatus(): String = if (updateChecking) t("Buscando...", "Checking...") else updateStore.status.ifEmpty { t("Nunca", "Never") }
 
     private fun dismissUpdateNotice() {
         updateStore.save(UpdateRules.onDismissed(updateStore.load(), System.currentTimeMillis(), updateTiming.cooldownMs))
@@ -1971,15 +1569,13 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     override fun freeMemory() {
         trimCaches()
-        Toast.makeText(this, "Memoria liberada: ${pss()}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, t("Memoria liberada: ${pss()}", "Memory freed: ${pss()}"), Toast.LENGTH_SHORT).show()
     }
 
     /** Suelta las cachés propias: LRU de tiles y, fuera de la grilla, el bitmap blur (se regenera al abrir la grilla). */
     private fun trimCaches() {
         loader.trim()
-        if (state != HomeState.GRID && blurBmp != null) {
-            blurView.setImageDrawable(null); blurBmp?.recycle(); blurBmp = null
-        }
+        if (state != HomeState.GRID) artController.onTrimMemoryUiHidden()
     }
 
     /** Espacio libre en /data: se revisa como máximo una vez al día (al volver al home), sin polling. */
@@ -2015,69 +1611,20 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         adapter.refreshAll()
     }
 
-    override fun nextArt() { lastArt = System.currentTimeMillis(); loadArt(true) }
+    override fun nextArt() = artController.nextArtNow()
 
     override fun pss(): String = "%.1f MB".format(Debug.getPss() / 1024.0)
 
-    override fun exportBackup(): String {
-        val dir = getExternalFilesDir("backup") ?: return "Sin almacenamiento disponible"
-        dir.mkdirs()
-        val all = JSONObject()
-        for ((k, v) in prefs.sp.all) {
-            if (runtimeKey(k)) continue
-            val o = JSONObject()
-            when (v) {
-                is String -> o.put("t", "s").put("v", v)
-                is Int -> o.put("t", "i").put("v", v)
-                is Long -> o.put("t", "l").put("v", v)
-                is Boolean -> o.put("t", "b").put("v", v)
-                is Float -> o.put("t", "f").put("v", v.toDouble())
-                is Set<*> -> o.put("t", "ss").put("v", JSONArray(v.map { it.toString() }))
-                else -> continue
-            }
-            all.put(k, o)
-        }
-        val root = JSONObject().put("app", packageName).put("format", 1).put("prefs", all)
-        val f = File(dir, "shelf-backup-" + java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date()) + ".json")
-        return try {
-            f.writeText(root.toString(2))
-            "Guardado: /sdcard/Android/data/$packageName/files/backup/${f.name} (respaldar con adb pull)"
-        } catch (e: Exception) { "Error al exportar: ${e.message}" }
-    }
+    override fun exportBackup(): String = BackupManager.exportToFile(this)
 
-    /** Estado del equipo guardado en las mismas prefs: no viaja en respaldos ni se pisa al restaurar. */
-    private fun runtimeKey(k: String) = k.startsWith("hn_") || k.startsWith("last_art_") || k.startsWith("space_") ||
-        k in setOf("night_active", "night_prev", "health_snooze_until", "perm_asked")
-
-    override fun backups(): List<File> =
-        getExternalFilesDir("backup")?.listFiles { f -> f.name.startsWith("shelf-backup-") && f.extension == "json" }
-            ?.sortedByDescending { it.name }.orEmpty()
+    override fun backups(): List<File> = BackupManager.listBackups(this)
 
     override fun restoreBackup(f: File) {
         try {
-            val all = JSONObject(f.readText()).getJSONObject("prefs")
-            // Se borran solo los ajustes: el estado de este equipo (apagado nocturno en curso, salud, espacio, último fondo)
-            // se conserva. Antes un respaldo de día restaurado de noche dejaba el apagado por inactividad activo todo el día
-            val ed = prefs.sp.edit()
-            for (k in prefs.sp.all.keys) if (!runtimeKey(k)) ed.remove(k)
-            for (k in all.keys()) {
-                if (runtimeKey(k)) continue
-                val o = all.getJSONObject(k)
-                when (o.getString("t")) {
-                    "s" -> ed.putString(k, o.getString("v"))
-                    "i" -> ed.putInt(k, o.getInt("v"))
-                    "l" -> ed.putLong(k, o.getLong("v"))
-                    "b" -> ed.putBoolean(k, o.getBoolean("v"))
-                    "f" -> ed.putFloat(k, o.getDouble("v").toFloat())
-                    "ss" -> { val a = o.getJSONArray("v"); ed.putStringSet(k, (0 until a.length()).map { a.getString(it) }.toSet()) }
-                }
-            }
-            ed.commit()
-            // Horario nocturno y alarmas restaurados: se reprograman sin esperar un reinicio (App.onCreate no corre con recreate)
-            Thread({ NightMode.refresh(applicationContext); ClockScheduler.rescheduleAll(applicationContext) }, "restore-resched").start()
+            BackupManager.restoreFromFile(this, f)
             recreate() // relee todo desde las prefs restauradas
         } catch (e: Exception) {
-            Toast.makeText(this, "Respaldo inválido: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, t("Respaldo inválido: ${e.message}", "Invalid backup: ${e.message}"), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -2122,7 +1669,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                     val uri = Uri.fromParts("package", e.component.packageName, null)
                     startActivity(Intent(Intent.ACTION_DELETE, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } catch (_: Exception) {
-                    Toast.makeText(this, "No se puede desinstalar", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, t("No se puede desinstalar", "Cannot uninstall"), Toast.LENGTH_SHORT).show()
                 }
             }
         } else null
@@ -2155,7 +1702,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
 
     private fun toggleFav(e: AppEntry, slot: Int, isFav: Boolean) {
         if (!isFav && adapter.favCount >= prefs.dockMax) {
-            Toast.makeText(this, "Dock lleno (máximo ${prefs.dockMax})", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, t("Dock lleno (máximo ${prefs.dockMax})", "Dock full (max ${prefs.dockMax})"), Toast.LENGTH_SHORT).show()
             return
         }
         val favs = adapter.favKeys().toMutableList()
@@ -2181,11 +1728,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         blockContent(true)
         val hid = allApps.filter { it.key in store.hidden() }
         val opts = if (hid.isEmpty()) {
-            listOf(MenuPanel.Opt("No hay apps ocultas") { closeMenu() })
+            listOf(MenuPanel.Opt(t("No hay apps ocultas", "No hidden apps")) { closeMenu() })
         } else {
-            hid.map { a -> MenuPanel.Opt("Mostrar ${a.label}") { closeMenu(restore = false); store.setHidden(store.hidden() - a.key); rebuildThen { if (adapter.favCount > 0) 0 else AppAdapter.GRID } } }
+            hid.map { a -> MenuPanel.Opt(t("Mostrar ${a.label}", "Show ${a.label}")) { closeMenu(restore = false); store.setHidden(store.hidden() - a.key); rebuildThen { if (adapter.favCount > 0) 0 else AppAdapter.GRID } } }
         }
-        menu.showList("Apps ocultas", opts)
+        menu.showList(t("Apps ocultas", "Hidden apps"), opts)
     }
 
     private fun rebuildThen(pos: () -> Int) {
@@ -2247,6 +1794,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 KeyEvent.KEYCODE_DPAD_UP -> { Nav.dx = 0; Nav.dy = -1 }
                 KeyEvent.KEYCODE_DPAD_DOWN -> { Nav.dx = 0; Nav.dy = 1 }
             }
+        }
+        if (lanPanel.isOpen) {
+            if (k == KeyEvent.KEYCODE_BACK) { if (down) closeLanTransfer(); return true }
+            if (k == KeyEvent.KEYCODE_MENU) return true
+            return super.dispatchKeyEvent(e)
         }
         if (importPanel.isOpen) {
             if (k == KeyEvent.KEYCODE_BACK) { if (down && !importPanel.back()) closeImport(); return true }
@@ -2371,6 +1923,46 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         return super.dispatchKeyEvent(e)
     }
 
+    /** Soporte básico de rueda/scroll de air-mouse sobre el home (overlays delegan al scroll estándar). */
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (!ready) return super.onGenericMotionEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_SCROLL && event.isFromSource(InputDevice.SOURCE_CLASS_POINTER)) {
+            val vScroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+            if (abs(vScroll) >= 0.05f) {
+                main.removeCallbacks(openOnStartRun)
+                scheduleArtMode()
+                if (state == HomeState.ART_MODE) {
+                    exitArtMode()
+                    return true
+                }
+                val overlayOpen = lanPanel.isOpen || importPanel.isOpen || settings.isOpen || health.isOpen ||
+                    updatePanel.isOpen || hdmiNotice.isOpen || inputsPopup.isOpen ||
+                    menu.visibility == View.VISIBLE || today.visibility == View.VISIBLE
+                if (overlayOpen) return super.onGenericMotionEvent(event)
+                if (moving) return true
+                if (vScroll < 0f) {
+                    when (state) {
+                        HomeState.TOPBAR -> if (adapter.favCount > 0) focusAt(lastDockSlot.coerceIn(0, adapter.favCount - 1)) else if (adapter.gridCount > 0) openGrid()
+                        HomeState.DOCK -> if (adapter.gridCount > 0) openGrid()
+                        HomeState.GRID -> gridRv.smoothScrollBy(0, dp(220))
+                        else -> {}
+                    }
+                } else {
+                    when (state) {
+                        HomeState.GRID -> {
+                            if (gridRv.computeVerticalScrollOffset() > 0) gridRv.smoothScrollBy(0, -dp(220))
+                            else if (adapter.favCount > 0) closeGrid()
+                        }
+                        HomeState.DOCK -> if (topBar.focusInputs()) applyState(HomeState.TOPBAR)
+                        else -> {}
+                    }
+                }
+                return true
+            }
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
     @Deprecated("Home ya es la raíz")
     override fun onBackPressed() { /* launcher: ignorar back */ }
 
@@ -2380,12 +1972,8 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         const val GRID_COLS = 7
         /** Margen seguro izquierdo: 96 px a 1080p. */
         val SAFE_LEFT get() = 96
-        val BLUR_RADII = intArrayOf(0, 10, 20, 32)
-        const val ART_VIDEO_DELAY_MS = 45_000L
         /** Ventana para el doble Home (obra siguiente). */
         const val DOUBLE_HOME_MS = 600L
-        const val NIGHT_FACTOR = 0.8f // 20% adicional de atenuación sobre el ajuste del usuario
-        const val AWAY_MS = 10L * 60_000L
         const val WEATHER_MS = 20L * 60_000L
         const val SHELF_CACHED_MS = 120L
         const val SHELF_QUERY_MS = 300L

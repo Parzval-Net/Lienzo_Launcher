@@ -125,6 +125,17 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         build(p, if (f != null) rowIndexOf(f) else -1)
     }
 
+    /** Reemplaza la pila completa (p. ej. al cambiar idioma en caliente), preservando el índice enfocado. */
+    fun replacePages(pages: List<Page>) {
+        if (pages.isEmpty()) return
+        val f = findFocus()
+        val idx = if (f != null) rowIndexOf(f) else -1
+        stack.clear()
+        stack.addAll(pages)
+        while (focusStack.size >= stack.size) focusStack.removeAt(focusStack.size - 1)
+        build(stack.last(), idx)
+    }
+
     /** Reconstruye la página actual (tras cambiar valores que afectan a otras filas). */
     fun rebuild() {
         val f = findFocus()
@@ -152,10 +163,10 @@ class SettingsPanel(ctx: Context) : FrameLayout(ctx) {
         else crumb.visibility = GONE
         val hasChoice = p.rows.any { it is Row.Choice }
         footer.text = when {
-            hasChoice && stack.size > 1 -> "‹ ›  cambia el valor     OK  selecciona     BACK  vuelve"
-            hasChoice -> "‹ ›  cambia el valor     OK  selecciona     BACK  cierra"
-            stack.size > 1 -> "OK  selecciona     BACK  vuelve"
-            else -> "OK  selecciona     BACK  cierra"
+            hasChoice && stack.size > 1 -> t("‹ ›  cambia el valor     OK  selecciona     BACK  vuelve", "‹ ›  change value     OK  select     BACK  back")
+            hasChoice -> t("‹ ›  cambia el valor     OK  selecciona     BACK  cierra", "‹ ›  change value     OK  select     BACK  close")
+            stack.size > 1 -> t("OK  selecciona     BACK  vuelve", "OK  select     BACK  back")
+            else -> t("OK  selecciona     BACK  cierra", "OK  select     BACK  close")
         }
         list.removeAllViews()
         focusBgs.clear(); sections.clear(); slots.clear()

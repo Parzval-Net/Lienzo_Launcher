@@ -92,17 +92,17 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         val ctx = context
         body.removeAllViews()
         if (howTo) { buildHowTo(); return }
-        title.text = "Salud del equipo"
+        title.text = t("Salud del equipo", "Device health")
         val s = snapshot()
         val ram = DeviceHealth.readRam(ctx)
         val reco = DeviceHealth.recommend(s, ram.availKb, ram.totalKb, freed)
 
-        body.addView(section("Estado"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(4); leftMargin = ctx.dp(8) })
-        body.addView(meter("Memoria de video (CMA)", if (s.cmaTotalKb > 0) "${DeviceHealth.mbText(s.cmaFreeKb)} libres de ${DeviceHealth.mbText(s.cmaTotalKb)}" else "No disponible",
+        body.addView(section(t("Estado", "Status")), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(4); leftMargin = ctx.dp(8) })
+        body.addView(meter(t("Memoria de video (CMA)", "Video memory (CMA)"), if (s.cmaTotalKb > 0) "${DeviceHealth.mbText(s.cmaFreeKb)} ${t("libres de", "free of")} ${DeviceHealth.mbText(s.cmaTotalKb)}" else t("No disponible", "Unavailable"),
             if (s.cmaTotalKb > 0) s.cmaFreeKb.toFloat() / s.cmaTotalKb else 1f, s.cmaLow))
-        body.addView(meter("RAM disponible", "${DeviceHealth.mbText(ram.availKb)} de ${DeviceHealth.mbText(ram.totalKb)}",
+        body.addView(meter(t("RAM disponible", "Available RAM"), "${DeviceHealth.mbText(ram.availKb)} ${t("de", "of")} ${DeviceHealth.mbText(ram.totalKb)}",
             if (ram.totalKb > 0) ram.availKb.toFloat() / ram.totalKb else 1f, ram.totalKb > 0 && ram.availKb * 100 < ram.totalKb * DeviceHealth.RAM_LOW_PCT))
-        body.addView(info("Encendido hace", DeviceHealth.uptimeText(s.uptimeMs)))
+        body.addView(info(t("Encendido hace", "Uptime"), DeviceHealth.uptimeText(s.uptimeMs)))
 
         val recoView = tv(ctx, 16f, Ui.TEXT, "sans-serif-medium").apply {
             text = reco.text; setLineSpacing(0f, 1.1f)
@@ -112,11 +112,11 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         body.addView(recoView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8) })
         if (result.isNotEmpty()) body.addView(label(result, 13f, Ui.TEXT), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(6); leftMargin = ctx.dp(8) })
 
-        body.addView(section("Acciones"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(2); leftMargin = ctx.dp(8) })
-        val free = action(if (busy) "Liberando cachés de Lienzo..." else "Liberar cachés de Lienzo", "No cierra otras apps. Para la memoria de video, reinicia") { liberar() }
-        val killBg = action("Cerrar apps en segundo plano (ADB)", "Usa LocalAdb para detener apps de usuario ociosas") { cerrarAppsFondo() }
-        val how = action("Cómo reiniciar", "Pasos para reiniciar el deco") { howTo = true; build() }
-        val later = action("Recordarme más tarde", "Oculta el aviso 24 h") { onSnooze() }
+        body.addView(section(t("Acciones", "Actions")), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(2); leftMargin = ctx.dp(8) })
+        val free = action(if (busy) t("Liberando cachés de Lienzo...", "Clearing Lienzo caches...") else t("Liberar cachés de Lienzo", "Clear Lienzo caches"), t("No cierra otras apps. Para la memoria de video, reinicia", "Won't close other apps. Reboot to clear video memory")) { liberar() }
+        val killBg = action(t("Cerrar apps en segundo plano (ADB)", "Force-stop background apps (ADB)"), t("Usa LocalAdb para detener apps de usuario ociosas", "Uses LocalAdb to stop idle user apps")) { cerrarAppsFondo() }
+        val how = action(t("Cómo reiniciar", "How to restart"), t("Pasos para reiniciar el deco", "Steps to reboot your TV box")) { howTo = true; build() }
+        val later = action(t("Recordarme más tarde", "Remind me later"), t("Oculta el aviso 24 h", "Hides notice for 24 h")) { onSnooze() }
         for (v in listOf(free, killBg, how, later)) body.addView(v, LinearLayout.LayoutParams(-1, ctx.dp(42)))
 
         // Foco inicial en la acción recomendada
@@ -169,14 +169,14 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
     private fun liberar() {
         if (busy) return
         if (MemoryCleaner.playbackActive(context)) {
-            result = "Hay reproducción activa. Termina de ver y vuelve a intentar."
+            result = t("Hay reproducción activa. Termina de ver y vuelve a intentar.", "Playback is active. Finish watching and try again.")
             build(); return
         }
         val b = snapshot() to DeviceHealth.readRam(context)
         before = b
         onTrimCaches()
         busy = true
-        result = "Liberando... el resultado aparece en 3 segundos."
+        result = t("Liberando... el resultado aparece en 3 segundos.", "Clearing... results appear in 3 seconds.")
         build()
         main.postDelayed(afterTask, 3000)
     }
@@ -186,8 +186,8 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         busy = false; freed = true
         val b = before ?: return
         val s = snapshot(); val r = DeviceHealth.readRam(context)
-        result = "Antes: RAM ${DeviceHealth.mbText(b.second.availKb)}, CMA ${DeviceHealth.mbText(b.first.cmaFreeKb)}\n" +
-            "Después: RAM ${DeviceHealth.mbText(r.availKb)}, CMA ${DeviceHealth.mbText(s.cmaFreeKb)}\n" +
+        result = t("Antes", "Before") + ": RAM ${DeviceHealth.mbText(b.second.availKb)}, CMA ${DeviceHealth.mbText(b.first.cmaFreeKb)}\n" +
+            t("Después", "After") + ": RAM ${DeviceHealth.mbText(r.availKb)}, CMA ${DeviceHealth.mbText(s.cmaFreeKb)}\n" +
             DeviceHealth.freeVerdict(b.second.availKb, r.availKb, b.first.cmaFreeKb, s.cmaFreeKb)
         build()
     }
@@ -197,18 +197,18 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
         busy = true
         val appCtx = context.applicationContext
         val b = snapshot() to DeviceHealth.readRam(context)
-        result = "Cerrando apps en segundo plano vía ADB local..."
+        result = t("Cerrando apps en segundo plano vía ADB local...", "Force-stopping background apps via local ADB...")
         build()
         Thread({
             val msg = cl.deco.shelf.service.SelfSetup.forceStopBackgroundApps(appCtx) {
-                main.post { if (isOpen) { result = "Acepta \"Permitir depuración por USB\" en la TV"; build() } }
+                main.post { if (isOpen) { result = t("Acepta \"Permitir depuración por USB\" en la TV", "Accept \"Allow USB debugging\" on TV"); build() } }
             }
             main.postDelayed({
                 if (!isOpen) return@postDelayed
                 busy = false
                 val s = snapshot(); val r = DeviceHealth.readRam(context)
-                result = "$msg\nAntes: RAM ${DeviceHealth.mbText(b.second.availKb)}, CMA ${DeviceHealth.mbText(b.first.cmaFreeKb)} · " +
-                    "Ahora: RAM ${DeviceHealth.mbText(r.availKb)}, CMA ${DeviceHealth.mbText(s.cmaFreeKb)}"
+                result = "$msg\n${t("Antes", "Before")}: RAM ${DeviceHealth.mbText(b.second.availKb)}, CMA ${DeviceHealth.mbText(b.first.cmaFreeKb)} · " +
+                    "${t("Ahora", "Now")}: RAM ${DeviceHealth.mbText(r.availKb)}, CMA ${DeviceHealth.mbText(s.cmaFreeKb)}"
                 build()
             }, 1500)
         }, "lienzo-kill-bg").apply { isDaemon = true }.start()
@@ -218,14 +218,14 @@ class HealthPanel(ctx: Context) : FrameLayout(ctx) {
 
     private fun buildHowTo() {
         val ctx = context
-        title.text = "Cómo reiniciar el deco"
-        body.addView(label("Reiniciar libera la memoria de video fragmentada. Elige una opción:", 14f), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(8); leftMargin = ctx.dp(8) })
-        body.addView(step(1, "Desde el control", "Mantén presionado el botón de encendido y elige Reiniciar."))
-        body.addView(step(2, "Desde Ajustes de Android", "Ajustes > Preferencias del dispositivo > Reiniciar (último elemento de la lista)."))
-        val open = action("Abrir Ajustes de Android", "") { onOpenAndroidSettings() }
+        title.text = t("Cómo reiniciar el deco", "How to restart your TV box")
+        body.addView(label(t("Reiniciar libera la memoria de video fragmentada. Elige una opción:", "Restarting clears fragmented video memory. Choose an option:"), 14f), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); bottomMargin = ctx.dp(8); leftMargin = ctx.dp(8) })
+        body.addView(step(1, t("Desde el control", "Using the remote"), t("Mantén presionado el botón de encendido y elige Reiniciar.", "Press and hold the power button, then choose Restart.")))
+        body.addView(step(2, t("Desde Ajustes de Android", "From Android Settings"), t("Ajustes > Preferencias del dispositivo > Reiniciar (último elemento de la lista).", "Settings > Device Preferences > Restart (bottom of the list).")))
+        val open = action(t("Abrir Ajustes de Android", "Open Android Settings"), "") { onOpenAndroidSettings() }
         body.addView(open, LinearLayout.LayoutParams(-1, ctx.dp(48)).apply { leftMargin = ctx.dp(44); topMargin = ctx.dp(4) })
-        body.addView(step(3, "Desenchufar", "Desconecta el deco de la corriente 10 segundos y vuelve a conectarlo."))
-        val back = action("Volver", "") { back() }
+        body.addView(step(3, t("Desenchufar", "Unplug"), t("Desconecta el deco de la corriente 10 segundos y vuelve a conectarlo.", "Unplug the power cable for 10 seconds, then plug it back in.")))
+        val back = action(t("Volver", "Back"), "") { back() }
         body.addView(back, LinearLayout.LayoutParams(-1, ctx.dp(48)).apply { topMargin = ctx.dp(10) })
         post { open.requestFocus(); scroll.scrollTo(0, 0) }
     }

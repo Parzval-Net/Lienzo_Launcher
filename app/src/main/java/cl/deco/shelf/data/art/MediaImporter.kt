@@ -108,10 +108,16 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
     // ---- Validación de video ----
 
     /** Lee solo el contenedor (MediaExtractor, sin decodificar) y aplica [VideoRules]. */
-    fun validateVideo(item: MediaItem): VideoRules.Verdict {
+    fun validateVideo(item: MediaItem): VideoRules.Verdict =
+        validateVideoSource({ it.setDataSource(app, item.uri, null) }, item.name)
+
+    private fun validateVideoFile(file: File): VideoRules.Verdict =
+        validateVideoSource({ it.setDataSource(file.path) }, file.name)
+
+    private fun validateVideoSource(setSource: (MediaExtractor) -> Unit, label: String): VideoRules.Verdict {
         val ex = MediaExtractor()
         try {
-            ex.setDataSource(app, item.uri, null)
+            setSource(ex)
             var track = -1
             var fmt: MediaFormat? = null
             for (i in 0 until ex.trackCount) {
@@ -127,7 +133,6 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             if (fps <= 0f) fps = estimateFps(ex, track)
             val ct = fmt.intOr(MediaFormat.KEY_COLOR_TRANSFER, 0)
             val hdr = ct == MediaFormat.COLOR_TRANSFER_ST2084 || ct == MediaFormat.COLOR_TRANSFER_HLG
-            // Consulta de catálogo de códecs: no instancia ningún decodificador
             var decoder = true
             if (VideoRules.isAvc(mime) || VideoRules.isHevc(mime)) {
                 val q = MediaFormat.createVideoFormat(mime!!, w, h)
@@ -136,7 +141,7 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             }
             return VideoRules.evaluate(mime, w, h, rot, fps, hdr, decoder)
         } catch (e: Exception) {
-            Log.w(TAG, "validación de ${item.name}: $e")
+            Log.w(TAG, "validación de $label: $e")
             return VideoRules.evaluate(null, 0, 0)
         } finally {
             runCatching { ex.release() }
@@ -241,25 +246,70 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
         return Outcome(imgs, vids, rejected, skipped, failed)
     }
 
-    private fun importImage(item: MediaItem) {
+    /** Importa un archivo local (subido por LAN QR) aplicando las mismas reglas de espacio, formato y colección. */
+    fun importLocalFile(tempFile: File, displayName: String, collectionRaw: String): Result<String> {
+        val ext = displayName.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        val collection = Collections.fromFolder(collectionRaw)
+        return when {
+            ext in setOf("jpg", "jpeg", "png", "webp", "bmp") -> {
+                val chk = SpaceRules.check(SpaceRules.EST_IMAGE_BYTES, freeBytes())
+                if (!chk.ok) return Result.failure(IOException("Sin espacio libre suficiente (se reservan 500 MB)"))
+                val key = ImportMath.dedupeKey(displayName, tempFile.length())
+                if (key in art.importedKeys()) return Result.success("Ya importada: $displayName")
+                try {
+                    importImageSource(displayName, key, collection, ext == "jpg" || ext == "jpeg") { tempFile.inputStream() }
+                    Result.success("Imagen importada en $collection: $displayName")
+                } catch (e: Throwable) {
+                    Result.failure(e)
+                }
+            }
+            ext in VideoRules.EXTENSIONS -> {
+                val chk = SpaceRules.check(tempFile.length(), freeBytes())
+                if (!chk.ok) return Result.failure(IOException("Sin espacio libre suficiente (se reservan 500 MB)"))
+                when (val v = validateVideoFile(tempFile)) {
+                    is VideoRules.Verdict.Rejected -> return Result.failure(IllegalArgumentException(v.message))
+                    is VideoRules.Verdict.Ok -> {}
+                }
+                val dir = VideoLibrary.collectionDir(app, collection) ?: return Result.failure(IOException("Sin carpeta destino"))
+                val stored = ImportMath.safeFileName(displayName, emptySet())
+                val existing = VideoLibrary.all(app).associate { "${it.collection}|${it.file.name}" to it.file.length() }
+                if (existing["$collection|$stored"] == tempFile.length()) return Result.success("Video ya importado: $displayName")
+                try {
+                    copyStreamToDir(tempFile.inputStream(), displayName, dir, AtomicBoolean(false)) {}
+                    Result.success("Video importado en $collection: $displayName")
+                } catch (e: Throwable) {
+                    Result.failure(e)
+                }
+            }
+            else -> Result.failure(IllegalArgumentException("Formato no admitido: $ext"))
+        }
+    }
+
+    private fun importImage(item: MediaItem) =
+        importImageSource(item.name, item.key, item.collection, item.mime == "image/jpeg") { cr.openInputStream(item.uri) }
+
+    private fun importImageSource(
+        displayName: String,
+        dedupeKey: String,
+        collection: String,
+        isJpeg: Boolean,
+        openStream: () -> java.io.InputStream?,
+    ) {
         var orientation = ExifInterface.ORIENTATION_NORMAL
-        if (item.mime == "image/jpeg") {
-            try { cr.openInputStream(item.uri)?.use { orientation = ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1) } } catch (_: Exception) {}
+        if (isJpeg) {
+            try { openStream()?.use { orientation = ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1) } } catch (_: Exception) {}
         }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        // decodeStream devuelve null con inJustDecodeBounds: se confirma la apertura aparte
-        val stream = cr.openInputStream(item.uri) ?: throw IOException("sin lectura")
+        val stream = openStream() ?: throw IOException("sin lectura")
         stream.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalStateException("no es una imagen")
         val rot = ImportMath.exifRotation(orientation)
         val (ow, oh) = if (rot % 180 == 90) bounds.outHeight to bounds.outWidth else bounds.outWidth to bounds.outHeight
-        // Verticales y cuadradas solo llenan el passe-partout (alto <= 1080): pedir 1920x1080 en ambos ejes las decodificaba
-        // completas (una foto de 12 MP vertical son ~48 MB, más otro tanto al rotar) y en un equipo de 2 GB terminaba en OOM
         var sample = if (ImportMath.needsMat(ow, oh)) ImportMath.sampleSize(ow, oh, 1, ArtCatalog.OUT_H) else ImportMath.sampleSize(ow, oh)
         var bmp: Bitmap? = null
         for (attempt in 0 until 3) {
             try {
-                bmp = cr.openInputStream(item.uri)?.use {
+                bmp = openStream()?.use {
                     BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 })
                 }
                 break
@@ -271,7 +321,6 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             val rotated = try {
                 Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
             } catch (_: OutOfMemoryError) {
-                // Sin memoria para la copia rotada: se rota a la mitad de tamaño (sigue sobrando para 1080p)
                 Bitmap.createBitmap(src, 0, 0, src.width, src.height, m.apply { postScale(0.5f, 0.5f) }, true)
             }
             if (rotated !== src) src.recycle()
@@ -291,18 +340,28 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
             part.delete()
         }
         art.add(
-            UserArt.Entry(id, item.name.substringBeforeLast('.'), dest, dest.length(), home = !mat, key = item.key, collection = item.collection),
+            UserArt.Entry(id, displayName.substringBeforeLast('.'), dest, dest.length(), home = !mat, key = dedupeKey, collection = collection),
             if (mat) "mat" else "cover",
         )
     }
 
     /** Copia el video a la carpeta de su colección en video_user. Devuelve false si se canceló (el parcial se borra). */
     private fun copyVideo(item: MediaItem, dir: File, cancel: AtomicBoolean, progress: (Long) -> Unit): Boolean {
-        val name = ImportMath.safeFileName(item.name, dir.list()?.toSet().orEmpty())
+        val input = cr.openInputStream(item.uri) ?: throw IOException("sin lectura")
+        return copyStreamToDir(input, item.name, dir, cancel, progress)
+    }
+
+    private fun copyStreamToDir(
+        input: java.io.InputStream,
+        rawName: String,
+        dir: File,
+        cancel: AtomicBoolean,
+        progress: (Long) -> Unit,
+    ): Boolean {
+        val name = ImportMath.safeFileName(rawName, dir.list()?.toSet().orEmpty())
         val dest = File(dir, name)
         val part = File(dir, "$name.part")
         try {
-            val input = cr.openInputStream(item.uri) ?: throw IOException("sin lectura")
             input.use { ins ->
                 part.outputStream().use { out ->
                     val buf = ByteArray(256 * 1024)

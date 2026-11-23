@@ -86,14 +86,14 @@ class TopBar(
     }
 
     private val lowChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
-        text = "Poco espacio"
+        text = t("Poco espacio", "Low storage")
         isFocusable = true; isClickable = true
         setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
         background = noticeBg(ctx)
     }
 
     private val healthChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
-        text = "Reiniciar recomendado"
+        text = t("Reiniciar recomendado", "Restart recommended")
         isFocusable = true; isClickable = true
         setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
         background = noticeBg(ctx)
@@ -140,9 +140,13 @@ class TopBar(
     private var online = true
 
     private var wifiLabel: TextView? = null
+    private var inputsLabel: TextView? = null
+    private var settingsLabel: TextView? = null
     private var inputsPill: View? = null
     private var wifiPill: View? = null
     private var settingsPill: View? = null
+    private var lastGreetingHour = -1
+    private var lastGreetingOverride: String? = null
     /** Skin de temporada: calabaza en Wi-Fi, murciélago en Entradas y fantasma en Ajustes (Fluent Emoji 3D, MIT). */
     private var season = false
     private val artChip = tv(ctx, 13f, Ui.TEXT2, "sans-serif-medium").apply {
@@ -246,7 +250,10 @@ class TopBar(
             addView(lowChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
             addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
             addView(updateChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
-            val inPill = pill(cl.deco.shelf.R.drawable.ic_in_hdmi, "Entradas", onInputs).also { inputsPill = it }
+            val inPill = pill(cl.deco.shelf.R.drawable.ic_in_hdmi, t("Entradas", "Inputs"), onInputs).also {
+                inputsLabel = it.findViewWithTag("pill_label")
+                inputsPill = it
+            }
             addView(inPill)
             val wifiPill = pill(cl.deco.shelf.R.drawable.ic_q_wifi, "Wi-Fi", onWifi).also {
                 wifiLabel = it.findViewWithTag("pill_label")
@@ -254,7 +261,10 @@ class TopBar(
             }
             addView(wifiPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8) })
             addView(vpnChip, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(6) })
-            val setPill = pill(cl.deco.shelf.R.drawable.ic_q_settings, "Ajustes", onSettings).also { settingsPill = it }
+            val setPill = pill(cl.deco.shelf.R.drawable.ic_q_settings, t("Ajustes", "Settings"), onSettings).also {
+                settingsLabel = it.findViewWithTag("pill_label")
+                settingsPill = it
+            }
             addView(setPill, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = context.dp(8); rightMargin = context.dp(10) })
             addView(this@TopBar.right)
         }
@@ -273,12 +283,23 @@ class TopBar(
     /** Actualiza el saludo según la hora del día. */
 
     fun setGreeting(hour: Int, override: String? = null) {
+        lastGreetingHour = hour
+        lastGreetingOverride = override
         val text = override ?: when (hour) {
-            in 6..11 -> "Buenos días"
-            in 12..19 -> "Buenas tardes"
-            else -> "Buenas noches"
+            in 6..11 -> t("Buenos días", "Good morning")
+            in 12..19 -> t("Buenas tardes", "Good afternoon")
+            else -> t("Buenas noches", "Good evening")
         }
         if (greeting.text != text) greeting.text = text
+    }
+
+    /** Refresca los textos propios de la barra al cambiar el idioma sin recrear la Activity. */
+    fun refreshLocale() {
+        lowChip.text = t("Poco espacio", "Low storage")
+        healthChip.text = t("Reiniciar recomendado", "Restart recommended")
+        inputsLabel?.text = t("Entradas", "Inputs")
+        settingsLabel?.text = t("Ajustes", "Settings")
+        if (lastGreetingHour >= 0 || lastGreetingOverride != null) setGreeting(lastGreetingHour, lastGreetingOverride)
     }
 
     fun setWeatherEnabled(on: Boolean) { right.visibility = if (on) VISIBLE else GONE }

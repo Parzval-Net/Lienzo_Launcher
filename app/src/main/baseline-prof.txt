@@ -11,6 +11,7 @@ HSPLcl/deco/shelf/settings/**;->**(**)**
 
 # ui: Activity, dock y grilla (adaptador, celdas con foco, recycler), barra superior, Top Shelf y Continuar viendo, tema
 HSPLcl/deco/shelf/ui/MainActivity**;->**(**)**
+HSPLcl/deco/shelf/ui/ArtController**;->**(**)**
 HSPLcl/deco/shelf/ui/AppAdapter**;->**(**)**
 HSPLcl/deco/shelf/ui/CellGeo;->**(**)**
 HSPLcl/deco/shelf/ui/FocusCell**;->**(**)**

@@ -88,26 +88,26 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
 
     init {
         val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(PageUi.title(ctx, "Inicio rápido"))
+        body.addView(PageUi.title(ctx, t("Inicio rápido", "Quick start")))
         val presets = PageUi.row(ctx)
         for (m in listOf(5, 10, 15, 30, 60)) presets.addView(PageUi.chip(ctx, "$m min", 84) { start(m * 60_000L) })
         body.addView(presets)
-        body.addView(PageUi.title(ctx, "Personalizado"))
+        body.addView(PageUi.title(ctx, t("Personalizado", "Custom")))
         val custom = PageUi.row(ctx)
         custom.addView(hours); custom.addView(mins)
-        custom.addView(PageUi.chip(ctx, "Iniciar", 110) {
+        custom.addView(PageUi.chip(ctx, t("Iniciar", "Start"), 110) {
             val ms = (hours.value * 60L + mins.value) * 60_000L
             if (ms > 0) start(ms)
         })
         body.addView(custom)
-        body.addView(tv(ctx, 12f, Ui.TEXT2).apply { text = "Con el foco en horas o minutos: ARRIBA y ABAJO cambian el valor" },
+        body.addView(tv(ctx, 12f, Ui.TEXT2).apply { text = t("Con el foco en horas o minutos: ARRIBA y ABAJO cambian el valor", "Focus hours or minutes: UP and DOWN adjust values") },
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(4) })
-        body.addView(PageUi.title(ctx, if (Es.english) "Sleep TV timer" else "Apagar TV en"))
+        body.addView(PageUi.title(ctx, t("Apagar TV en", "Sleep TV timer")))
         val sleepRow = PageUi.row(ctx)
-        sleepRow.addView(PageUi.chip(ctx, if (Es.english) "Off" else "Apagado", 96) { setSleep(0) })
+        sleepRow.addView(PageUi.chip(ctx, t("Apagado", "Off"), 96) { setSleep(0) })
         for (m in listOf(15, 30, 45, 60, 90, 120)) sleepRow.addView(PageUi.chip(ctx, "$m min", 76) { setSleep(m) })
         body.addView(sleepRow)
-        body.addView(PageUi.title(ctx, "Activos (máx. ${ClockStore.MAX_TIMERS})"))
+        body.addView(PageUi.title(ctx, t("Activos (máx. ${ClockStore.MAX_TIMERS})", "Active (max ${ClockStore.MAX_TIMERS})")))
         body.addView(list)
         view = PageUi.scroll(ctx, body)
     }
@@ -115,9 +115,9 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
     private fun setSleep(minutes: Int) {
         cl.deco.shelf.clock.SleepTimer.set(ctx, minutes)
         val msg = if (minutes <= 0) {
-            if (Es.english) "Sleep timer cancelled" else "Apagado programado cancelado"
+            t("Apagado programado cancelado", "Sleep timer cancelled")
         } else {
-            if (Es.english) "TV will sleep in $minutes min" else "La TV se apagará en $minutes min"
+            t("La TV se apagará en $minutes min", "TV will sleep in $minutes min")
         }
         Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
         onChanged()
@@ -128,7 +128,7 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
 
     private fun start(ms: Long) {
         val t = store.startTimer(ms)
-        if (t == null) { Toast.makeText(ctx, "Máximo ${ClockStore.MAX_TIMERS} temporizadores", Toast.LENGTH_SHORT).show(); return }
+        if (t == null) { Toast.makeText(ctx, t("Máximo ${ClockStore.MAX_TIMERS} temporizadores", "Maximum ${ClockStore.MAX_TIMERS} timers"), Toast.LENGTH_SHORT).show(); return }
         ClockScheduler.scheduleTimer(ctx, t)
         bindList(); onChanged()
     }
@@ -152,14 +152,14 @@ class TimerPage(private val ctx: Context, private val onChanged: () -> Unit) {
         val timers = store.timers().filter { !it.running || it.endAt > now }
         val focusedId = (list.findFocus()?.tag as? Int)
         list.removeAllViews(); rowTexts.clear()
-        if (timers.isEmpty()) { list.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = "Sin temporizadores activos" }); return }
+        if (timers.isEmpty()) { list.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = t("Sin temporizadores activos", "No active timers") }); return }
         for (t in timers) {
             val row = PageUi.row(ctx)
             val main = PageUi.chip(ctx, label(t, now), 0) { toggle(t) }
             rowTexts[t.id] = main
             main.layoutParams = LinearLayout.LayoutParams(ctx.dp(300), ctx.dp(40)).apply { rightMargin = ctx.dp(8) }
             main.gravity = Gravity.CENTER_VERTICAL; main.tag = t.id
-            val cancel = PageUi.chip(ctx, "Cancelar", 110) { cancel(t) }
+            val cancel = PageUi.chip(ctx, t("Cancelar", "Cancel"), 110) { cancel(t) }
             row.addView(main); row.addView(cancel)
             list.addView(row, LinearLayout.LayoutParams(-2, ctx.dp(46)))
             if (focusedId == t.id) main.requestFocus()
@@ -196,23 +196,23 @@ class AlarmPage(private val ctx: Context, private val onChanged: () -> Unit) {
 
     init {
         val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(PageUi.title(ctx, "Nueva alarma"))
+        body.addView(PageUi.title(ctx, t("Nueva alarma", "New alarm")))
         val r1 = PageUi.row(ctx)
         r1.addView(hh); r1.addView(mm)
-        r1.addView(PageUi.chip(ctx, "Agregar", 110) { add() })
+        r1.addView(PageUi.chip(ctx, t("Agregar", "Add"), 110) { add() })
         body.addView(r1)
         val r2 = PageUi.row(ctx)
-        r2.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = "Repetir:  " })
-        val names = listOf("L", "M", "M", "J", "V", "S", "D")
+        r2.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = t("Repetir:  ", "Repeat:  ") })
+        val names = if (Es.english) listOf("M", "T", "W", "T", "F", "S", "S") else listOf("L", "M", "M", "J", "V", "S", "D")
         for (i in 0 until 7) {
             val c = PageUi.chip(ctx, names[i], 44) { days[i] = !days[i]; dayChips[i].isSelected = days[i] }
             c.setPadding(0, 0, 0, 0)
             dayChips.add(c); r2.addView(c)
         }
-        r2.addView(tv(ctx, 12f, Ui.TEXT2).apply { text = "  sin días = única" })
+        r2.addView(tv(ctx, 12f, Ui.TEXT2).apply { text = t("  sin días = única", "  no days = once") })
         body.addView(r2, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(8) })
         labelEt.apply {
-            hint = "Etiqueta (opcional)"; textSize = 16f
+            hint = t("Etiqueta (opcional)", "Label (optional)"); textSize = 16f
             setTextColor(Glass.fg())
             setHintTextColor(android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(0x992A2F3A.toInt(), 0x88FFFFFF.toInt())))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
@@ -221,14 +221,17 @@ class AlarmPage(private val ctx: Context, private val onChanged: () -> Unit) {
             setOnClickListener { (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(this, 0) }
         }
         body.addView(labelEt, LinearLayout.LayoutParams(ctx.dp(400), ctx.dp(44)).apply { topMargin = ctx.dp(8) })
-        body.addView(PageUi.title(ctx, "Alarmas"))
+        body.addView(PageUi.title(ctx, t("Alarmas", "Alarms")))
         body.addView(list)
         view = PageUi.scroll(ctx, body)
     }
 
     fun show() = bindList()
 
-    private fun daysText(m: Int): String = if (m == 0) "Una vez" else listOf("L", "M", "M", "J", "V", "S", "D").filterIndexed { i, _ -> m and (1 shl i) != 0 }.joinToString(" ")
+    private fun daysText(m: Int): String = if (m == 0) t("Una vez", "Once") else {
+        val shortDays = if (Es.english) listOf("M", "T", "W", "T", "F", "S", "S") else listOf("L", "M", "M", "J", "V", "S", "D")
+        shortDays.filterIndexed { i, _ -> m and (1 shl i) != 0 }.joinToString(" ")
+    }
 
     private fun add() {
         var mask = 0
@@ -244,14 +247,14 @@ class AlarmPage(private val ctx: Context, private val onChanged: () -> Unit) {
         val alarms = store.alarms().sortedWith(compareBy({ it.hour }, { it.minute }))
         val focusedId = (list.findFocus()?.tag as? Int)
         list.removeAllViews()
-        if (alarms.isEmpty()) { list.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = "Sin alarmas" }); return }
+        if (alarms.isEmpty()) { list.addView(tv(ctx, 14f, Ui.TEXT2).apply { text = t("Sin alarmas", "No alarms") }); return }
         for (a in alarms) {
             val row = PageUi.row(ctx)
-            val txt = "%02d:%02d   %s%s   %s".format(a.hour, a.minute, daysText(a.days), if (a.label.isNotBlank()) "  ·  ${a.label}" else "", if (a.enabled) "ACTIVA" else "apagada")
+            val txt = "%02d:%02d   %s%s   %s".format(a.hour, a.minute, daysText(a.days), if (a.label.isNotBlank()) "  ·  ${a.label}" else "", if (a.enabled) t("ACTIVA", "ON") else t("apagada", "off"))
             val main = PageUi.chip(ctx, txt, 0) { toggle(a) }
             main.layoutParams = LinearLayout.LayoutParams(ctx.dp(420), ctx.dp(40)).apply { rightMargin = ctx.dp(8) }
             main.gravity = Gravity.CENTER_VERTICAL; main.alpha = if (a.enabled) 1f else 0.6f; main.tag = a.id
-            row.addView(main); row.addView(PageUi.chip(ctx, "Borrar", 90) { delete(a) })
+            row.addView(main); row.addView(PageUi.chip(ctx, t("Borrar", "Delete"), 90) { delete(a) })
             list.addView(row, LinearLayout.LayoutParams(-2, ctx.dp(46)))
             if (focusedId == a.id) main.requestFocus()
         }

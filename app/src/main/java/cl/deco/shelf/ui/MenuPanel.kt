@@ -84,15 +84,15 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
     ) {
         reset(label)
         val opts = mutableListOf(
-            option(if (isFav) "Quitar de favoritas" else "Agregar a favoritas", null, onFav),
-            option("Mover", null, onMove),
-            option("Renombrar", null, onRename),
-            option("Info de la app", null, onInfo),
-            option("Ocultar app", null, onHide),
-            option("Ver apps ocultas", null, onHidden),
+            option(if (isFav) t("Quitar de favoritas", "Remove from favorites") else t("Agregar a favoritas", "Add to favorites"), null, onFav),
+            option(t("Mover", "Move"), null, onMove),
+            option(t("Renombrar", "Rename"), null, onRename),
+            option(t("Info de la app", "App info"), null, onInfo),
+            option(t("Ocultar app", "Hide app"), null, onHide),
+            option(t("Ver apps ocultas", "Show hidden apps"), null, onHidden),
         )
-        if (onUninstall != null) opts.add(option("Desinstalar app", null, onUninstall, highlight = true))
-        opts.add(option("Ajustes de Lienzo", null, onSettings))
+        if (onUninstall != null) opts.add(option(t("Desinstalar app", "Uninstall app"), null, onUninstall, highlight = true))
+        opts.add(option(t("Ajustes de Lienzo", "Lienzo settings"), null, onSettings))
         for (o in opts) box.addView(o, LinearLayout.LayoutParams(-1, context.dp(40)))
         addQuickRow(onQuick)
         reveal(opts[0])
@@ -101,7 +101,7 @@ class MenuPanel(ctx: Context) : FrameLayout(ctx) {
     /** Fila de accesos rápidos del sistema (íconos enfocables) y nombre del enfocado. */
     private fun addQuickRow(onQuick: (QuickAccess.Item) -> Unit) {
         val c = context
-        val name = tv(c, 13f, Ui.TEXT2).apply { text = "Accesos rápidos"; gravity = Gravity.CENTER }
+        val name = tv(c, 13f, Ui.TEXT2).apply { text = t("Accesos rápidos", "Quick access"); gravity = Gravity.CENTER }
         val row = LinearLayout(c).apply { gravity = Gravity.CENTER; setPadding(0, c.dp(8), 0, 0) }
         for (it in QuickAccess.items) {
             val b = android.widget.ImageView(c).apply {

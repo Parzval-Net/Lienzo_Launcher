@@ -2,7 +2,7 @@
 
 **Lienzo** es un launcher liviano para Android TV y Google TV (televisores y decos): una obra de arte de dominio público como fondo, tus apps favoritas en un dock, "Continuar viendo", Entradas (HDMI, AV, TV en vivo), botones del control asignables a cualquier app, reloj con alarma y temporizador, clima y feriados. Paquete `cl.deco.shelf`, licencia MIT.
 
-> **English summary.** Lienzo is a lightweight Android TV launcher (Android 9+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork (or a dynamic colour glow) as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), TV inputs with an HDMI hot-plug notice, fully remappable remote buttons, clock, alarms and timers, weather and public holidays, a screensaver with video, a crash watchdog (safe mode) and a device health notice. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub. Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are built and signed by GitHub Actions from encrypted repository secrets when a `vX.Y.Z` tag is pushed (or locally with `tools/release.sh`). UI language: Spanish (Chile) with partial English date formats. Tested on a DIW585 set-top box (Android 12), a TCL Google TV (Android 11) and a Xiaomi Mi Box S (Android 9).
+> **English summary.** Lienzo is a lightweight Android TV launcher (Android 9+, Kotlin, plain Views, no analytics, no Compose/Leanback). It shows a public-domain artwork (or a dynamic colour glow) as wallpaper with a dock of favourite apps, a "Continue watching" row (Watch Next), TV inputs with an HDMI hot-plug notice, fully remappable remote buttons (with gamepad passthrough & Android 14 volume guard), clock, sleep timer, alarms and timers, weather and public holidays, an OLED burn-in-safe screensaver with video, Wi-Fi QR upload & backup transfer from your phone, a crash watchdog (safe mode) and a device health & ADB debloat toolkit. It talks only to Open-Meteo, Nager.Date, Wikimedia and GitHub (plus an optional ephemeral LAN transfer server only while the QR screen is open). Updates come from GitHub Releases and are verified before install: SHA-256 plus an identical signing certificate, installed through `PackageInstaller`, always with the system confirmation. Build with `./gradlew :app:assembleDebug`; releases are built and signed by GitHub Actions from encrypted repository secrets when a `vX.Y.Z` tag is pushed (or locally with `tools/release.sh`). UI language: Spanish (Chile) and English (`Ajustes > Barra superior e inicio > Ubicación y región`). Tested on a DIW585 set-top box (Android 12), a TCL Google TV (Android 11) and a Xiaomi Mi Box S (Android 9).
 
 ## Capturas
 
@@ -22,17 +22,18 @@ Capturas en un televisor TCL con Google TV. Tienen desenfocados los íconos de a
 
 - Home con 4 a 7 apps favoritas, íconos adaptados u originales, renombrar, ocultar, mover y desinstalar.
 - Entradas del televisor (HDMI con nombre personalizado, estado "Conectado" real y nombre HDMI-CEC del equipo, AV, TV en vivo) desde la barra superior o el botón Entradas del control. Aviso al enchufar un equipo en un HDMI, con cualquier app en pantalla.
-- Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes, TV en vivo, Todas las apps o Modo arte. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas. En el botón de Modo arte, una pulsación corta pasa a la obra siguiente y mantenerlo abre el video.
-- Top Shelf y "Continuar viendo" (Watch Next y canales de vista previa, vía `READ_TV_LISTINGS`).
+- Control remoto: cualquier botón (de apps, colores, Guía, Asistente o propios del fabricante) se asigna desde Ajustes > Control remoto a una app, Entradas, Ajustes, TV en vivo, Todas las apps o Modo arte. Funciona con cualquier control vía un servicio de accesibilidad que solo filtra teclas, incluye modo passthrough para gamepads, pausa opcional de filtro en volumen (Android 14) y soporte básico para puntero y rueda de Air-Mouse. En el botón de Modo arte, una pulsación corta pasa a la obra siguiente y mantenerlo abre el video.
+- Top Shelf y "Continuar viendo" (Watch Next y canales de vista previa, vía `READ_TV_LISTINGS`), con caché en disco LRU de pósters remotos.
 - Fondo de obras de dominio público (117 obras de Wikimedia Commons, incluidas 57 liberadas como CC0 por The Met y la National Gallery of Art), rotación configurable, atenuación nocturna según amanecer y atardecer, colores dinámicos desde la obra. O "Color dinámico": fondo oscuro con un resplandor del color de la app enfocada. Home dos veces rápido pasa a la obra siguiente.
-- Mis fondos: importa tus imágenes y videos desde un pendrive USB (sin red, sin ADB), ordenados en colecciones temáticas por carpeta (`Lienzo-<Tema>`), y elige qué colección usan el fondo y el video.
-- Modo arte y protector de pantalla con video.
-- Configuración sin PC: permisos, servicio de botones, inicio y protector con la depuración por red del propio equipo.
-- Reloj, calendario con feriados (por país y región), temporizador y alarma.
-- Clima de 7 días con Open-Meteo.
+- Mis fondos: importa tus imágenes y videos desde un pendrive USB o directamente desde tu celular escaneando un código QR en Wi-Fi (`Enviar desde el celular (QR)`), ordenados en colecciones temáticas por carpeta (`Lienzo-<Tema>`), y elige qué colección usan el fondo y el video.
+- Modo arte y protector de pantalla con video y desplazamiento anti burn-in para paneles OLED.
+- Configuración sin PC: permisos, servicio de botones (con auto-reparación), inicio al encender, deshabilitación reversible de launcher original y bloatware, o cierre de apps ociosas vía ADB local.
+- Reloj, calendario con feriados (por país y región), temporizador, temporizador de apagado del televisor ("Apagar TV en") y alarma.
+- Clima de 7 días con Open-Meteo e indicador de `VPN` activa en la barra superior.
 - Modo seguro: un watchdog de crashes arranca en modo mínimo tras 3 fallos en 5 minutos.
-- Salud del equipo: aviso "Reiniciar recomendado" con reglas antifatiga y panel con memoria de video (CMA), RAM y tiempo encendido.
-- Exportar y restaurar la configuración.
+- Salud del equipo: aviso "Reiniciar recomendado" con reglas antifatiga y panel con memoria de video (CMA), RAM, tiempo encendido y cierre de apps en segundo plano vía ADB local.
+- Exportar y restaurar la configuración localmente o vía código QR desde el celular.
+- Idioma de la interfaz seleccionable en caliente entre Español (Chile) e English (`Ajustes > Barra superior e inicio > Ubicación y región`).
 - Prioridad a la reproducción: Lienzo suelta su decodificador de video antes de abrir otra app.
 - Actualizador seguro desde GitHub Releases (ver más abajo).
 
@@ -111,10 +112,10 @@ Huella SHA-256 del certificado de release: `7B:EA:3F:BF:E0:CF:1A:F9:D1:E4:58:DE:
 
 ## Privacidad
 
-- Sin analítica, sin cuentas, sin servidores ni puertos abiertos.
-- La red se usa solo para: Open-Meteo (clima y búsqueda de ciudades), Nager.Date (feriados), Wikimedia (obras de arte) y GitHub (actualizaciones: `api.github.com`, `github.com` y su CDN de releases). Si desactivas "Actualizaciones automáticas", GitHub solo se consulta cuando lo pides.
+- Sin analítica ni cuentas. El único puerto que se abre es el micro-servidor HTTP local del panel QR (`Enviar / Respaldo desde el celular`), únicamente mientras ese panel está en pantalla, en la red Wi-Fi local, con token aleatorio por sesión y cierre automático a los 5 minutos de inactividad.
+- La red se usa solo para: Open-Meteo (clima y búsqueda de ciudades), Nager.Date (feriados), Wikimedia (obras de arte y fondos de temporada bajo demanda) y GitHub (actualizaciones: `api.github.com`, `github.com` y su CDN de releases). Si desactivas "Actualizaciones automáticas", GitHub solo se consulta cuando lo pides.
 - Configuración, favoritas y fondos importados quedan en el almacenamiento de la app.
-- Permisos: `INTERNET`, `ACCESS_NETWORK_STATE`, `READ_TV_LISTINGS` y `READ_EPG_DATA` (Continuar viendo), alarmas y arranque, `READ_EXTERNAL_STORAGE` (solo Android 12, para Mis fondos), `REQUEST_INSTALL_PACKAGES` (actualizador), `REQUEST_DELETE_PACKAGES` (desinstalar desde el menú de una app) y los opcionales concedidos por ADB o por Configuración sin PC (`WRITE_SECURE_SETTINGS`, `SYSTEM_ALERT_WINDOW`).
+- Permisos: `INTERNET`, `ACCESS_NETWORK_STATE`, `READ_TV_LISTINGS` y `READ_EPG_DATA` (Continuar viendo), alarmas y arranque, `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` en Android 13+ y `READ_EXTERNAL_STORAGE` en Android <= 12 (para Mis fondos), `REQUEST_INSTALL_PACKAGES` (actualizador), `REQUEST_DELETE_PACKAGES` (desinstalar desde el menú de una app) y los opcionales concedidos por ADB o por Configuración sin PC (`WRITE_SECURE_SETTINGS`, `SYSTEM_ALERT_WINDOW`).
 - Servicio de accesibilidad opcional: solo recibe teclas del control (no lee la pantalla) y vigila el estado de los HDMI con la API pública de TV.
 - Configuración sin PC se conecta únicamente a `127.0.0.1:5555` (el ADB del propio equipo) y solo cuando lo pides; la llave RSA queda en el almacenamiento privado de la app.
 
@@ -174,7 +175,7 @@ Alternativa local, con el árbol limpio y `keystore.properties` en la raíz: `to
 ## Limitaciones conocidas
 
 - Probado en dos equipos: decodificador DIW585 (Android 12, 2 GB de RAM) y televisor TCL con Google TV (Android 11). Otros equipos y Android 13 o superior no están verificados; la importación de Mis fondos se verificó en Android 12.
-- Idioma de la interfaz: español de Chile; el inglés alcanza solo a fechas y unidades.
+- Idioma de la interfaz: Español (Chile) e inglés, intercambiables en caliente desde Ajustes > Barra superior e inicio > Ubicación y región.
 - El apagado nocturno de pantalla y la alarma sobre otras apps requieren ADB o Configuración sin PC (depuración por red activa).
 - Android 12 no permite a una app cerrar otras: "Liberar cachés" solo vacía las cachés de Lienzo; si la memoria de video sigue baja, hay que reiniciar el equipo.
 - El video de fondo no se distribuye; se usan tus propios videos (H.264 o H.265, hasta 1080p y 60 fps).

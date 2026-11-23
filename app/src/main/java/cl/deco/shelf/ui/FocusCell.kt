@@ -65,6 +65,10 @@ open class FocusCell(
         clipToPadding = false
         isFocusable = true
         isClickable = true
+        setOnHoverListener { v, ev ->
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_HOVER_ENTER && v.isFocusable) v.requestFocus()
+            false
+        }
         layoutParams = RecyclerView.LayoutParams(cw + 2 * padX, ch + padTop + padBottom)
         // Halo de foco: un bitmap compartido por geometría, teñido con el acento (sin layouts al cambiar el foco)
         halo.background = HaloBitmaps.drawable(ctx, cw + 2 * padX, ch + padTop + padBottom, padX, padTop, padBottom, radius)

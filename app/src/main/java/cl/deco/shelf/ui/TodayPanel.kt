@@ -97,7 +97,7 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
         timerCard = pageCard(timerPage.view); alarmCard = pageCard(alarmPage.view)
 
         // Pestañas del panel Reloj (foco en la pestaña = muestra su página)
-        val names = listOf("Calendario", "Temporizador", "Alarma")
+        val names = listOf(t("Calendario", "Calendar"), t("Temporizador", "Timer"), t("Alarma", "Alarm"))
         for (i in 0 until 3) {
             val t = PageUi.chip(ctx, names[i], 150) { setTab(i) }
             t.setOnFocusChangeListener { _, f -> if (f) setTab(i) }
@@ -135,7 +135,12 @@ class TodayPanel(ctx: Context) : FrameLayout(ctx) {
     }
 
     /** Idioma, primer día o unidades cambiaron. */
-    fun refresh() { if (visibility == VISIBLE) { bindMonth(); bindNext(); bindForecast() } }
+    fun refresh() {
+        val labels = listOf(t("Calendario", "Calendar"), t("Temporizador", "Timer"), t("Alarma", "Alarm"))
+        for (i in tabViews.indices) tabViews[i].text = labels[i]
+        bindTitles()
+        if (visibility == VISIBLE) { bindMonth(); bindNext(); bindForecast() }
+    }
 
     private fun bindTitles() {
         fcTitle.text = if (Es.english) "7-day forecast" else "Pronóstico 7 días"
