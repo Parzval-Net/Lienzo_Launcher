@@ -180,4 +180,17 @@ class UserMediaRulesTest {
         assertEquals("a_b_c.mp4", ImportMath.safeFileName("a/b\\c.mp4", emptySet()))
         assertEquals("video", ImportMath.safeFileName("...", emptySet()))
     }
+
+    @Test fun permisosDeMediosPorSdk() {
+        assertEquals(listOf("android.permission.READ_EXTERNAL_STORAGE"), MediaImporter.permissionsForSdk(28).toList())
+        assertEquals(listOf("android.permission.READ_EXTERNAL_STORAGE"), MediaImporter.permissionsForSdk(32).toList())
+        assertEquals(
+            listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO"),
+            MediaImporter.permissionsForSdk(33).toList(),
+        )
+        assertEquals(
+            listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO"),
+            MediaImporter.permissionsForSdk(35).toList(),
+        )
+    }
 }

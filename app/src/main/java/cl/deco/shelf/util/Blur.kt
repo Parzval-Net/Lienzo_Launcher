@@ -13,24 +13,58 @@ object Blur {
 
     /** Devuelve un bitmap ARGB_8888 nuevo, reducido por [downscale]. No modifica [src]. */
     fun blurred(src: Bitmap, radius: Int = 20, downscale: Int = 8): Bitmap {
-        val argb = if (src.config == Bitmap.Config.ARGB_8888) src
-        else src.copy(Bitmap.Config.ARGB_8888, false)
-        val w = max(1, argb.width / downscale)
-        val h = max(1, argb.height / downscale)
-        val small = Bitmap.createScaledBitmap(argb, w, h, true)
-        val pixels = IntArray(w * h)
-        small.getPixels(pixels, 0, w, 0, 0, w, h)
-        if (small !== argb) small.recycle()
-        if (argb !== src) argb.recycle()
-        stackBlur(pixels, w, h, radius.coerceIn(1, 254))
+        val w = max(1, src.width / downscale)
+        val h = max(1, src.height / downscale)
+        val pixels = scaledArgbPixels(src, w, h)
+        stackBlurPixels(pixels, w, h, radius.coerceIn(1, 254))
         return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
     }
 
-    private fun stackBlur(pix: IntArray, w: Int, h: Int, radius: Int) {
+    /**
+     * Escala directo a [targetW]x[targetH], aplica stack blur y desatura en un solo paso sin copias
+     * intermedias en 960x540 ni tabla de 1 MB. Devuelve RGB_565 opaco (mitad de memoria en grilla).
+     */
+    fun blurredDesaturated(
+        src: Bitmap,
+        targetW: Int = 120,
+        targetH: Int = 67,
+        radius: Int = 20,
+        saturation: Float = 0.55f,
+    ): Bitmap {
+        val w = max(1, targetW)
+        val h = max(1, targetH)
+        val pixels = scaledArgbPixels(src, w, h)
+        stackBlurPixels(pixels, w, h, radius.coerceIn(1, 254))
+        for (i in pixels.indices) pixels[i] = desaturatePixel(pixels[i], saturation)
+        return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.RGB_565)
+    }
+
+    private fun scaledArgbPixels(src: Bitmap, w: Int, h: Int): IntArray {
+        val small = if (src.width == w && src.height == h) src else Bitmap.createScaledBitmap(src, w, h, true)
+        val argb = if (small.config == Bitmap.Config.ARGB_8888) small else small.copy(Bitmap.Config.ARGB_8888, false)
+        val pixels = IntArray(w * h)
+        argb.getPixels(pixels, 0, w, 0, 0, w, h)
+        if (argb !== small && argb !== src) argb.recycle()
+        if (small !== src) small.recycle()
+        return pixels
+    }
+
+    internal fun desaturatePixel(rgb: Int, saturation: Float): Int {
+        val r = (rgb shr 16) and 0xff
+        val g = (rgb shr 8) and 0xff
+        val b = rgb and 0xff
+        val luma = (77 * r + 150 * g + 29 * b) shr 8
+        val nr = (luma + ((r - luma) * saturation + 0.5f).toInt()).coerceIn(0, 255)
+        val ng = (luma + ((g - luma) * saturation + 0.5f).toInt()).coerceIn(0, 255)
+        val nb = (luma + ((b - luma) * saturation + 0.5f).toInt()).coerceIn(0, 255)
+        return -0x1000000 or (nr shl 16) or (ng shl 8) or nb
+    }
+
+    internal fun stackBlurPixels(pix: IntArray, w: Int, h: Int, radius: Int) {
+        if (w <= 0 || h <= 0) return
         val div = radius * 2 + 1
         val half = (div + 1) shr 1
         val divSum = half * half
-        val dv = IntArray(256 * divSum) { it / divSum }
         val sr = IntArray(div)
         val sg = IntArray(div)
         val sb = IntArray(div)
@@ -58,7 +92,7 @@ object Blur {
             }
             var sp = radius
             for (x in 0 until w) {
-                pix[row + x] = -0x1000000 or (dv[rsum] shl 16) or (dv[gsum] shl 8) or dv[bsum]
+                pix[row + x] = -0x1000000 or ((rsum / divSum) shl 16) or ((gsum / divSum) shl 8) or (bsum / divSum)
                 rsum -= rout; gsum -= gout; bsum -= bout
                 var k = (sp - radius + div) % div
                 rout -= sr[k]; gout -= sg[k]; bout -= sb[k]
@@ -98,7 +132,7 @@ object Blur {
             }
             var sp = radius
             for (y in 0 until h) {
-                pix[y * w + x] = -0x1000000 or (dv[rsum] shl 16) or (dv[gsum] shl 8) or dv[bsum]
+                pix[y * w + x] = -0x1000000 or ((rsum / divSum) shl 16) or ((gsum / divSum) shl 8) or (bsum / divSum)
                 rsum -= rout; gsum -= gout; bsum -= bout
                 var k = (sp - radius + div) % div
                 rout -= sr[k]; gout -= sg[k]; bout -= sb[k]

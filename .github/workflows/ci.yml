@@ -1,5 +1,4 @@
-# Solo compila (debug) y corre los tests JVM. Sin firma, sin secretos y sin publicar nada: los releases se firman y publican
-# localmente con tools/release.sh.
+# Compila debug y release (validando R8), corre los tests JVM y vigila el tope de tamaño del APK.
 name: CI
 
 on:
@@ -20,5 +19,11 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Tests JVM y compilación debug
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain
+      - name: Tests JVM y compilación debug + release
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --console=plain
+      - name: Verificar tamaño del APK release
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          SIZE=$(wc -c < "$APK")
+          echo "Tamaño APK release: $SIZE bytes ($((SIZE / 1024)) KB)"
+          [ "$SIZE" -le 972800 ] || { echo "::error::APK supera los 950 KB ($SIZE bytes)"; exit 1; }

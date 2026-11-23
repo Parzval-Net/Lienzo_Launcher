@@ -1,16 +1,21 @@
 package cl.deco.shelf.data.art
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import cl.deco.shelf.settings.ShelfPrefs
 import cl.deco.shelf.util.Seasonal
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Fondos de temporada que vienen en el APK (assets/seasonal/<temporada>), ya en 1920x1080 y compuestos para el home
- * (fotos del tema Halloween de CleanYourTV, ver assets/seasonal/halloween/CREDITS.md). Se copian a disco al usarse
- * y se borran al terminar la temporada. Bloqueante: llamar fuera del main thread.
+ * Fondos de temporada: un respaldo liviano en el APK (`assets/seasonal/<temporada>/001.webp`) y el resto
+ * descargado bajo demanda desde el repositorio solo durante la ventana de fechas (ver `seasonal/halloween/CREDITS.md`).
+ * Al terminar la temporada se borran de disco. Bloqueante: llamar fuera del main thread.
  */
 class SeasonalArt(context: Context) {
 
@@ -27,28 +32,114 @@ class SeasonalArt(context: Context) {
             return null
         }
         val list = HALLOWEEN
-        val idx = (tickPrefs.getInt(KEY_LAST, -1) + 1).mod(list.size)
-        tickPrefs.edit().putInt(KEY_LAST, idx).apply()
-        val w = list[idx]
-        val f = File(dir, "${season}-${w.file}")
-        if (f.length() == 0L) try {
+        ensureFallback(season, list[0])
+        if (list.any { !it.bundled && fileFor(season, it).length() == 0L }) {
+            startDownload(season, list)
+        }
+        val start = (tickPrefs.getInt(KEY_LAST, -1) + 1).mod(list.size)
+        var pickedIdx = -1
+        var pickedFile: File? = null
+        for (offset in list.indices) {
+            val idx = (start + offset) % list.size
+            val f = fileFor(season, list[idx])
+            if (f.length() > 0L) {
+                pickedIdx = idx
+                pickedFile = f
+                break
+            }
+        }
+        if (pickedIdx < 0 || pickedFile == null) return null
+        tickPrefs.edit().putInt(KEY_LAST, pickedIdx).apply()
+        val w = list[pickedIdx]
+        return Artwork(id = "season-$season-${w.file}", title = w.title, artist = w.author, year = null, museum = w.license, file = pickedFile)
+    }
+
+    private fun fileFor(season: String, w: Wallpaper) = File(dir, "$season-${w.file}")
+
+    private fun ensureFallback(season: String, w: Wallpaper) {
+        val f = fileFor(season, w)
+        if (f.length() > 0L) return
+        try {
             dir.mkdirs()
             val part = File(dir, f.name + ".part")
             app.assets.open("seasonal/$season/${w.file}").use { i -> part.outputStream().use { i.copyTo(it) } }
-            if (!part.renameTo(f)) return null
+            part.renameTo(f)
         } catch (e: Exception) {
-            Log.w("SeasonalArt", "no se pudo copiar ${w.file}: $e")
-            return null
+            Log.w(TAG, "no se pudo copiar ${w.file}: $e")
         }
-        return Artwork(id = "season-$season-${w.file}", title = w.title, artist = w.author, year = null, museum = w.license, file = f)
     }
 
-    private class Wallpaper(val file: String, val title: String, val author: String, val license: String)
+    private fun startDownload(season: String, list: List<Wallpaper>) {
+        if (!networkAvailable()) return
+        if (!downloading.compareAndSet(false, true)) return
+        Thread({
+            try {
+                dir.mkdirs()
+                for (w in list) {
+                    if (w.bundled) continue
+                    val dest = fileFor(season, w)
+                    if (dest.length() > 0L) continue
+                    if (!networkAvailable()) break
+                    downloadOne(season, w.file, dest)
+                }
+            } finally {
+                downloading.set(false)
+            }
+        }, "lienzo-seasonal-dl").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
+    }
+
+    private fun downloadOne(season: String, file: String, dest: File) {
+        var conn: HttpURLConnection? = null
+        val part = File(dir, dest.name + ".part")
+        var ok = false
+        try {
+            conn = (URL(remoteUrl(season, file)).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 6_000
+                readTimeout = 10_000
+                setRequestProperty("User-Agent", "Lienzo")
+            }
+            if (conn.responseCode !in 200..299) return
+            conn.inputStream.use { ins ->
+                part.outputStream().use { out ->
+                    val buf = ByteArray(16 * 1024)
+                    var total = 0
+                    while (true) {
+                        val n = ins.read(buf)
+                        if (n < 0) break
+                        total += n
+                        if (total > MAX_BYTES) return
+                        out.write(buf, 0, n)
+                    }
+                }
+            }
+            ok = part.length() > 0L && part.renameTo(dest)
+        } catch (e: Exception) {
+            Log.w(TAG, "descarga $file: $e")
+        } finally {
+            conn?.disconnect()
+            if (!ok) part.delete()
+        }
+    }
+
+    private fun networkAvailable(): Boolean {
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val net = cm.activeNetwork ?: return false
+        return cm.getNetworkCapabilities(net)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }
+
+    private class Wallpaper(val file: String, val title: String, val author: String, val license: String, val bundled: Boolean = false)
 
     companion object {
+        private const val TAG = "SeasonalArt"
         private const val KEY_LAST = "last"
+        private const val MAX_BYTES = 1024 * 1024
+        private val downloading = AtomicBoolean(false)
+
+        internal fun remoteUrl(season: String, file: String): String =
+            "https://raw.githubusercontent.com/Parzval-Net/Lienzo_Launcher/main/seasonal/$season/$file"
+
         private val HALLOWEEN = listOf(
-            Wallpaper("001.jpg", "Casa embrujada", "Ilustración de CleanYourTV", "CC0 1.0"),
+            Wallpaper("001.webp", "Casa embrujada", "Ilustración de CleanYourTV", "CC0 1.0", bundled = true),
             Wallpaper("002.jpg", "Calabaza en la escalera", "Alabama Extension", "CC0 1.0"),
             Wallpaper("003.jpg", "Luna llena tras un bosque de secuoyas, California", "US Forest Service", "Dominio público"),
             Wallpaper("004.jpg", "Capilla del cementerio en la niebla, Chorzów", "Adrian Tync", "CC BY-SA 4.0"),

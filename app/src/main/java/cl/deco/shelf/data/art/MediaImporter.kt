@@ -334,8 +334,14 @@ class MediaImporter(context: Context, private val art: UserArt = UserArt(context
         private const val MAX_ITEMS = 1000
         private val IMAGE_MIMES = setOf("image/jpeg", "image/png", "image/webp", "image/bmp")
 
-        /** Permiso estándar de medios del deco (Android 12): READ_EXTERNAL_STORAGE. */
-        fun permissions(): Array<String> = arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        /** Permisos estándar de medios según versión de Android (9-12 vs 13+). */
+        fun permissions(): Array<String> = permissionsForSdk(Build.VERSION.SDK_INT)
+
+        internal fun permissionsForSdk(sdkInt: Int): Array<String> = if (sdkInt >= 33) {
+            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
 
         fun hasPermission(ctx: Context) = permissions().all { ctx.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
     }

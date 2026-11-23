@@ -23,10 +23,10 @@
     <!-- Apagado nocturno: se concede por adb (pm grant), no es un permiso de usuario -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
-    <!-- Mis fondos: leer imágenes y videos del pendrive USB vía MediaStore (diálogo estándar de permisos).
-         El deco es Android 12: ahí solo existe READ_EXTERNAL_STORAGE. READ_MEDIA_IMAGES/VIDEO se quitaron porque no existen
-         en Android 12 y maxSdkVersion no sirve para "solo desde 13" (es un tope, no un mínimo). Sin acceso a red ni shell. -->
+    <!-- Mis fondos: leer imágenes y videos del almacenamiento/USB vía MediaStore (Android 9-12 y 13+). -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

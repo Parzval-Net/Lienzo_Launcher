@@ -49,6 +49,16 @@ object BitmapUtil {
         } catch (_: Exception) {}
     }
 
+    /** Guarda un bitmap en WebP de forma atómica (tiles de disco, caché de tarjetas y blur cacheado). */
+    fun saveWebp(b: Bitmap, f: java.io.File, quality: Int = 88): Boolean = try {
+        f.parentFile?.mkdirs()
+        val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+        @Suppress("DEPRECATION")
+        val fmt = if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
+        val ok = tmp.outputStream().use { b.compress(fmt, quality, it) }
+        ok && tmp.renameTo(f)
+    } catch (_: Exception) { false }
+
     fun loadJpeg565(f: java.io.File): Bitmap? =
         if (!f.exists()) null else BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })
 

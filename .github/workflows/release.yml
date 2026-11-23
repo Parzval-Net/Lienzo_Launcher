@@ -111,7 +111,9 @@ jobs:
           set -euo pipefail
           OUT="dist/v$VERSION"; mkdir -p "$OUT"
           APK="$OUT/Lienzo-$VERSION.apk"
+          STABLE="$OUT/Lienzo.apk"
           cp app/build/outputs/apk/release/app-release.apk "$APK"
+          cp "$APK" "$STABLE"
           SHA="$(sha256sum "$APK" | awk '{print $1}')"
           python3 - "$OUT/version.json" "$CODE" "$VERSION" "$SHA" "$MINSDK" "$RUNNER_TEMP/notes.md" <<'PY'
           import json, re, sys
@@ -125,7 +127,7 @@ jobs:
                     open(out, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
           open(out, 'a').write('\n')
           PY
-          ( cd "$OUT" && sha256sum "Lienzo-$VERSION.apk" version.json > SHA256SUMS )
+          ( cd "$OUT" && sha256sum "Lienzo-$VERSION.apk" "Lienzo.apk" version.json > SHA256SUMS )
           cat "$OUT/version.json"
 
       - name: Crear release
@@ -135,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           OUT="dist/v$VERSION"
-          gh release create "v$VERSION" "$OUT/Lienzo-$VERSION.apk" "$OUT/version.json" "$OUT/SHA256SUMS" \
+          gh release create "v$VERSION" "$OUT/Lienzo-$VERSION.apk" "$OUT/Lienzo.apk" "$OUT/version.json" "$OUT/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" --title "Lienzo $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
 
       - name: Borrar keystore del runner

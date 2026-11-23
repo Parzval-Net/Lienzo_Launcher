@@ -428,12 +428,11 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
         updateClockStatus() // alarmas y apagado nocturno ya se reprograman en App.onCreate, BootReceiver y al cambiar ajustes
         scheduleSun()
-        restoreLastArt()
         // También rota si el intervalo venció estando fuera: así el tick inmediato no decodifica una segunda obra
         val rotate = (currentArt == null && !lastArtFresh()) || (stopAt > 0 && System.currentTimeMillis() - stopAt > AWAY_MS) ||
             (lastArt > 0 && System.currentTimeMillis() - lastArt >= prefs.bgIntervalMin * 60_000L)
         if (rotate) lastArt = System.currentTimeMillis()
-        loadArt(rotate)
+        if (!restoreLastArt(skipFullLoad = !rotate)) loadArt(rotate)
         topBar.setWifiSsid(getWifiSsid())
         try { tvInputs?.registerCallback(inputsCallback, main) } catch (_: Throwable) {}
         if (!cl.deco.shelf.service.KeyMap.serviceRunning(this)) homeHdmiWatcher = cl.deco.shelf.service.HdmiWatcher(this).also { it.start() }
@@ -848,42 +847,97 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     }
 
     private val lastBgFile get() = File(filesDir, "lastbg.jpg")
+    private val lastBlurFile get() = File(filesDir, "lastblur.webp")
 
-    /** Guarda el fondo ya escalado y horneado, y la obra (ruta) para reusarla en el próximo arranque en frío. */
-    private fun saveLastArt(a: Artwork, bmp: Bitmap) {
-        prefs.sp.edit().putString("last_art_id", a.id).putString("last_art_path", a.file.path)
-            .putLong("last_art_ts", System.currentTimeMillis()).apply()
+    /** Guarda el fondo ya escalado y horneado, su blur y la paleta para evitar decodificar de nuevo al volver al home. */
+    private fun saveLastArt(a: Artwork, bmp: Bitmap, blur: Bitmap?, pal: Palette?) {
+        val ed = prefs.sp.edit().putString("last_art_id", a.id).putString("last_art_path", a.file.path)
+            .putLong("last_art_ts", System.currentTimeMillis())
+            .putInt("last_art_blur_level", prefs.blurLevel)
+        if (pal != null) {
+            ed.putBoolean("last_art_pal_ok", true)
+                .putInt("last_art_pal_a", pal.accent)
+                .putInt("last_art_pal_l", pal.light)
+                .putInt("last_art_pal_d", pal.dark)
+        } else {
+            ed.putBoolean("last_art_pal_ok", false)
+        }
+        ed.apply()
         val copy = try { bmp.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null } ?: return
-        ioArt.execute { BitmapUtil.saveJpeg(copy, lastBgFile); copy.recycle() }
+        val blurCopy = blur?.let { try { it.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null } }
+        ioArt.execute {
+            BitmapUtil.saveJpeg(copy, lastBgFile)
+            copy.recycle()
+            if (blurCopy != null) {
+                BitmapUtil.saveWebp(blurCopy, lastBlurFile, 88)
+                blurCopy.recycle()
+            } else {
+                lastBlurFile.delete()
+            }
+        }
     }
 
     /**
-     * Arranque en frío y regreso en caliente: pinta el último fondo bueno de inmediato (JPEG ya horneado) mientras loadArt
-     * decodifica la obra completa; así nunca se ve negro al volver al home. En frío además fija la obra vigente si no venció.
+     * Arranque en frío y regreso en caliente: pinta el último fondo cacheado (JPEG + blur WebP + paleta) en una sola pasada.
+     * Si [skipFullLoad] es true y la caché está completa y vigente, omite re-decodificar la obra completa en 1080p.
      */
-    private fun restoreLastArt() {
-        if (artBmp != null || prefs.dynamicBg) return
-        val path = prefs.sp.getString("last_art_path", null) ?: return
-        if ((Theme.season != null) != path.contains("/seasonal/")) return
+    private fun restoreLastArt(skipFullLoad: Boolean = false): Boolean {
+        if (artBmp != null || prefs.dynamicBg) return false
+        val path = prefs.sp.getString("last_art_path", null) ?: return false
+        if ((Theme.season != null) != path.contains("/seasonal/")) return false
         val ts = prefs.sp.getLong("last_art_ts", 0L)
         val f = File(path)
-        if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return
+        if (!f.exists() || System.currentTimeMillis() - ts > prefs.bgIntervalMin * 60_000L) return false
+        if (!lastBgFile.exists()) return false
+        val wantPal = prefs.sp.getBoolean("last_art_pal_ok", false)
+        if (skipFullLoad && !wantPal) return false
         if (currentArt == null) {
-            // La obra vigente se fija ya (loadArt la reutiliza sin rotar); solo el bitmap se pinta de forma asíncrona
             currentArt = Artwork(prefs.sp.getString("last_art_id", "last") ?: "last", "", "", null, "", f)
-            lastArt = ts // el ciclo de rotación sigue desde el momento en que se eligió esta obra
+            lastArt = ts
         }
+        val wantBlur = prefs.blurLevel
+        val cachedBlurLevel = prefs.sp.getInt("last_art_blur_level", -1)
+        val cachedPal = if (wantPal) Palette(
+            prefs.sp.getInt("last_art_pal_a", Theme.NEUTRAL_ACCENT),
+            prefs.sp.getInt("last_art_pal_l", Theme.NEUTRAL_LIGHT),
+            prefs.sp.getInt("last_art_pal_d", Theme.NEUTRAL_DARK),
+        ) else null
         ioArt.execute {
             val b = BitmapUtil.loadJpeg565(lastBgFile)
+            if (b == null) {
+                if (skipFullLoad) main.post { if (started && artBmp == null) loadArt(false) }
+                return@execute
+            }
+            var blur: Bitmap? = null
+            if (wantBlur > 0) {
+                blur = if (cachedBlurLevel == wantBlur && lastBlurFile.exists()) BitmapUtil.loadJpeg565(lastBlurFile) else null
+                if (blur == null) {
+                    blur = makeBlur(b)
+                    if (blur != null) {
+                        val bc = try { blur.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null }
+                        if (bc != null) { BitmapUtil.saveWebp(bc, lastBlurFile, 88); bc.recycle() }
+                        prefs.sp.edit().putInt("last_art_blur_level", wantBlur).apply()
+                    }
+                }
+            }
             main.post {
-                if (b == null || artBmp != null || !started) { b?.recycle(); return@post }
+                if (artBmp != null || !started) { b.recycle(); blur?.recycle(); return@post }
                 artBmp = b
                 artView.setImageBitmap(b)
                 artView.alpha = 1f
                 rootView.background = null
                 artId = currentArt?.id
+                if (cachedPal != null) {
+                    palette = cachedPal
+                    applyPalette(animate = false)
+                }
+                val oldBlur = blurBmp
+                blurBmp = blur
+                blurView.setImageBitmap(blur)
+                if (oldBlur != null && oldBlur !== blur) oldBlur.recycle()
             }
         }
+        return true
     }
 
     private fun bakeScrim(b: Bitmap) {
@@ -901,30 +955,23 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         }
     }
 
-    /** Blur precalculado una vez: 960x540 y reducción interna 1/8; el radio sale del ajuste "Desenfoque en grilla". */
+    /** Blur precalculado una vez: escala directo a 120x67, aplica stack blur y desatura en RGB_565. */
     private fun makeBlur(bmp: Bitmap): Bitmap? = if (prefs.blurLevel == 0) null else try {
-        val small = Bitmap.createScaledBitmap(bmp, 960, 540, true)
-        val b = Blur.blurred(small, BLUR_RADII[prefs.blurLevel])
-        if (b !== small) small.recycle()
-        desaturate(b)
+        Blur.blurredDesaturated(bmp, 120, 67, BLUR_RADII[prefs.blurLevel], 0.55f)
     } catch (_: Throwable) { null }
 
-    /** Baja la saturación del blur (los cafés de Turner o Monet no deben teñir toda la grilla). */
-    private fun desaturate(b: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(b.width, b.height, Bitmap.Config.ARGB_8888)
-        android.graphics.Canvas(out).drawBitmap(b, 0f, 0f, android.graphics.Paint().apply {
-            colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(0.55f) })
-        })
-        b.recycle()
-        return out
-    }
-
-    /** Cambió el nivel de desenfoque: recalcula solo el blur a partir de la obra actual. */
+    /** Cambió el nivel de desenfoque: recalcula solo el blur a partir de la obra actual y actualiza la caché en disco. */
     private fun rebuildBlur() {
         val src = artBmp ?: return
+        val level = prefs.blurLevel
         // artBmp se recicla en ioArt (ver recycleArt): este hilo único serializa la lectura y el reciclaje, sin use-after-free
         ioArt.execute {
             val b = try { if (src.isRecycled) null else makeBlur(src) } catch (_: Throwable) { null }
+            if (b != null) {
+                val bc = try { b.copy(Bitmap.Config.RGB_565, false) } catch (_: Throwable) { null }
+                if (bc != null) { BitmapUtil.saveWebp(bc, lastBlurFile, 88); bc.recycle() }
+                prefs.sp.edit().putInt("last_art_blur_level", level).apply()
+            }
             main.post {
                 // Blur de una obra que ya cambió: se descarta en vez de pisar el de la nueva
                 if (b == null || !started || artBmp !== src) { b?.recycle(); return@post }
@@ -940,8 +987,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private fun applyArt(a: Artwork, bmp: Bitmap, blur: Bitmap?, pal: Palette? = null) {
         currentArt = a
         palette = pal
-        // Solo una obra nueva se guarda como último fondo (antes cada regreso al home reescribía el JPEG y reiniciaba la rotación)
-        if (a.id != prefs.sp.getString("last_art_id", null)) saveLastArt(a, bmp)
+        // Solo una obra nueva (o sin caché completa) se persiste como último fondo
+        if (a.id != prefs.sp.getString("last_art_id", null) || !prefs.sp.getBoolean("last_art_pal_ok", false)) {
+            saveLastArt(a, bmp, blur, pal)
+        }
         applyPalette(animate = artBmp != null)
         val old = artBmp
         val sameArt = old != null && a.id == artId // misma obra (JPEG del regreso al home -> decodificación completa)
@@ -1654,8 +1703,10 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             ShelfPrefs.NIGHT_DIM -> { scheduleSun(); applyDim(animate = true) }
             ShelfPrefs.BLUR_LEVEL -> {
                 if (prefs.blurLevel == 0) {
-                    // Ninguno: se suelta el bitmap blur
+                    // Ninguno: se suelta el bitmap blur y su caché en disco
                     blurView.setImageDrawable(null); blurBmp?.recycle(); blurBmp = null
+                    prefs.sp.edit().putInt("last_art_blur_level", 0).apply()
+                    ioArt.execute { lastBlurFile.delete() }
                 } else rebuildBlur()
                 applyState(state, animate = false)
             }

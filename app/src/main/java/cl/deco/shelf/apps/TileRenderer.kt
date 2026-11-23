@@ -44,11 +44,11 @@ class TileRenderer(private val context: Context, private val w: Int, private val
     /** Último tipo usado por clave de app (solo para diagnóstico y reporte). */
     val kinds = java.util.concurrent.ConcurrentHashMap<String, Kind>()
 
-    private var purged = false
+    private val purged = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val versionCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     fun tile(entry: AppEntry, original: Boolean): Bitmap? {
-        if (!purged) {
-            purged = true
+        if (purged.compareAndSet(false, true)) {
             // Formato de cache nuevo: borra los tiles de revisiones anteriores
             dir.listFiles()?.filter { !it.name.contains("_r$RENDER_REV") }?.forEach { it.delete() }
         }
@@ -57,27 +57,28 @@ class TileRenderer(private val context: Context, private val w: Int, private val
             BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 })?.let { return it }
         }
         val bmp = try { render(entry, original) } catch (e: Throwable) { Log.w(TAG, "render ${entry.key}: $e"); null } ?: return null
-        if (f != null) try {
-            dir.mkdirs()
-            val tmp = File(dir, f.name + ".tmp")
-            tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            tmp.renameTo(f)
-        } catch (e: Throwable) { Log.w(TAG, "cache ${entry.key}: $e") }
+        if (f != null) BitmapUtil.saveWebp(bmp, f, 90)
         return bmp
     }
 
     /** Borra los tiles cacheados de un paquete (al reemplazarse o desinstalarse). */
     fun invalidate(pkg: String) {
+        versionCache.remove(pkg)
         dir.listFiles()?.filter { it.name.startsWith(pkg + "_") }?.forEach { it.delete() }
     }
 
-    fun clearAll() { dir.listFiles()?.forEach { it.delete() } }
+    fun clearAll() {
+        versionCache.clear()
+        dir.listFiles()?.forEach { it.delete() }
+    }
 
     private fun cacheFile(entry: AppEntry, original: Boolean): File? {
         val pkg = entry.component.packageName
-        val ver = try { pm.getPackageInfo(pkg, 0).longVersionCode } catch (_: PackageManager.NameNotFoundException) { return null }
+        val ver = versionCache[pkg] ?: try {
+            pm.getPackageInfo(pkg, 0).longVersionCode.also { versionCache[pkg] = it }
+        } catch (_: PackageManager.NameNotFoundException) { return null }
         val hash = Integer.toHexString(entry.component.className.hashCode())
-        return File(dir, "${pkg}_${ver}_${hash}_r$RENDER_REV${if (original) "_o" else ""}.png")
+        return File(dir, "${pkg}_${ver}_${hash}_r$RENDER_REV${if (original) "_o" else ""}.webp")
     }
 
     private fun render(entry: AppEntry, original: Boolean): Bitmap? {
@@ -324,7 +325,7 @@ class TileRenderer(private val context: Context, private val w: Int, private val
 
     private companion object {
         const val TAG = "ShelfTiles"
-        const val RENDER_REV = 6 // subir al cambiar el algoritmo: invalida los tiles en disco
+        const val RENDER_REV = 7 // subir al cambiar el algoritmo: invalida los tiles en disco (WebP)
         const val BASE = 0xFF1B1E27.toInt()
         const val EW = 32
         const val EH = 18

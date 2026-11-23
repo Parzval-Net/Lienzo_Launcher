@@ -23,10 +23,16 @@ class SeasonalTest {
         assertNull(Seasonal.paletteFor(LocalDate.of(2026, 11, 2), true))
     }
 
-    @Test fun fondosEnElApk() {
-        val d = java.io.File("src/main/assets/seasonal/halloween")
-        assertEquals(8, (1..8).count { java.io.File(d, "%03d.jpg".format(it)).length() > 0 })
-        assertTrue(java.io.File(d, "CREDITS.md").exists())
+    @Test fun fondosEnElApkYRemotos() {
+        val assetFallback = java.io.File("src/main/assets/seasonal/halloween/001.webp")
+        assertTrue(assetFallback.length() in 1..46_080)
+        val repoSeasonal = java.io.File("../seasonal/halloween")
+        assertEquals(8, (1..8).count { java.io.File(repoSeasonal, "%03d.jpg".format(it)).length() > 0 })
+        assertTrue(java.io.File(repoSeasonal, "CREDITS.md").exists())
+        assertEquals(
+            "https://raw.githubusercontent.com/Parzval-Net/Lienzo_Launcher/main/seasonal/halloween/002.jpg",
+            cl.deco.shelf.data.art.SeasonalArt.remoteUrl("halloween", "002.jpg"),
+        )
     }
 
     @Test fun saludo() {

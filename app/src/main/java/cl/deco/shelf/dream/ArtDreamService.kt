@@ -69,10 +69,43 @@ class ArtDreamService : DreamService() {
     private val hideCaption = Runnable { caption.animate().alpha(0f).setDuration(600).start() }
     private val tick = object : Runnable {
         override fun run() {
-            clock.text = timeFmt.format(Date())
             val ms = System.currentTimeMillis()
+            clock.text = timeFmt.format(Date(ms))
+            applyBurnInShift(ms / 60_000L)
             main.postDelayed(this, 60_000 - ms % 60_000 + 50)
         }
+    }
+
+    private fun applyBurnInShift(minuteIndex: Long) {
+        if (!::clock.isInitialized || !::caption.isInitialized) return
+        fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+        val pos = DreamBurnIn.positionForMinute(minuteIndex)
+        val baseH = dp(32)
+        val baseV = dp(24)
+        val dx = dp(pos.shiftXdp)
+        val dy = dp(pos.shiftYdp)
+        val clp = clock.layoutParams as FrameLayout.LayoutParams
+        val capLp = caption.layoutParams as FrameLayout.LayoutParams
+        if (pos.onRight) {
+            clp.gravity = Gravity.BOTTOM or Gravity.END
+            clp.leftMargin = 0
+            clp.rightMargin = (baseH - dx).coerceAtLeast(dp(12))
+            capLp.gravity = Gravity.BOTTOM or Gravity.START
+            capLp.rightMargin = 0
+            capLp.leftMargin = baseH
+            caption.gravity = Gravity.START
+        } else {
+            clp.gravity = Gravity.BOTTOM or Gravity.START
+            clp.rightMargin = 0
+            clp.leftMargin = (baseH + dx).coerceAtLeast(dp(12))
+            capLp.gravity = Gravity.BOTTOM or Gravity.END
+            capLp.leftMargin = 0
+            capLp.rightMargin = baseH
+            caption.gravity = Gravity.END
+        }
+        clp.bottomMargin = (baseV + dy).coerceAtLeast(dp(10))
+        clock.layoutParams = clp
+        caption.layoutParams = capLp
     }
 
     override fun onAttachedToWindow() {
@@ -213,9 +246,11 @@ class ArtDreamService : DreamService() {
         } catch (_: Exception) { /* executor cerrado */ }
     }
 
-    /** Decodifica a <= 1920x1080, calcula color promedio y compone fondo + passe-partout + obra. */
+    /** Decodifica ajustado a pantalla (<= 1920x1080), calcula color promedio y compone fondo + passe-partout + obra. */
     private fun compose(a: Artwork): Pair<Bitmap, Int> {
-        val w = 1920; val h = 1080
+        val dm = resources.displayMetrics
+        val w = minOf(dm.widthPixels, 1920).coerceAtLeast(640)
+        val h = minOf(dm.heightPixels, 1080).coerceAtLeast(360)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(a.file.path, bounds)
         var sample = 1
@@ -239,12 +274,12 @@ class ArtDreamService : DreamService() {
         val dw = src.width * s; val dh = src.height * s
         val l = (w - dw) / 2f; val t = (h - dh) / 2f
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        // Mat blanco roto
+        // Mat blanco roto con sombra simple (sin setShadowLayer en Canvas de software)
         val matRect = RectF(l - mat, t - mat, l + dw + mat, t + dh + mat)
-        cv.drawRect(matRect, Paint().apply {
-            color = 0xFFEFEBE2.toInt()
-            setShadowLayer(18f, 0f, 6f, 0x66000000)
-        }.also { /* sombra exterior sutil */ })
+        val shOff = h * 0.004f
+        cv.drawRect(RectF(matRect.left - shOff, matRect.top + shOff * 0.5f, matRect.right + shOff, matRect.bottom + shOff * 1.8f), Paint().apply {
+            color = 0x44000000
+        })
         cv.drawRect(matRect, Paint().apply { color = 0xFFEFEBE2.toInt() })
         cv.drawBitmap(src, null, RectF(l, t, l + dw, t + dh), paint)
         // Sombra interior sutil del bisel
