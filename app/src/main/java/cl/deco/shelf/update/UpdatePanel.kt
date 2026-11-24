@@ -15,7 +15,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import cl.deco.shelf.service.SelfSetup
-import cl.deco.shelf.ui.PageUi
+import cl.deco.shelf.ui.Glass
 import cl.deco.shelf.ui.Theme
 import cl.deco.shelf.ui.Ui
 import cl.deco.shelf.ui.dp
@@ -25,8 +25,7 @@ import cl.deco.shelf.ui.tv
 
 /**
  * Panel "Actualizar Lienzo": versión nueva con notas, descarga con progreso y cancelación, verificación e instalación.
- * Mismo estilo que Salud del deco. Sin servicios: todo ocurre mientras el panel está abierto. Nunca instala sin que el
- * usuario confirme en la pantalla de Android.
+ * Mismo estilo de vidrio ahumado que Ajustes y Salud del deco. Sin servicios: todo ocurre mientras el panel está abierto.
  */
 class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
 
@@ -39,9 +38,17 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
 
     private val main = Handler(Looper.getMainLooper())
     private val title = tv(ctx, 22f, Ui.TEXT, "sans-serif-medium")
+    private val footer = tv(ctx, 13f, Ui.TEXT2).apply { gravity = Gravity.CENTER; alpha = 0.8f }
     private val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private val scroll = ScrollView(ctx).apply {
-        isVerticalScrollBarEnabled = false; overScrollMode = OVER_SCROLL_NEVER; isFocusable = false
+        isVerticalScrollBarEnabled = true
+        isScrollbarFadingEnabled = false
+        scrollBarStyle = View.SCROLLBARS_OUTSIDE_OVERLAY
+        isVerticalFadingEdgeEnabled = true
+        setFadingEdgeLength(ctx.dp(20))
+        setPadding(0, 0, ctx.dp(6), 0)
+        overScrollMode = OVER_SCROLL_NEVER
+        isFocusable = false
         addView(body, android.view.ViewGroup.LayoutParams(-1, -2))
     }
     private var info: UpdateInfo? = null
@@ -63,24 +70,30 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
 
     init {
         visibility = GONE
-        setBackgroundColor(0xF50B0B10.toInt())
+        setBackgroundColor(Glass.SCRIM)
         isClickable = true
         val card = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(ctx.dp(22), ctx.dp(18), ctx.dp(22), ctx.dp(14))
-            background = GradientDrawable().apply { setColor(0x22FFFFFF); cornerRadius = ctx.dpf(20f) }
+            setPadding(ctx.dp(24), ctx.dp(18), ctx.dp(20), ctx.dp(14))
+            background = Glass.card(ctx).apply { setColor(Glass.CARD_SOLID) }
         }
-        card.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(6) })
+        card.addView(title, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(10) })
         card.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        addView(card, LayoutParams(ctx.dp(640), ctx.dp(470), Gravity.CENTER))
+        card.addView(View(ctx).apply { setBackgroundColor(Glass.DIVIDER) }, LinearLayout.LayoutParams(-1, 1).apply { topMargin = ctx.dp(8) })
+        card.addView(footer, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8) })
+        val dm = ctx.resources.displayMetrics
+        val cardW = ctx.dp(680).coerceAtMost((dm.widthPixels * 0.84f).toInt())
+        val cardH = ctx.dp(480).coerceAtMost((dm.heightPixels * 0.90f).toInt())
+        addView(card, LayoutParams(cardW, cardH, Gravity.CENTER))
     }
 
     fun open(i: UpdateInfo) {
         release()
         info = i; phase = Phase.INFO; message = ""; adbStatus = ""; adbBusy = false; leftForSettings = false
+        animate().cancel()
         alpha = 0f
         visibility = VISIBLE
-        animate().alpha(1f).setDuration(180).start()
+        animate().alpha(1f).setDuration(180).setInterpolator(Ui.DECEL).withLayer().start()
         build()
     }
 
@@ -142,15 +155,31 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
         body.removeAllViews()
         barFill = null; barRest = null; progressText = null
         title.text = t("Actualizar Lienzo", "Update Lienzo")
-        val m = LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(8) }
+        footer.text = when (phase) {
+            Phase.DOWNLOADING, Phase.VERIFYING -> t("OK  cancela     BACK  cancela y vuelve", "OK  cancel     BACK  cancel & back")
+            Phase.NEED_PERMISSION, Phase.ERROR -> t("OK  selecciona     BACK  vuelve", "OK  select     BACK  back")
+            else -> t("OK  selecciona     BACK  cierra", "OK  select     BACK  close")
+        }
+        val m = LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(10) }
         var first: View? = null
-        fun add(v: View, h: Int = ctx.dp(42)) { body.addView(v, LinearLayout.LayoutParams(-1, h)); if (first == null) first = v }
+        fun add(v: View, h: Int = ctx.dp(44)) {
+            body.addView(v, LinearLayout.LayoutParams(-1, h).apply { topMargin = ctx.dp(6) })
+            if (first == null) first = v
+        }
 
         when (phase) {
             Phase.INFO -> {
-                body.addView(infoRow(t("Versión instalada", "Installed version"), installedName()))
-                body.addView(infoRow(t("Versión nueva", "New version"), UpdateRules.displayVersion(i.versionName)))
-                body.addView(infoRow(t("Tamaño", "Size"), mb(i.apkSize)))
+                val meta = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(ctx.dp(6), ctx.dp(4), ctx.dp(6), ctx.dp(4))
+                    background = Glass.groupCard(ctx, 14f)
+                    addView(infoRow(t("Versión instalada", "Installed version"), installedName()))
+                    addView(View(ctx).apply { setBackgroundColor(Glass.DIVIDER) }, LinearLayout.LayoutParams(-1, 1).apply { leftMargin = ctx.dp(10); rightMargin = ctx.dp(10) })
+                    addView(infoRow(t("Versión nueva", "New version"), UpdateRules.displayVersion(i.versionName)))
+                    addView(View(ctx).apply { setBackgroundColor(Glass.DIVIDER) }, LinearLayout.LayoutParams(-1, 1).apply { leftMargin = ctx.dp(10); rightMargin = ctx.dp(10) })
+                    addView(infoRow(t("Tamaño", "Size"), mb(i.apkSize)))
+                }
+                body.addView(meta, LinearLayout.LayoutParams(-1, -2))
                 if (i.notes.isNotBlank()) {
                     body.addView(section(t("Novedades", "What's new")), m)
                     body.addView(label(i.notes.trim(), 14f, Ui.TEXT), LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(4) })
@@ -221,7 +250,8 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
     private fun infoRow(name: String, text: String): View {
         val ctx = context
         return LinearLayout(ctx).apply {
-            setPadding(ctx.dp(8), ctx.dp(6), ctx.dp(8), ctx.dp(2))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(ctx.dp(10), ctx.dp(8), ctx.dp(10), ctx.dp(8))
             addView(label(name), LinearLayout.LayoutParams(0, -2, 1f))
             addView(tv(ctx, 15f, Ui.TEXT).apply { this.text = text })
         }
@@ -231,11 +261,11 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
         val ctx = context
         return LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(ctx.dp(12), 0, ctx.dp(12), 0)
+            setPadding(ctx.dp(14), 0, ctx.dp(14), 0)
             isFocusable = true; isClickable = true
-            background = PageUi.focusBg(ctx)
-            addView(tv(ctx, 16f, Ui.TEXT).apply { this.text = text; maxLines = 1 }, LinearLayout.LayoutParams(-2, -2))
-            addView(tv(ctx, 14f, Ui.TEXT2).apply { this.text = detail; gravity = Gravity.END; maxLines = 1 }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12) })
+            background = Glass.bg(ctx, 12f, Glass.IDLE)
+            addView(Glass.inRow(tv(ctx, 16f).apply { this.text = text; maxLines = 1 }), LinearLayout.LayoutParams(-2, -2))
+            addView(Glass.inRow(tv(ctx, 14f).apply { this.text = detail; gravity = Gravity.END; maxLines = 1 }, Ui.TEXT2), LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12) })
             setOnClickListener { onClick() }
         }
     }

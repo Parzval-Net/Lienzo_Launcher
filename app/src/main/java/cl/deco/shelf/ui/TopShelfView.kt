@@ -125,6 +125,17 @@ class TopShelfView(
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CardVH {
             val ctx = parent.context
             val cell = FocusCell(ctx, cardW, cardH, padX, padY, padY, radius)
+            val scrim = View(ctx).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(0x00000000, 0x78000000, 0xD8000000.toInt()),
+                ).apply { cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius) }
+            }
+            val stroke = View(ctx).apply {
+                background = GradientDrawable().apply { setColor(0); setStroke(ctx.dp(1), 0x26FFFFFF); cornerRadius = radius }
+            }
+            cell.content.addView(scrim, FrameLayout.LayoutParams(-1, cardH * 2 / 3, Gravity.BOTTOM))
+            cell.content.addView(stroke, FrameLayout.LayoutParams(-1, -1))
             val t = tv(ctx, 14f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
             val s = tv(ctx, 11f, Ui.TEXT2).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
             val box = LinearLayout(ctx).apply {

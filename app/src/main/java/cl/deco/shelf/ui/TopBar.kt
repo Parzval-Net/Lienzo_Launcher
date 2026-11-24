@@ -58,9 +58,9 @@ class TopBar(
         visibility = GONE
         setPadding(ctx.dp(7), ctx.dp(3), ctx.dp(7), ctx.dp(3))
         background = GradientDrawable().apply {
-            setColor(0x664A5466)
+            setColor(Glass.PILL_IDLE)
             cornerRadius = ctx.dpf(10f)
-            setStroke(ctx.dp(1), 0x59FFFFFF)
+            setStroke(ctx.dp(1), Glass.STROKE)
         }
     }
 
@@ -171,19 +171,19 @@ class TopBar(
         isClickable = true
         setPadding(context.dp(12), context.dp(6), context.dp(14), context.dp(6))
         contentDescription = text
-        // Estilo tvOS: en reposo vidrio translúcido con borde claro; con foco, blanco con texto e ícono oscuros
-        val on = GradientDrawable().apply { setColor(0xF2FFFFFF.toInt()); cornerRadius = context.dpf(20f) }
+        // Estilo tvOS: vidrio ahumado neutro con borde claro; con foco, blanco con texto e ícono oscuros + microescala
+        val on = GradientDrawable().apply { setColor(Glass.FOCUS); cornerRadius = context.dpf(20f) }
         background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), on)
             addState(intArrayOf(android.R.attr.state_activated), on) // Entradas con su desplegable abierto
             addState(intArrayOf(), GradientDrawable().apply {
-                setColor(0x664A5466)
+                setColor(Glass.PILL_IDLE)
                 cornerRadius = context.dpf(20f)
-                setStroke(context.dp(1), 0x59FFFFFF)
+                setStroke(context.dp(1), Glass.STROKE)
             })
         }
         val fg = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf(android.R.attr.state_activated), intArrayOf()),
-            intArrayOf(0xFF2A2F3A.toInt(), 0xFF2A2F3A.toInt(), Ui.TEXT))
+            intArrayOf(Glass.FOCUS_TEXT, Glass.FOCUS_TEXT, Ui.TEXT))
         val img = ImageView(ctx).apply {
             setImageResource(iconRes)
             imageTintList = fg
@@ -191,7 +191,12 @@ class TopBar(
             tag = iconRes
         }
         addView(img, LinearLayout.LayoutParams(context.dp(18), context.dp(18)))
-        setOnFocusChangeListener { _, has -> if (has && season) nudge(img) }
+        setOnFocusChangeListener { v, has ->
+            v.animate().cancel()
+            val s = if (has) 1.04f else 1f
+            v.animate().scaleX(s).scaleY(s).setDuration(140).setInterpolator(Ui.DECEL).start()
+            if (has && season) nudge(img)
+        }
         val lbl = tv(ctx, 14f, Ui.TEXT, "sans-serif-medium").apply {
             this.text = text
             tag = "pill_label"
@@ -203,6 +208,8 @@ class TopBar(
     }
 
     init {
+        clipChildren = false
+        clipToPadding = false
         val dateCol = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(context.dp(14), 0, 0, 0)
@@ -245,6 +252,8 @@ class TopBar(
         // Derecha: avisos (descarga de obras, espacio, salud, actualización), píldoras (Entradas, Wi-Fi, Ajustes) y clima.
         // Los avisos van en la misma fila, a la izquierda de las píldoras: centrados se montaban sobre "Entradas"
         val rightRow = LinearLayout(ctx).apply {
+            clipChildren = false
+            clipToPadding = false
             gravity = Gravity.CENTER_VERTICAL
             addView(artChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
             addView(lowChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })

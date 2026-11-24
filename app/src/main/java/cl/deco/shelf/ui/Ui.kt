@@ -24,14 +24,22 @@ object Ui {
 }
 
 /**
- * Estilo común de paneles (estilo tvOS, el mismo del desplegable de Entradas): tarjeta de vidrio translúcido con borde claro
- * y foco blanco con texto oscuro. Lo usan Entradas, menús, Ajustes, Clima y Reloj para que todo se vea igual.
+ * Estilo común de paneles (estilo tvOS, el mismo del desplegable de Entradas): tarjeta de vidrio ahumado con borde claro
+ * y foco blanco con texto oscuro. Lo usan Entradas, menús, Ajustes, Actualizaciones, Clima y Reloj para que todo se vea igual.
  */
 object Glass {
-    const val CARD = 0xE63A4354.toInt()
-    const val STROKE = 0x59FFFFFF
-    const val FOCUS = 0xF2FFFFFF.toInt()
-    const val FOCUS_TEXT = 0xFF2A2F3A.toInt()
+    const val CARD = 0xEB1C212B.toInt()
+    const val CARD_SOLID = 0xF51A1F29.toInt()
+    const val STROKE = 0x42FFFFFF
+    const val FOCUS = 0xF5FFFFFF.toInt()
+    const val FOCUS_TEXT = 0xFF161A22.toInt()
+    const val FOCUS_TEXT2 = 0xFF4B5262.toInt()
+    const val GROUP = 0x14FFFFFF
+    const val GROUP_STROKE = 0x1CFFFFFF
+    const val DIVIDER = 0x16FFFFFF
+    const val INFO_FOCUS = 0x26FFFFFF
+    const val INFO_FOCUS_STROKE = 0x48FFFFFF
+    const val PILL_IDLE = 0x781A1F29
     const val SELECTED = 0x38FFFFFF
     const val IDLE = 0x1FFFFFFF
     /** Fondo detrás de los paneles: oscurece la obra sin taparla. */
@@ -39,6 +47,11 @@ object Glass {
 
     fun card(ctx: Context, radius: Float = 22f) = android.graphics.drawable.GradientDrawable().apply {
         setColor(CARD); cornerRadius = ctx.dpf(radius); setStroke(ctx.dp(1), STROKE)
+    }
+
+    /** Sub-tarjeta para agrupar filas de una misma sección con borde y fondo sutil. */
+    fun groupCard(ctx: Context, radius: Float = 14f) = android.graphics.drawable.GradientDrawable().apply {
+        setColor(GROUP); cornerRadius = ctx.dpf(radius); setStroke(ctx.dp(1), GROUP_STROKE)
     }
 
     /** Fondo enfocable: blanco con foco, vidrio claro seleccionado/activado y [idle] en reposo (0 = transparente). */
@@ -50,12 +63,28 @@ object Glass {
         addState(intArrayOf(), if (idle == 0) android.graphics.drawable.ColorDrawable(0) else round(idle))
     }
 
+    /** Fondo de foco suave para filas informativas (no clickables): mantiene el texto claro 100% legible. */
+    fun infoBg(ctx: Context, radius: Float = 12f) = android.graphics.drawable.StateListDrawable().apply {
+        addState(
+            intArrayOf(android.R.attr.state_focused),
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(INFO_FOCUS)
+                setStroke(ctx.dp(1), INFO_FOCUS_STROKE)
+                cornerRadius = ctx.dpf(radius)
+            },
+        )
+        addState(intArrayOf(), android.graphics.drawable.ColorDrawable(0))
+    }
+
     /** Color de texto que pasa a oscuro cuando la fila (o la propia vista) tiene foco. */
-    fun fg(normal: Int = Ui.TEXT) = android.content.res.ColorStateList(
-        arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(FOCUS_TEXT, normal))
+    fun fg(normal: Int = Ui.TEXT, focused: Int = FOCUS_TEXT) = android.content.res.ColorStateList(
+        arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()), intArrayOf(focused, normal))
 
     /** Texto dentro de una fila enfocable: hereda el foco del padre y se oscurece sobre el blanco. */
-    fun inRow(t: TextView, normal: Int = Ui.TEXT): TextView = t.apply { isDuplicateParentStateEnabled = true; setTextColor(fg(normal)) }
+    fun inRow(t: TextView, normal: Int = Ui.TEXT): TextView = t.apply {
+        isDuplicateParentStateEnabled = true
+        setTextColor(fg(normal, if (normal == Ui.TEXT2) FOCUS_TEXT2 else FOCUS_TEXT))
+    }
 }
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()

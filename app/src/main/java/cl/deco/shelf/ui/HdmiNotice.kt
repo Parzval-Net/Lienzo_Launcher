@@ -20,8 +20,8 @@ class HdmiNotice(ctx: Context) : FrameLayout(ctx) {
 
     private val title = tv(ctx, 18f, Ui.TEXT, "sans-serif-medium").apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val sub = tv(ctx, 15f, Ui.TEXT2).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-    private val switchBtn = pill("Cambiar") { onSwitch?.invoke() }
-    private val laterBtn = pill("Ahora no") { onDismiss?.invoke() }
+    private val switchBtn = pill(t("Cambiar", "Switch")) { onSwitch?.invoke() }
+    private val laterBtn = pill(t("Ahora no", "Not now")) { onDismiss?.invoke() }
     private val autoHide = Runnable { if (isOpen) onDismiss?.invoke() }
 
     private val card = LinearLayout(ctx).apply {
@@ -70,7 +70,8 @@ class HdmiNotice(ctx: Context) : FrameLayout(ctx) {
     fun show(heading: String, detail: String, port: String) {
         title.text = heading
         sub.text = detail
-        switchBtn.text = "Cambiar a $port"
+        laterBtn.text = t("Ahora no", "Not now")
+        switchBtn.text = t("Cambiar a $port", "Switch to $port")
         removeCallbacks(autoHide)
         animate().cancel(); card.animate().cancel()
         alpha = 0f

@@ -6,6 +6,7 @@ import cl.deco.shelf.data.weather.Geocoding
 import android.content.Intent
 import android.provider.Settings
 import cl.deco.shelf.Graph
+import cl.deco.shelf.R
 import cl.deco.shelf.clock.NightMode
 import cl.deco.shelf.data.art.SpaceRules
 import cl.deco.shelf.data.art.VideoLibrary
@@ -60,20 +61,20 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Choice(label, names, { values.indexOf(get()).coerceAtLeast(0) }, { set(values[it]); host.changed(key) })
 
     private fun toggle(label: String, key: String, on: String, off: String, get: () -> Boolean, set: (Boolean) -> Unit) =
-        Row.Choice(label, listOf(on, off), { if (get()) 0 else 1 }, { set(it == 0); host.changed(key) })
+        Row.Choice(label, listOf(on, off), { if (get()) 0 else 1 }, { set(it == 0); host.changed(key) }, isToggle = true)
 
     // Sin emojis: la fuente de color se cargaría solo para esto (varios MB de PSS) y no combina con los íconos del sistema
     // Lienzo primero (es lo que se abre desde "Ajustes de Lienzo") y una sola sección Televisor sin repetidos: antes Imagen,
     // Sonido y Ajustes de Android aparecían dos veces (Televisor y Accesos rápidos)
     fun root(): Page = Page(t("Ajustes", "Settings"), listOf(
         Row.Section("Lienzo"),
-        Row.Act(t("Pantalla y fondos", "Display & backgrounds"), { sourceName() }) { panel.push(screenAndBackgroundPage()) },
-        Row.Act(t("Modo arte y protector", "Art mode & screensaver"), { if (p.artEnabled) t("Activado", "On") else t("Desactivado", "Off") }) { panel.push(artAndScreensaverPage()) },
-        Row.Act(t("Barra superior e inicio", "Top bar & home"), { "${if (p.clock24) "24 h" else "12 h"} · ${p.dockMax} ${t("en el dock", "in dock")}" }) { panel.push(interfacePage()) },
-        Row.Act(t("Apps e íconos", "Apps & icons"), { val n = host.hiddenCount(); if (n == 0) t("Ninguna oculta", "None hidden") else "$n ${if (n == 1) t("oculta", "hidden") else t("ocultas", "hidden")}" }) { confirmReset = false; panel.push(appsAndIconsPage()) },
-        Row.Act(t("Control remoto", "Remote control"), { if (KeyMap.serviceRunning(ctx)) t("Botones activos", "Buttons active") else t("Requiere activar", "Setup needed") }) { panel.push(remotePage()) },
-        Row.Act(t("Sistema y energía", "System & power"), { if (p.nightOn) t("Apagado nocturno activo", "Night auto-off on") else t("Apagado nocturno inactivo", "Night auto-off off") }) { panel.push(powerAndSystemPage()) },
-        Row.Act(t("Mantenimiento e información", "Maintenance & about"), { version }) { panel.push(aboutAndMaintenancePage()) },
+        Row.Act(t("Pantalla y fondos", "Display & backgrounds"), { sourceName() }, icon = R.drawable.ic_q_display, chevron = true) { panel.push(screenAndBackgroundPage()) },
+        Row.Act(t("Modo arte y protector", "Art mode & screensaver"), { if (p.artEnabled) t("Activado", "On") else t("Desactivado", "Off") }, icon = R.drawable.ic_s_art, chevron = true) { panel.push(artAndScreensaverPage()) },
+        Row.Act(t("Barra superior e inicio", "Top bar & home"), { "${if (p.clock24) "24 h" else "12 h"} · ${p.dockMax} ${t("en el dock", "in dock")}" }, icon = R.drawable.ic_s_home, chevron = true) { panel.push(interfacePage()) },
+        Row.Act(t("Apps e íconos", "Apps & icons"), { val n = host.hiddenCount(); if (n == 0) t("Ninguna oculta", "None hidden") else "$n ${if (n == 1) t("oculta", "hidden") else t("ocultas", "hidden")}" }, icon = R.drawable.ic_s_apps, chevron = true) { confirmReset = false; panel.push(appsAndIconsPage()) },
+        Row.Act(t("Control remoto", "Remote control"), { if (KeyMap.serviceRunning(ctx)) t("Botones activos", "Buttons active") else t("Requiere activar", "Setup needed") }, icon = R.drawable.ic_s_remote, chevron = true) { panel.push(remotePage()) },
+        Row.Act(t("Sistema y energía", "System & power"), { if (p.nightOn) t("Apagado nocturno activo", "Night auto-off on") else t("Apagado nocturno inactivo", "Night auto-off off") }, icon = R.drawable.ic_sleep, chevron = true) { panel.push(powerAndSystemPage()) },
+        Row.Act(t("Mantenimiento e información", "Maintenance & about"), { version }, icon = R.drawable.ic_s_info, chevron = true) { panel.push(aboutAndMaintenancePage()) },
     ) + tvRows())
 
     /** Pila de páginas para reconstruir en caliente al cambiar idioma desde Ubicación y región. */
@@ -84,12 +85,12 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val rows = ArrayList<Row>()
         rows += Row.Section(t("Televisor", "TV"))
         QuickAccess.tvQuick(ctx)?.let { quick ->
-            rows += Row.Act(t("Ajustes rápidos", "Quick settings"), { t("Brillo, imagen, sonido, temporizador", "Brightness, picture, sound, timer") }) { host.finishSettings(); openActivity(quick) }
+            rows += Row.Act(t("Ajustes rápidos", "Quick settings"), { t("Brillo, imagen, sonido, temporizador", "Brightness, picture, sound, timer") }, icon = R.drawable.ic_q_settings, chevron = true) { host.finishSettings(); openActivity(quick) }
         }
         // Wi-Fi, Bluetooth, Imagen, Sonido, Almacenamiento y, al final, todos los ajustes del sistema
         for (q in QuickAccess.items) {
             val label = if (q === QuickAccess.items.last()) t("Todos los ajustes del sistema", "All system settings") else q.label
-            rows += Row.Act(label) { QuickAccess.launch(ctx, q) }
+            rows += Row.Act(label, icon = q.icon, chevron = true) { QuickAccess.launch(ctx, q) }
         }
         return rows
     }
@@ -109,16 +110,16 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
             }
         }
         if (!KeyMap.serviceRunning(ctx)) {
-            rows += Row.Act(t("Activar sin PC", "Activate without PC"), { t("Con la depuración por red del equipo", "Via device network debugging") }) { panel.push(setupPage()) }
-            rows += Row.Act(t("Abrir ajustes de accesibilidad", "Open accessibility settings")) { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            rows += Row.Act(t("Activar sin PC", "Activate without PC"), { t("Con la depuración por red del equipo", "Via device network debugging") }, chevron = true) { panel.push(setupPage()) }
+            rows += Row.Act(t("Abrir ajustes de accesibilidad", "Open accessibility settings"), chevron = true) { openActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
         rows += Row.Section(t("Asignar", "Assign"))
-        rows += Row.Act(t("Asignar un botón", "Assign a button"), { t("Presiona el botón y elige qué hace", "Press a button and pick an action") }) { panel.push(learnPage()) }
-        rows += Row.Act(t("App de TV en vivo", "Live TV app"), { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: t("Sin app (función original)", "No app (system default)") }) { panel.push(liveTvPage()) }
+        rows += Row.Act(t("Asignar un botón", "Assign a button"), { t("Presiona el botón y elige qué hace", "Press a button and pick an action") }, chevron = true) { panel.push(learnPage()) }
+        rows += Row.Act(t("App de TV en vivo", "Live TV app"), { KeyMap.liveTvApp(ctx)?.let { KeyMap.appLabel(ctx, it) } ?: t("Sin app (función original)", "No app (system default)") }, chevron = true) { panel.push(liveTvPage()) }
         val map = KeyMap.all(ctx).toList().sortedBy { KeyMap.name(it.first) }
         if (map.isNotEmpty()) {
             rows += Row.Section(t("Botones asignados", "Assigned buttons"))
-            for ((code, action) in map) rows += Row.Act(KeyMap.name(code), { KeyMap.actionLabel(ctx, action) }) { panel.push(actionPage(code)) }
+            for ((code, action) in map) rows += Row.Act(KeyMap.name(code), { KeyMap.actionLabel(ctx, action) }, chevron = true) { panel.push(actionPage(code)) }
         }
         rows += Row.Act(t("Restablecer valores iniciales", "Reset to defaults"), { if (confirmKeyReset) t("OK de nuevo para confirmar", "Press OK again to confirm") else "" }) {
             if (confirmKeyReset) { confirmKeyReset = false; KeyMap.resetDefaults(ctx); panel.replace(remotePage()) } else confirmKeyReset = true
@@ -188,7 +189,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     ) + collectionRows() + listOf(
         choice(t("Rotación de obra", "Artwork rotation"), ShelfPrefs.BG_INTERVAL, listOf("15 min", "30 min", "60 min", t("Diario", "Daily")), listOf(15, 30, 60, 1440), { p.bgIntervalMin }, { p.bgIntervalMin = it }),
         Row.Act(t("Cambiar obra ahora", "Next artwork now")) { host.nextArt() },
-        Row.Act(t("Mis fondos", "My backgrounds"), { t("Importar y gestionar imágenes y videos propios", "Import and manage custom images & videos") }) { panel.push(myBackgroundsPage()) },
+        Row.Act(t("Mis fondos", "My backgrounds"), { t("Importar y gestionar imágenes y videos propios", "Import and manage custom images & videos") }, chevron = true) { panel.push(myBackgroundsPage()) },
         choice(t("Brillo del fondo", "Background brightness"), ShelfPrefs.BG_BRIGHTNESS, listOf("60%", "70%", "80%", "90%", "100%"), listOf(60, 70, 80, 90, 100), { p.bgBrightness }, { p.bgBrightness = it }),
         toggle(t("Atenuar de noche", "Dim at night"), ShelfPrefs.NIGHT_DIM, t("Sí", "Yes"), t("No", "No"), { p.nightDim }, { p.nightDim = it }),
         choice(t("Desenfoque en grilla", "App grid blur"), ShelfPrefs.BLUR_LEVEL, listOf(t("Ninguno", "None"), t("Bajo", "Low"), t("Medio", "Medium"), t("Alto", "High")), listOf(0, 1, 2, 3), { p.blurLevel }, { p.blurLevel = it }),
@@ -233,7 +234,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         rows += Row.Section("Video")
         if (tokens.isEmpty()) rows += Row.Info(t("Sin videos en el equipo", "No videos on device")) { t("Importa uno propio para que el modo arte y el protector muestren video.", "Import your own video so Art Mode and Screensaver can play it.") }
         else rows += Row.Choice("Video", names, { tokens.indexOf(p.videoChoice).coerceAtLeast(0) }, { p.videoChoice = tokens[it]; host.changed(ShelfPrefs.VIDEO_CHOICE) })
-        rows += Row.Act(t("Agregar o quitar videos", "Add or remove videos"), { t("Mis fondos", "My backgrounds") }) { panel.push(myBackgroundsPage()) }
+        rows += Row.Act(t("Agregar o quitar videos", "Add or remove videos"), { t("Mis fondos", "My backgrounds") }, chevron = true) { panel.push(myBackgroundsPage()) }
         rows += Row.Info("") { t("MP4, MOV, M4V o MKV (H.264 o H.265) hasta 1080p. Puedes bajarlo con Downloader al almacenamiento y luego importarlo.", "MP4, MOV, M4V or MKV (H.264 or H.265) up to 1080p. Download to storage or transfer via QR.") }
         return rows
     }
@@ -253,7 +254,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Section(t("Reloj y barra superior", "Clock & top bar")),
         choice(t("Reloj", "Clock"), ShelfPrefs.CLOCK24, listOf("24 h", "12 h"), listOf(true, false), { p.clock24 }, { p.clock24 = it }),
         toggle(t("Clima", "Weather"), ShelfPrefs.WEATHER_ON, t("Activado", "On"), t("Desactivado", "Off"), { p.weatherOn }, { p.weatherOn = it }),
-        Row.Act(t("Ubicación y región", "Location & region"), { p.cityName }) { panel.push(locationPage()) },
+        Row.Act(t("Ubicación y región", "Location & region"), { p.cityName }, chevron = true) { panel.push(locationPage()) },
         Row.Section(t("Pantalla de inicio", "Home screen")),
         choice(t("Favoritas en el dock (máx.)", "Dock favorites (max)"), ShelfPrefs.DOCK_MAX, listOf("4", "5", "6", "7"), listOf(4, 5, 6, 7), { p.dockMax }, { p.dockMax = it }),
         Row.Section(t("Contenido de las apps", "App channels")),
@@ -283,7 +284,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Choice(t("Hasta", "Until"), halfHours, { (p.nightToMin / 30).coerceIn(0, 47) }, { p.nightToMin = it * 30; host.changed(ShelfPrefs.NIGHT_TO) }),
         choice(t("Inactividad", "Idle timeout"), ShelfPrefs.NIGHT_IDLE, listOf("30 min", "60 min", "90 min", "120 min"), listOf(30, 60, 90, 120), { p.nightIdleMin }, { p.nightIdleMin = it }),
         Row.Info(t("Permiso", "Permission")) { if (NightMode.hasPermission(ctx)) t("Concedido", "Granted") else t("Falta el permiso de ajustes seguros", "Missing WRITE_SECURE_SETTINGS permission") },
-        if (NightMode.hasPermission(ctx)) null else Row.Act(t("Conceder sin PC", "Grant without PC"), { t("Con la depuración por red del equipo", "Via device network debugging") }) { panel.push(setupPage()) },
+        if (NightMode.hasPermission(ctx)) null else Row.Act(t("Conceder sin PC", "Grant without PC"), { t("Con la depuración por red del equipo", "Via device network debugging") }, chevron = true) { panel.push(setupPage()) },
     ))
 
     // ---- Configuración sin PC (ADB local) ----
@@ -339,7 +340,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     fun aboutAndMaintenancePage(): Page = Page(t("Mantenimiento e información", "Maintenance & about"), listOf(
         // Memoria de video, RAM, tiempo encendido y "Liberar cachés" viven en el panel Salud (antes se repetían aquí)
         Row.Section(t("Diagnóstico y salud", "Diagnostics & health")),
-        Row.Act(t("Salud del equipo", "Device health"), { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) t("Reinicio recomendado", "Restart recommended") else t("Memoria, encendido y cachés", "Memory, uptime & caches") }) { host.openHealth() },
+        Row.Act(t("Salud del equipo", "Device health"), { if (cl.deco.shelf.util.DeviceHealth.read().restartRecommended) t("Reinicio recomendado", "Restart recommended") else t("Memoria, encendido y cachés", "Memory, uptime & caches") }, chevron = true) { host.openHealth() },
         Row.Bar(t("Almacenamiento (/data)", "Storage (/data)"), { storageText() }, { storageUsed() }),
         Row.Info(t("Memoria de Lienzo (PSS)", "Lienzo memory (PSS)")) { "${host.pss()} · ${t("objetivo en reposo < 40 MB", "idle target < 40 MB")}" },
         Row.Section(t("Actualizaciones", "Updates")),
@@ -348,10 +349,10 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         Row.Section(t("Copia de seguridad", "Backup")),
         Row.Act(t("Exportar configuración", "Export settings")) { lastBackup = host.exportBackup(); panel.rebuild() },
         Row.Info(t("Respaldo", "Backup path")) { lastBackup.ifEmpty { t("Carpeta: Android/data/cl.deco.shelf/files/backup (adb pull)", "Folder: Android/data/cl.deco.shelf/files/backup (adb pull)") } },
-        Row.Act(t("Restaurar configuración", "Restore settings")) { panel.push(restorePage()) },
-        Row.Act(t("Respaldo desde el celular (QR)", "Phone backup (QR)"), { t("Descargar o restaurar JSON por Wi-Fi", "Download or restore JSON over Wi-Fi") }) { host.openLanTransfer() },
-        Row.Act(t("Asistente de configuración", "Setup wizard")) { panel.push(wizard()) },
-        Row.Act(t("Configuración sin PC", "PC-free setup"), { if (cl.deco.shelf.service.SelfSetup.needed(ctx)) t("Permisos o botones pendientes", "Permissions or buttons pending") else t("Todo concedido", "All granted") }) { panel.push(setupPage()) },
+        Row.Act(t("Restaurar configuración", "Restore settings"), chevron = true) { panel.push(restorePage()) },
+        Row.Act(t("Respaldo desde el celular (QR)", "Phone backup (QR)"), { t("Descargar o restaurar JSON por Wi-Fi", "Download or restore JSON over Wi-Fi") }, chevron = true) { host.openLanTransfer() },
+        Row.Act(t("Asistente de configuración", "Setup wizard"), chevron = true) { panel.push(wizard()) },
+        Row.Act(t("Configuración sin PC", "PC-free setup"), { if (cl.deco.shelf.service.SelfSetup.needed(ctx)) t("Permisos o botones pendientes", "Permissions or buttons pending") else t("Todo concedido", "All granted") }, chevron = true) { panel.push(setupPage()) },
         Row.Section(t("Acerca de Lienzo", "About Lienzo")),
         Row.Info(t("Versión", "Version")) { version },
         Row.Info(t("Créditos", "Credits")) { t("Obras de dominio público vía Wikimedia Commons; feriados Nager.Date; watchdog y ADB local: Free My TV y OmarchyTV (MIT)", "Public-domain artworks via Wikimedia Commons; holidays by Nager.Date; watchdog & local ADB inspired by Free My TV & OmarchyTV (MIT)") },
@@ -378,12 +379,12 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
         val ua = Graph.from(ctx).userArt
         return Page(t("Mis fondos", "My backgrounds"), listOf(
             Row.Section(t("Importar", "Import")),
-            Row.Act(t("Importar imágenes y videos", "Import images & videos"), { t("USB o almacenamiento del equipo", "USB or internal storage") }) { host.importFromUsb() },
-            Row.Act(t("Enviar desde el celular (QR)", "Send from phone (QR)"), { t("Subir fondos o videos por Wi-Fi", "Upload wallpapers or videos over Wi-Fi") }) { host.openLanTransfer() },
+            Row.Act(t("Importar imágenes y videos", "Import images & videos"), { t("USB o almacenamiento del equipo", "USB or internal storage") }, chevron = true) { host.importFromUsb() },
+            Row.Act(t("Enviar desde el celular (QR)", "Send from phone (QR)"), { t("Subir fondos o videos por Wi-Fi", "Upload wallpapers or videos over Wi-Fi") }, chevron = true) { host.openLanTransfer() },
             Row.Act(t("Gestionar mis fondos", "Manage my backgrounds"), {
                 val n = allCollections().size
                 counts(ua.entries().size, VideoLibrary.all(ctx).size) + if (n > 0) " · $n ${if (n == 1) t("colección", "collection") else t("colecciones", "collections")}" else ""
-            }) { pendingDelete = null; panel.push(managePage()) },
+            }, chevron = true) { pendingDelete = null; panel.push(managePage()) },
             Row.Section(t("Uso", "Usage")),
             Row.Info(t("Uso", "Source")) { t("La fuente del fondo (obras, Mis fondos, ambas o color dinámico) se elige en Pantalla y fondos.", "Choose the background source (artworks, My backgrounds, both, or dynamic color) in Display & backgrounds.") },
             Row.Info("Video") { t("El video del modo arte y del protector se elige en Modo arte y protector.", "Choose the ambient video for Art Mode and Screensaver in Art mode & screensaver.") },
@@ -570,11 +571,11 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     fun locationPage(): Page = Page(t("Ubicación y región", "Location & region"), listOf(
         Row.Section(t("Clima", "Weather")),
-        Row.Act(t("Ciudad", "City"), { p.cityName }) { panel.push(cityPage()) },
+        Row.Act(t("Ciudad", "City"), { p.cityName }, chevron = true) { panel.push(cityPage()) },
         choice(t("Unidades", "Units"), ShelfPrefs.FAHRENHEIT, listOf("°C", "°F"), listOf(false, true), { p.fahrenheit }, { p.fahrenheit = it }),
         Row.Section(t("Feriados", "Holidays")),
-        Row.Act(t("País", "Country"), { countryName(p.holidaysCountry) }) { panel.push(countryPage()) },
-        Row.Act(t("Región (feriados regionales)", "Region (regional holidays)"), { if (p.holidaysCountry == "CL") regionName(p.holidaysRegion) else t("Solo para Chile", "Chile only") }) {
+        Row.Act(t("País", "Country"), { countryName(p.holidaysCountry) }, chevron = true) { panel.push(countryPage()) },
+        Row.Act(t("Región (feriados regionales)", "Region (regional holidays)"), { if (p.holidaysCountry == "CL") regionName(p.holidaysRegion) else t("Solo para Chile", "Chile only") }, chevron = true) {
             if (p.holidaysCountry == "CL") panel.push(regionPage())
         },
         Row.Section(t("Fecha", "Date & Language")),
@@ -584,7 +585,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
 
     private fun cityPage(): Page {
         val rows = ArrayList<Row>()
-        rows += Row.Act(t("Buscar ciudad…", "Search city…")) { panel.push(searchPage()) }
+        rows += Row.Act(t("Buscar ciudad…", "Search city…"), chevron = true) { panel.push(searchPage()) }
         rows += Row.Section(t("Ciudades de Chile", "Chilean cities"))
         for (c in cities) rows += Row.Act(c.name, { if (c.name == p.cityName) t("Actual", "Current") else "" }) {
             p.setCity(c.name, c.lat, c.lon, c.tz); host.changed(ShelfPrefs.CITY_NAME); panel.back(); panel.rebuild()
@@ -626,7 +627,7 @@ class SettingsPages(private val ctx: android.content.Context, private val panel:
     private fun countryPage(): Page {
         val rows = ArrayList<Row>()
         for ((n, cc) in countries) rows += Row.Act(n, { if (p.holidaysCountry == cc) t("Actual", "Current") else "" }) { setCountry(cc) }
-        rows += Row.Act(t("Otro (código ISO)", "Other (ISO code)")) { panel.push(Page(t("Código de país (ISO 3166-1)", "Country code (ISO 3166-1)"), listOf(Row.Input(t("Ej.: BR, DE, UY", "E.g.: US, BR, DE"), "", false) { code ->
+        rows += Row.Act(t("Otro (código ISO)", "Other (ISO code)"), chevron = true) { panel.push(Page(t("Código de país (ISO 3166-1)", "Country code (ISO 3166-1)"), listOf(Row.Input(t("Ej.: BR, DE, UY", "E.g.: US, BR, DE"), "", false) { code ->
             val cc = code.trim().uppercase()
             if (cc.length == 2 && cc.all { it in 'A'..'Z' }) setCountry(cc)
         }))) }

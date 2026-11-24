@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Control remoto minimalista con pad circular -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M10,2.5 H14 A3.2,3.2 0 0,1 17.2,5.7 V18.3 A3.2,3.2 0 0,1 14,21.5 H10 A3.2,3.2 0 0,1 6.8,18.3 V5.7 A3.2,3.2 0 0,1 10,2.5 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.9" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,8.6 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0 M10.2,14.6 h0.01 M13.8,14.6 h0.01 M10.5,17.6 H13.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.9" />
+</vector>

@@ -80,6 +80,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
     private lateinit var gridRv: ShelfRecycler
     private lateinit var dockRv: ShelfRecycler
     private lateinit var dockBox: FrameLayout
+    private lateinit var dockHint: View
 
     private lateinit var content: FrameLayout
     private lateinit var artView: ImageView
@@ -301,6 +302,14 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         content.addView(dockBox, FrameLayout.LayoutParams(-2, dp(86), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
             bottomMargin = dp(39)
         })
+        dockHint = View(this).apply {
+            isFocusable = false
+            isClickable = false
+            background = GradientDrawable().apply { setColor(0x55FFFFFF); cornerRadius = dpf(2f) }
+        }
+        content.addView(dockHint, FrameLayout.LayoutParams(dp(36), dp(4), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = dp(20)
+        })
 
         topBar = TopBar(
             this,
@@ -377,7 +386,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // El foco decide el estado visual: barra superior vs dock
         root.viewTreeObserver.addOnGlobalFocusChangeListener { _, n ->
             if (n == null) return@addOnGlobalFocusChangeListener
-            if (n.isIn(contRv)) gridName.visibility = View.INVISIBLE // el nombre de app solo acompaña a la grilla
+            if (n.isIn(contRv)) { gridName.animate().cancel(); gridName.visibility = View.INVISIBLE } // el nombre de app solo acompaña a la grilla
             if (state == HomeState.DOCK && n.isIn(topBar)) applyState(HomeState.TOPBAR)
             else if (state == HomeState.TOPBAR && (n.isIn(dockBox) || n.isIn(shelfView))) applyState(HomeState.DOCK)
         }
@@ -947,7 +956,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Scrim en degradado solo detrás de la grilla: 0% en y=220 a 45% en y=520
         set(gridScrim, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         set(gridFade, if (grid) 1f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
-        if (!grid) gridName.visibility = View.INVISIBLE
+        if (!grid) { gridName.animate().cancel(); gridName.visibility = View.INVISIBLE }
         set(gridHeader, if (grid) 0.85f else 0f, 0f, if (grid) View.VISIBLE else View.INVISIBLE)
         val showCont = grid && contHas
         set(contHeader, if (showCont) 0.85f else 0f, 0f, if (showCont) View.VISIBLE else View.INVISIBLE)
@@ -956,9 +965,9 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         // Dock atenuado al 30% con la grilla abierta (sin foco, para no mezclarlo con la grilla)
         dockBox.descendantFocusability = if (grid) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
         when {
-            grid -> set(dockBox, 0f, dpf(40f), View.INVISIBLE) // oculto por completo con la grilla
-            art -> set(dockBox, 0f)
-            else -> set(dockBox, 1f)
+            grid -> { set(dockBox, 0f, dpf(40f), View.INVISIBLE); set(dockHint, 0f, dpf(24f), View.INVISIBLE) } // ocultos con la grilla
+            art -> { set(dockBox, 0f); set(dockHint, 0f, endVis = View.INVISIBLE) }
+            else -> { set(dockBox, 1f); set(dockHint, 1f) }
         }
         val chrome = if (art) 0f else 1f
         set(topBar, chrome)
@@ -1039,9 +1048,17 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
                 // Coordenadas por layout (no por pantalla): no dependen de la animación de subida de la grilla
                 val w = gridName.paint.measureText(e.label)
                 val cx = gridRv.left + cell.left + cell.content.left + cell.content.width / 2f
+                val wasHidden = gridName.visibility != View.VISIBLE
                 gridName.translationX = (cx - w / 2f).coerceIn(dp(24).toFloat(), resources.displayMetrics.widthPixels - w - dp(24))
                 gridName.translationY = (gridRv.top + cell.top + cell.content.top + cell.content.height + dp(10)).toFloat()
-                gridName.visibility = View.VISIBLE
+                if (wasHidden) {
+                    gridName.animate().cancel()
+                    gridName.alpha = 0f
+                    gridName.visibility = View.VISIBLE
+                    gridName.animate().alpha(1f).setDuration(110).setInterpolator(Ui.DECEL).start()
+                } else {
+                    gridName.alpha = 1f
+                }
             }
             return
         }
