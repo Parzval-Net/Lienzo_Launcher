@@ -1,8 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <!-- Tres conectores RCA (video, audio izquierdo y derecho) -->
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M4,2h2v4h-2Z M2.5,6.5h5v6.5l-1,1.8h-3l-1,-1.8Z M4.3,15.3h1.4v6.7h-1.4Z
-            M11,2h2v4h-2Z M9.5,6.5h5v6.5l-1,1.8h-3l-1,-1.8Z M11.3,15.3h1.4v6.7h-1.4Z
-            M18,2h2v4h-2Z M16.5,6.5h5v6.5l-1,1.8h-3l-1,-1.8Z M18.3,15.3h1.4v6.7h-1.4Z" />
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Tres conectores RCA circulares modernos (video y audio estéreo) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M4.8,12 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0 M12,12 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0 M19.2,12 m-2.1,0 a2.1,2.1 0 1,0 4.2,0 a2.1,2.1 0 1,0 -4.2,0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.6" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4.8,12 m-0.65,0 a0.65,0.65 0 1,0 1.3,0 a0.65,0.65 0 1,0 -1.3,0 M12,12 m-0.65,0 a0.65,0.65 0 1,0 1.3,0 a0.65,0.65 0 1,0 -1.3,0 M19.2,12 m-0.65,0 a0.65,0.65 0 1,0 1.3,0 a0.65,0.65 0 1,0 -1.3,0" />
 </vector>

@@ -1,8 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <!-- Conector HDMI: cabezal con pines calados, cuerpo y cable -->
-    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
-        android:pathData="M6,2.5h12v5.5l-1.8,2.2H7.8L6,8Z M8,4.5v2h1v-2Z M10.5,4.5v2h1v-2Z M13,4.5v2h1v-2Z M15,4.5v2h1v-2Z" />
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M8.2,11.2h7.6v6.3a2.2,2.2 0,0 1,-2.2 2.2h-3.2a2.2,2.2 0,0 1,-2.2 -2.2Z M11,19.7h2v2.3h-2Z" />
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Puerto HDMI biselado con barra de contactos central -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M3,9 A1.5,1.5 0 0,1 4.5,7.5 H19.5 A1.5,1.5 0 0,1 21,9 V12.3 L18.5,14.8 V15.3 A1.2,1.2 0 0,1 17.3,16.5 H6.7 A1.2,1.2 0 0,1 5.5,15.3 V14.8 L3,12.3 Z M7.5,12 H16.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.9" />
 </vector>

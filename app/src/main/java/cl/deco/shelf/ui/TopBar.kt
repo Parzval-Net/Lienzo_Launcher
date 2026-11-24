@@ -52,7 +52,7 @@ class TopBar(
     private val timerChip = chip(ctx, cl.deco.shelf.R.drawable.ic_timer)
     private val alarmChip = chip(ctx, cl.deco.shelf.R.drawable.ic_alarm)
     private val moonChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
-    private val sleepChip = chip(ctx, cl.deco.shelf.R.drawable.ic_moon)
+    private val sleepChip = chip(ctx, cl.deco.shelf.R.drawable.ic_sleep)
     private val vpnChip = tv(ctx, 11f, Ui.TEXT, "sans-serif-medium").apply {
         text = "VPN"
         visibility = GONE
@@ -92,7 +92,7 @@ class TopBar(
         background = noticeBg(ctx)
     }
 
-    private val healthChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_storage).apply {
+    private val healthChip = chip(ctx, cl.deco.shelf.R.drawable.ic_restart).apply {
         text = t("Reiniciar recomendado", "Restart recommended")
         isFocusable = true; isClickable = true
         setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
@@ -110,7 +110,7 @@ class TopBar(
         lowChip.setOnClickListener { onClick() }
     }
 
-    private val updateChip = chip(ctx, cl.deco.shelf.R.drawable.ic_q_android).apply {
+    private val updateChip = chip(ctx, cl.deco.shelf.R.drawable.ic_update).apply {
         isFocusable = true; isClickable = true
         setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
         background = noticeBg(ctx)
@@ -250,7 +250,7 @@ class TopBar(
             addView(lowChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
             addView(healthChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
             addView(updateChip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = context.dp(10) })
-            val inPill = pill(cl.deco.shelf.R.drawable.ic_in_hdmi, t("Entradas", "Inputs"), onInputs).also {
+            val inPill = pill(cl.deco.shelf.R.drawable.ic_inputs, t("Entradas", "Inputs"), onInputs).also {
                 inputsLabel = it.findViewWithTag("pill_label")
                 inputsPill = it
             }
@@ -371,7 +371,7 @@ class TopBar(
     private fun nudge(img: ImageView) {
         img.animate().cancel(); img.scaleY = 1f; img.translationY = 0f
         when (img.tag as Int) {
-            cl.deco.shelf.R.drawable.ic_in_hdmi -> img.animate().scaleY(0.72f).setDuration(130).withEndAction {
+            cl.deco.shelf.R.drawable.ic_inputs -> img.animate().scaleY(0.72f).setDuration(130).withEndAction {
                 img.animate().scaleY(1f).setDuration(130).withEndAction {
                     img.animate().scaleY(0.72f).setDuration(130).withEndAction { img.animate().scaleY(1f).setDuration(130) }
                 }

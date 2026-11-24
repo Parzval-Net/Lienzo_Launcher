@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M1,9l2,2c4.97,-4.97 13.03,-4.97 18,0l2,-2C16.93,2.93 7.08,2.93 1,9zM9,17l3,3 3,-3c-1.65,-1.66 -4.34,-1.66 -6,0zM5,13l2,2c2.76,-2.76 7.24,-2.76 10,0l2,-2C15.14,9.14 8.87,9.14 5,13z" />
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Ondas Wi-Fi redondeadas y limpias -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M2.5,9.0 A13.5,13.5 0 0,1 21.5,9.0 M6.0,12.6 A8.5,8.5 0 0,1 18.0,12.6 M9.3,15.9 A4.0,4.0 0 0,1 14.7,15.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,19.1 m-1.25,0 a1.25,1.25 0 1,0 2.5,0 a1.25,1.25 0 1,0 -2.5,0" />
 </vector>
