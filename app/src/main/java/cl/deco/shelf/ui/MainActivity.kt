@@ -418,6 +418,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
         })
+        registerReceiver(screenWakeReceiver, IntentFilter(Intent.ACTION_SCREEN_ON))
         reloadApps()
         // Red: el callback vive solo mientras el home está visible (se retira en onStop)
         if (BuildConfig.FORCE_OFFLINE) { topBar.setOnline(false); topBar.setVpn(false) }
@@ -437,13 +438,18 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         if (!prefs.setupDone) { prefs.setupDone = true; main.postDelayed({ if (started) openWizard() }, 900) }
         updateClockStatus() // alarmas y apagado nocturno ya se reprograman en App.onCreate, BootReceiver y al cambiar ajustes
         artController.onStart(stopAt)
-        topBar.setWifiSsid(getWifiSsid())
         try { tvInputs?.registerCallback(inputsCallback, main) } catch (_: Throwable) {}
-        if (!cl.deco.shelf.service.KeyMap.serviceRunning(this)) homeHdmiWatcher = cl.deco.shelf.service.HdmiWatcher(this).also { it.start() }
-        // Entradas solo si el equipo tiene alguna (TV con HDMI/AV/sintonizador o panel del fabricante); un deco no la muestra
+        // Consultas IPC de Wi-Fi, servicio de botones y entradas fuera del primer cuadro (evita bloqueo en SoC RTD2851M)
         ioData.execute {
+            val ssid = getWifiSsid()
+            val keySvc = cl.deco.shelf.service.KeyMap.serviceRunning(this)
             val has = try { TvInputs.sources(this).isNotEmpty() || TvInputs.systemPanel(this) != null } catch (_: Throwable) { true }
-            main.post { if (started) topBar.setInputsAvailable(has) }
+            main.post {
+                if (!started) return@post
+                topBar.setWifiSsid(ssid)
+                topBar.setInputsAvailable(has)
+                if (!keySvc && homeHdmiWatcher == null) homeHdmiWatcher = cl.deco.shelf.service.HdmiWatcher(this).also { it.start() }
+            }
         }
         main.post(tick)
         scheduleArtMode()
@@ -533,11 +539,21 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         menu.showList(t("Ajustes", "Settings"), opts)
     }
 
+    private val screenWakeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            // Al despertar de STR (Suspend-to-RAM en TCL RTD2851M), el firmware puede soltar KeyService sin reiniciar
+            if (started) ioData.execute { cl.deco.shelf.service.ServiceRepair.repairIfNeeded(applicationContext, ignoreCooldown = true) }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        if (!ready) return
         // Botón de Modo arte con Lienzo al frente: KeyService entrega la acción directo (startActivity pausaría y sacaría del modo arte)
-        if (ready) cl.deco.shelf.service.KeyMap.foreground = { handleRemoteAction(it, 0L) }
-        if (ready) batsOncePerDay()
+        cl.deco.shelf.service.KeyMap.foreground = { handleRemoteAction(it, 0L) }
+        updatePanel.onHostResume()
+        ioData.execute { cl.deco.shelf.service.ServiceRepair.repairIfNeeded(applicationContext) }
+        batsOncePerDay()
     }
 
     /** Halloween: murciélagos sobre el home la primera vez que se abre en el día. */
@@ -568,6 +584,7 @@ class MainActivity : Activity(), AppAdapter.Callbacks, SettingsHost {
         artPolling = false
         netWatcher?.stop()
         runCatching { unregisterReceiver(pkgReceiver) }
+        runCatching { unregisterReceiver(screenWakeReceiver) }
         runCatching { tvInputs?.unregisterCallback(inputsCallback) }
         homeHdmiWatcher?.stop(); homeHdmiWatcher = null
         if (today.visibility == View.VISIBLE) closeToday()

@@ -122,6 +122,9 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".update.UpdateResultReceiver"
+            android:exported="false" />
         <service
             android:name=".clock.AlarmService"
             android:exported="false"

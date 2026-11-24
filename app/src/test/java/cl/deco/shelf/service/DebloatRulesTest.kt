@@ -16,7 +16,12 @@ class DebloatRulesTest {
             "com.android.vending",
             "com.google.android.gms",
             "com.google.android.inputmethod.latin",
+            "com.tcl.tv",
+            "com.tcl.tvinput",
+            "com.tcl.settings",
+            "com.tcl.tcl_bt_rcu_service",
             "com.tcl.tv.input",
+            "com.tcl.bi",
             "com.tcl.messagebox",
             "com.tcl.shopdemo",
             "com.anoki.acr",
@@ -24,7 +29,10 @@ class DebloatRulesTest {
         )
         // Aunque un protegido extra coincida con SAFE_BLOAT, se respeta la protección
         val targets = DebloatRules.filterDebloatTargets(installed, extraProtected = setOf("com.anoki.acr"))
-        assertEquals(listOf("com.tcl.messagebox", "com.tcl.shopdemo"), targets)
+        assertEquals(listOf("com.tcl.bi", "com.tcl.messagebox", "com.tcl.shopdemo"), targets)
+        assertFalse(DebloatRules.KNOWN_STOCK_LAUNCHERS.contains("com.tcl.tv"))
+        assertTrue(DebloatRules.isProtected("com.tcl.tv"))
+        assertTrue(DebloatRules.isProtected("com.tcl.tcl_bt_rcu_service"))
         assertFalse(targets.contains("cl.deco.shelf"))
         assertFalse(targets.contains("com.android.tv.settings"))
         assertFalse(targets.contains("com.netflix.ninja"))

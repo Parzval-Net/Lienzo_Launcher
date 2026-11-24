@@ -34,6 +34,7 @@ class KeyService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        prefs.keyServiceDesired = true
         hdmi = HdmiWatcher(this).also { it.start() }
         gamepad = GamepadPassthrough(this, prefs).also { it.start() }
         prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)

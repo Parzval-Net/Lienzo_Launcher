@@ -14,11 +14,13 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import cl.deco.shelf.service.SelfSetup
 import cl.deco.shelf.ui.PageUi
 import cl.deco.shelf.ui.Theme
 import cl.deco.shelf.ui.Ui
 import cl.deco.shelf.ui.dp
 import cl.deco.shelf.ui.dpf
+import cl.deco.shelf.ui.t
 import cl.deco.shelf.ui.tv
 
 /**
@@ -45,6 +47,9 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
     private var info: UpdateInfo? = null
     private var phase = Phase.INFO
     private var message = ""
+    private var adbStatus = ""
+    private var adbBusy = false
+    private var leftForSettings = false
     private var installer: UpdateInstaller? = null
     // Vistas vivas de la descarga (se actualizan sin reconstruir)
     private var barFill: View? = null
@@ -72,7 +77,7 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
 
     fun open(i: UpdateInfo) {
         release()
-        info = i; phase = Phase.INFO; message = ""
+        info = i; phase = Phase.INFO; message = ""; adbStatus = ""; adbBusy = false; leftForSettings = false
         alpha = 0f
         visibility = VISIBLE
         animate().alpha(1f).setDuration(180).start()
@@ -92,14 +97,26 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
         installer = null
     }
 
-    /** El host volvió a primer plano (p. ej. desde la pantalla de permiso de Android). */
-    fun onHostStart() {
-        if (isOpen && phase == Phase.NEED_PERMISSION) {
-            phase = Phase.INFO
-            message = if (canInstall()) "Permiso concedido. Pulsa Actualizar ahora." else "Falta autorizar la instalación desde Lienzo."
+    /**
+     * El host volvió a primer plano (onStart u onResume: en Android TV `ExternalSourcesActivity` abre como panel lateral
+     * traslúcido y solo dispara onPause/onResume, no onStop/onStart). Si ya tiene permiso, arranca la descarga directo.
+     */
+    fun onHostResume() {
+        if (!isOpen || phase != Phase.NEED_PERMISSION) return
+        if (canInstall()) {
+            leftForSettings = false
+            startUpdate(force = true)
+        } else if (leftForSettings) {
+            leftForSettings = false
+            adbStatus = t(
+                "Android aún reporta el permiso inactivo para Lienzo (algunos Google TV ocultan el launcher actual en esa lista). Puedes autorizarlo abajo con ADB local o descargar igual.",
+                "Android still reports install permission off for Lienzo (some Google TVs hide the active Home app there). Use local ADB below or download anyway.",
+            )
             build()
         }
     }
+
+    fun onHostStart() = onHostResume()
 
     /**
      * BACK: durante la descarga la cancela y vuelve al resumen; en el resumen cierra (devuelve false al host).
@@ -108,52 +125,68 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
     fun back(): Boolean {
         when (phase) {
             Phase.DOWNLOADING, Phase.VERIFYING -> { cancelDownload(); return true }
-            Phase.NEED_PERMISSION, Phase.ERROR -> { phase = Phase.INFO; message = ""; build(); return true }
+            Phase.NEED_PERMISSION, Phase.ERROR -> { phase = Phase.INFO; message = ""; adbStatus = ""; build(); return true }
             else -> return false
         }
     }
 
     // ---- Construcción ----
 
-    private fun label(t: String, size: Float = 14f, color: Int = Ui.TEXT2) = tv(context, size, color).apply { text = t; setLineSpacing(0f, 1.1f) }
+    private fun label(txt: String, size: Float = 14f, color: Int = Ui.TEXT2) = tv(context, size, color).apply { text = txt; setLineSpacing(0f, 1.1f) }
 
-    private fun section(t: String) = tv(context, 13f, Theme.light, "sans-serif-medium").apply { text = t.uppercase(); letterSpacing = 0.08f }
+    private fun section(txt: String) = tv(context, 13f, Theme.light, "sans-serif-medium").apply { text = txt.uppercase(); letterSpacing = 0.08f }
 
     private fun build() {
         val ctx = context
         val i = info ?: return
         body.removeAllViews()
         barFill = null; barRest = null; progressText = null
-        title.text = "Actualizar Lienzo"
+        title.text = t("Actualizar Lienzo", "Update Lienzo")
         val m = LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(8) }
         var first: View? = null
         fun add(v: View, h: Int = ctx.dp(42)) { body.addView(v, LinearLayout.LayoutParams(-1, h)); if (first == null) first = v }
 
         when (phase) {
             Phase.INFO -> {
-                body.addView(infoRow("Versión instalada", installedName()))
-                body.addView(infoRow("Versión nueva", UpdateRules.displayVersion(i.versionName)))
-                body.addView(infoRow("Tamaño", mb(i.apkSize)))
+                body.addView(infoRow(t("Versión instalada", "Installed version"), installedName()))
+                body.addView(infoRow(t("Versión nueva", "New version"), UpdateRules.displayVersion(i.versionName)))
+                body.addView(infoRow(t("Tamaño", "Size"), mb(i.apkSize)))
                 if (i.notes.isNotBlank()) {
-                    body.addView(section("Novedades"), m)
+                    body.addView(section(t("Novedades", "What's new")), m)
                     body.addView(label(i.notes.trim(), 14f, Ui.TEXT), LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(4) })
                 }
-                body.addView(label("Lienzo descarga el APK desde GitHub, verifica su SHA-256 y su firma y recién entonces pide instalarlo. Android siempre te pide confirmar.", 13f),
-                    LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(10) })
+                body.addView(label(t(
+                    "Lienzo descarga el APK desde GitHub, verifica su SHA-256 y su firma y recién entonces pide instalarlo. Android siempre te pide confirmar.",
+                    "Lienzo downloads the APK from GitHub, verifies its SHA-256 and signing certificate, and then opens the Android installer prompt.",
+                ), 13f), LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(10) })
                 if (message.isNotEmpty()) body.addView(label(message, 13f, Ui.TEXT), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(6); leftMargin = ctx.dp(8) })
-                body.addView(section("Acciones"), m)
-                add(action("Actualizar ahora", "") { startUpdate() })
-                add(action("Más tarde", "Oculta el aviso 24 h") { onSnooze() })
+                body.addView(section(t("Acciones", "Actions")), m)
+                add(action(t("Actualizar ahora", "Update now"), "") { startUpdate() })
+                add(action(t("Más tarde", "Later"), t("Oculta el aviso 24 h", "Snoozes notice for 24 h")) { onSnooze() })
             }
             Phase.NEED_PERMISSION -> {
-                body.addView(label("Para instalar la actualización, Android debe permitir a Lienzo instalar apps. Se pide una sola vez.", 15f, Ui.TEXT), m)
-                body.addView(label("En la pantalla que se abre, activa \"Permitir de esta fuente\" para Lienzo y vuelve con el botón Atrás. Si no aparece esa pantalla: Ajustes de Android > Seguridad y restricciones > Instalar apps desconocidas > Lienzo.", 14f),
-                    LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(10) })
-                add(action("Abrir ajustes de instalación", "") { openUnknownSources() }, ctx.dp(48))
-                add(action("Volver", "") { back() }, ctx.dp(48))
+                body.addView(label(t(
+                    "Android requiere autorizar a Lienzo en \"Instalar apps desconocidas\". En algunos televisores Google TV/TCL el launcher activo no aparece en esa lista.",
+                    "Android requires allowing Lienzo under \"Install unknown apps\". Some Google TV/TCL models hide the active launcher from that list.",
+                ), 14f, Ui.TEXT), m)
+                if (adbStatus.isNotEmpty()) {
+                    body.addView(label(adbStatus, 13f, Theme.light), LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(8) })
+                }
+                body.addView(section(t("Opciones", "Options")), m)
+                add(action(
+                    if (adbBusy) t("Autorizando por ADB local...", "Authorizing via local ADB...") else t("Autorizar sin salir (ADB local)", "Authorize via local ADB"),
+                    t("Con depuración por red activa", "Requires network debugging"),
+                ) { authorizeViaLocalAdb() }, ctx.dp(44))
+                add(action(t("Abrir ajustes de instalación", "Open install settings"), t("Permitir de esta fuente", "Allow from this source")) { openUnknownSources() }, ctx.dp(44))
+                add(action(t("Ya lo activé, descargar igual", "Already enabled, download anyway"), t("Verifica firma y abre el instalador", "Verifies signature & opens installer")) { startUpdate(force = true) }, ctx.dp(44))
+                add(action(t("Volver", "Back"), "") { back() }, ctx.dp(44))
             }
             Phase.DOWNLOADING, Phase.VERIFYING -> {
-                body.addView(label(if (phase == Phase.DOWNLOADING) "Descargando ${UpdateRules.displayVersion(i.versionName)}" else "Verificando SHA-256 y firma...", 16f, Ui.TEXT), m)
+                body.addView(label(
+                    if (phase == Phase.DOWNLOADING) t("Descargando ${UpdateRules.displayVersion(i.versionName)}", "Downloading ${UpdateRules.displayVersion(i.versionName)}")
+                    else t("Verificando SHA-256 y firma...", "Verifying SHA-256 and signature..."),
+                    16f, Ui.TEXT,
+                ), m)
                 val fill = View(ctx).apply { background = GradientDrawable().apply { setColor(Theme.accent); cornerRadius = ctx.dpf(4f) } }
                 val rest = View(ctx)
                 barFill = fill; barRest = rest
@@ -164,19 +197,21 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
                 body.addView(bar, LinearLayout.LayoutParams(-1, ctx.dp(8)).apply { topMargin = ctx.dp(12); leftMargin = ctx.dp(8); rightMargin = ctx.dp(8) })
                 val pt = label("", 14f, Ui.TEXT); progressText = pt
                 body.addView(pt, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(8); leftMargin = ctx.dp(8) })
-                add(action("Cancelar", "") { cancelDownload() }, ctx.dp(48))
+                add(action(t("Cancelar", "Cancel"), "") { cancelDownload() }, ctx.dp(48))
                 (body.getChildAt(body.childCount - 1).layoutParams as LinearLayout.LayoutParams).topMargin = ctx.dp(14)
             }
             Phase.AWAITING -> {
-                body.addView(label("Confirma la instalación en la pantalla de Android.", 17f, Ui.TEXT), m)
-                body.addView(label("El APK ya está verificado. Cuando aceptes, Lienzo se reinstala y se reinicia solo. Si cancelas en esa pantalla, no se cambia nada.", 14f),
-                    LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(10) })
-                add(action("Cerrar", "") { onClose() }, ctx.dp(48))
+                body.addView(label(t("Confirma la instalación en la pantalla de Android.", "Confirm installation on the Android prompt."), 17f, Ui.TEXT), m)
+                body.addView(label(t(
+                    "El APK ya está verificado. Cuando aceptes, Lienzo se reinstala y se reinicia solo. Si cancelas en esa pantalla, no se cambia nada.",
+                    "APK verified. Once you confirm, Lienzo updates and restarts automatically. Cancelling leaves everything untouched.",
+                ), 14f), LinearLayout.LayoutParams(-1, -2).apply { leftMargin = ctx.dp(8); topMargin = ctx.dp(10) })
+                add(action(t("Cerrar", "Close"), "") { onClose() }, ctx.dp(48))
             }
             Phase.ERROR -> {
                 body.addView(label(message, 16f, 0xFFFF8A80.toInt()).apply { setLineSpacing(0f, 1.15f) }, m)
-                add(action("Reintentar", "") { startUpdate() }, ctx.dp(48))
-                add(action("Cerrar", "") { onClose() }, ctx.dp(48))
+                add(action(t("Reintentar", "Retry"), "") { startUpdate(force = true) }, ctx.dp(48))
+                add(action(t("Cerrar", "Close"), "") { onClose() }, ctx.dp(48))
             }
         }
         val target = first
@@ -214,34 +249,65 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
 
     private fun mb(b: Long) = if (b > 0) "%.1f MB".format(b / 1048576.0) else "?"
 
-    private fun startUpdate() {
+    private fun startUpdate(force: Boolean = false) {
         val i = info ?: return
-        if (!canInstall()) { phase = Phase.NEED_PERMISSION; build(); return }
-        phase = Phase.DOWNLOADING; message = ""
+        if (!force && !canInstall()) { phase = Phase.NEED_PERMISSION; build(); return }
+        phase = Phase.DOWNLOADING; message = ""; adbStatus = ""
         build()
         release()
         installer = UpdateInstaller(context, this).also { it.start(i) }
     }
 
+    private fun authorizeViaLocalAdb() {
+        if (adbBusy) return
+        adbBusy = true
+        adbStatus = t("Conectando a ADB local...", "Connecting to local ADB...")
+        build()
+        val appCtx = context.applicationContext
+        Thread({
+            val res = SelfSetup.grantInstallPermission(appCtx) {
+                main.post {
+                    if (isOpen) {
+                        adbStatus = t("Acepta \"Permitir depuración por USB\" en la TV", "Accept \"Allow USB debugging\" on TV")
+                        build()
+                    }
+                }
+            }
+            main.post {
+                if (!isOpen) return@post
+                adbBusy = false
+                if (canInstall()) {
+                    startUpdate(force = true)
+                } else {
+                    adbStatus = res
+                    build()
+                }
+            }
+        }, "lienzo-upd-adb").apply { isDaemon = true }.start()
+    }
+
     private fun cancelDownload() {
         installer?.cancel()
         release()
-        phase = Phase.INFO; message = "Descarga cancelada. No se instaló nada."
+        phase = Phase.INFO; message = t("Descarga cancelada. No se instaló nada.", "Download cancelled. Nothing was installed.")
         build()
     }
 
     /** Pantalla pública de "instalar apps desconocidas" de Lienzo; si este firmware no la tiene, ajustes de seguridad o generales. */
     private fun openUnknownSources() {
         val ctx = context
+        leftForSettings = true
         val candidates = listOf(
             Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")),
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES),
             Intent(Settings.ACTION_SECURITY_SETTINGS),
             Intent(Settings.ACTION_SETTINGS),
         )
         for (it in candidates) {
             try { ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Exception) { }
         }
-        Toast.makeText(ctx, "No se pudo abrir los ajustes. Ve a Ajustes de Android > Seguridad y restricciones.", Toast.LENGTH_LONG).show()
+        leftForSettings = false
+        Toast.makeText(ctx, t("No se pudo abrir los ajustes. Usa 'Autorizar sin salir (ADB local)'.", "Could not open Settings. Try 'Authorize via local ADB'."), Toast.LENGTH_LONG).show()
     }
 
     // ---- UpdateInstaller.Listener (siempre en el hilo principal) ----
@@ -252,7 +318,7 @@ class UpdatePanel(ctx: Context) : FrameLayout(ctx), UpdateInstaller.Listener {
         (barFill?.layoutParams as? LinearLayout.LayoutParams)?.weight = f
         (barRest?.layoutParams as? LinearLayout.LayoutParams)?.weight = 1f - f + 0.0001f
         barFill?.requestLayout()
-        progressText?.text = "${mb(done)} de ${mb(total)}" + if (total > 0) " (${(done * 100 / total).toInt()}%)" else ""
+        progressText?.text = "${mb(done)} ${t("de", "of")} ${mb(total)}" + if (total > 0) " (${(done * 100 / total).toInt()}%)" else ""
     }
 
     override fun onVerifying() {

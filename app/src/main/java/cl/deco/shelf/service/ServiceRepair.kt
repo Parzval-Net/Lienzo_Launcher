@@ -17,9 +17,9 @@ object ServiceRepair {
     private const val COOLDOWN_MS = 60_000L
     @Volatile private var lastAttemptMs = -COOLDOWN_MS
 
-    fun repairIfNeeded(ctx: Context) {
+    fun repairIfNeeded(ctx: Context, ignoreCooldown: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastAttemptMs < COOLDOWN_MS) return
+        if (!ignoreCooldown && now - lastAttemptMs < COOLDOWN_MS) return
         val prefs = ShelfPrefs(ctx)
         if (!prefs.keyServiceDesired) return
         if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) return

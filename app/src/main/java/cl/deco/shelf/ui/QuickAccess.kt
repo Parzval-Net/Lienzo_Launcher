@@ -13,18 +13,24 @@ import cl.deco.shelf.R
  * en com.android.tv.settings, por eso llevan componente explícito.
  */
 object QuickAccess {
-    class Item(val label: String, val icon: Int, val candidates: List<Intent>)
+    class Item(private val es: String, private val en: String, val icon: Int, val candidates: List<Intent>) {
+        val label: String get() = t(es, en)
+    }
 
     private val tvs = "com.android.tv.settings"
     private fun comp(cls: String) = Intent().setComponent(ComponentName(tvs, "$tvs$cls"))
 
     val items = listOf(
-        Item("Wi-Fi", R.drawable.ic_q_wifi, listOf(Intent(Settings.ACTION_WIFI_SETTINGS))),
-        Item("Bluetooth", R.drawable.ic_q_bluetooth, listOf(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), comp(".accessories.AddAccessoryActivity"))),
-        Item("Imagen", R.drawable.ic_q_display, listOf(Intent(Settings.ACTION_DISPLAY_SETTINGS), comp(".device.displaysound.DisplaySoundActivity"))),
-        Item("Sonido", R.drawable.ic_q_sound, listOf(Intent("android.settings.SOUND_SETTINGS"), comp(".device.displaysound.DisplaySoundActivity"))),
-        Item("Almacenamiento", R.drawable.ic_q_storage, listOf(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))),
-        Item("Ajustes de Android", R.drawable.ic_q_android, listOf(Intent(Settings.ACTION_SETTINGS))),
+        Item("Wi-Fi", "Wi-Fi", R.drawable.ic_q_wifi, listOf(Intent(Settings.ACTION_WIFI_SETTINGS))),
+        Item("Bluetooth", "Bluetooth", R.drawable.ic_q_bluetooth, listOf(
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+            Intent("com.android.tv.settings.ACCESSORIES_CONNECTED_DEVICES"),
+            comp(".accessories.AddAccessoryActivity"),
+        )),
+        Item("Imagen", "Picture", R.drawable.ic_q_display, listOf(Intent(Settings.ACTION_DISPLAY_SETTINGS), comp(".device.displaysound.DisplaySoundActivity"))),
+        Item("Sonido", "Sound", R.drawable.ic_q_sound, listOf(Intent("android.settings.SOUND_SETTINGS"), comp(".device.displaysound.DisplaySoundActivity"))),
+        Item("Almacenamiento", "Storage", R.drawable.ic_q_storage, listOf(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))),
+        Item("Ajustes de Android", "Android Settings", R.drawable.ic_q_android, listOf(Intent(Settings.ACTION_SETTINGS))),
     )
 
     val storage get() = items[4]

@@ -34,7 +34,8 @@ object SelfSetup {
         adb.shell("pm grant $pkg android.permission.READ_TV_LISTINGS")
         adb.shell("pm grant $pkg android.permission.WRITE_SECURE_SETTINGS")
         adb.shell("appops set $pkg SYSTEM_ALERT_WINDOW allow")
-        adb.shell("appops set $pkg AUTO_START allow")
+        adb.shell("appops set $pkg REQUEST_INSTALL_PACKAGES allow")
+        adb.shell("cmd appops set $pkg REQUEST_INSTALL_PACKAGES allow")
         adb.shell("cmd appops set $pkg APP_AUTO_START allow")
         ShelfPrefs(ctx).keyServiceDesired = true
         val me = ComponentName(ctx, KeyService::class.java).flattenToString()
@@ -124,14 +125,22 @@ object SelfSetup {
         else "Se restauraron $count apps deshabilitadas"
     }
 
-    /** Cierra apps de usuario en segundo plano vía `am force-stop` (sin tocar reproducción activa ni servicios críticos). */
+    /** Autoriza solo la instalación de actualizaciones de Lienzo vía ADB local (para el panel Actualizar sin salir). */
+    fun grantInstallPermission(ctx: Context, onApproval: () -> Unit): String = run(ctx, onApproval) { adb ->
+        val pkg = ctx.packageName
+        adb.shell("appops set $pkg REQUEST_INSTALL_PACKAGES allow")
+        adb.shell("cmd appops set $pkg REQUEST_INSTALL_PACKAGES allow")
+        "Permiso de instalación concedido"
+    }
+
+    /** Cierra apps de usuario o de streaming preinstaladas en segundo plano vía `am force-stop` (sin tocar reproducción activa ni servicios críticos). */
     fun forceStopBackgroundApps(ctx: Context, onApproval: () -> Unit): String = run(ctx, onApproval) { adb ->
         if (MemoryCleaner.playbackActive(ctx)) return@run "Hay reproducción activa. Pausa el contenido antes de cerrar apps."
-        val thirdParty = parsePackageList(adb.shell("pm list packages -3")).toSet()
+        val candidates = parsePackageList(adb.shell("pm list packages -3")).toSet() + DebloatRules.KNOWN_SYSTEM_STREAMING_APPS
         val runningProcs = adb.shell("ps -A -o NAME").lineSequence().map { it.trim().substringBefore(':') }.filter { it.isNotEmpty() }.toSet()
-        val runningThirdParty = thirdParty.filter { it in runningProcs }
+        val runningCandidates = candidates.filter { it in runningProcs }
         val extra = protectedFromDevice(ctx)
-        val targets = DebloatRules.filterForceStopTargets(runningThirdParty, extra)
+        val targets = DebloatRules.filterForceStopTargets(runningCandidates, extra)
         if (targets.isEmpty()) return@run "No hay apps de usuario activas en segundo plano"
         for (p in targets) adb.shell("am force-stop $p")
         "Se cerraron ${targets.size} apps en segundo plano"

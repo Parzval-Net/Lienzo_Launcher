@@ -2,6 +2,12 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.3.1 (2026-11-23)
+- Actualizador integrado: reanudación automática al volver del panel lateral traslúcido de Google TV (`onResume`), botón de autorización directa por ADB local (`REQUEST_INSTALL_PACKAGES`) sin salir del panel, opción de descarga directa y receptor explícito `UpdateResultReceiver` compatible con Android 14+ (`targetSdk` 35) e instaladores OEM.
+- Optimizaciones para TCL Google TV (`Smart TV Pro` / `BeyondTV4` / `RTD2851M`, Android 11): protección explícita de `com.tcl.tv` (Dolby Vision, HDR10+ y entradas HDMI) y `com.tcl.tcl_bt_rcu_service` frente al limpiador de bloatware; ampliación de `SAFE_BLOAT` verificada en TCL C635.
+- Memoria y CMA en TCL Google TV: "Cerrar apps en segundo plano (ADB)" incluye apps de streaming preinstaladas en `/system` (YouTube, Netflix, Prime Video) para liberar RAM y memoria de video CMA sin reiniciar; consultas IPC de arranque movidas fuera del primer cuadro.
+- Resiliencia STR (Suspend-to-RAM) y Bluetooth en TCL: `KeyService` persiste automáticamente su estado deseado y se re-enlaza al despertar la pantalla (`ACTION_SCREEN_ON`); el acceso rápido Bluetooth abre el menú completo de mandos y accesorios (`ACCESSORIES_CONNECTED_DEVICES`).
+
 ## 1.3.0 (2026-11-23)
 - Tamaño del APK (< 950 KB): fondos de Halloween servidos bajo demanda desde el repositorio en GitHub (`raw.githubusercontent.com`) salvo `001.webp` embebido como fallback; blur precalculado guardado en WebP (`lastblur.webp`) + paleta cacheada para evitar doble decodificación 1080p al volver al Home.
 - Rendimiento y memoria: scale-first blur directo en `RGB_565` (elimina el arreglo `dv` de ~1,1 MB), caché de disco LRU (8 MB) para pósters remotos de Top Shelf y tiles `.webp` (`RENDER_REV = 7`).
