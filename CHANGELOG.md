@@ -2,6 +2,11 @@
 
 Formato por versión. El release de GitHub usa la sección de su versión como notas (tools/release.sh).
 
+## 1.3.2 (2026-11-24)
+- Iconografía vectorial modernizada (trazo redondeado estilo tvOS/Lucide): nuevos íconos dedicados para Entradas (`ic_inputs`), reinicio, actualización, apagado programado y categorías de Ajustes, además del rediseño de HDMI/AV/TV, accesos rápidos y reloj/alarma.
+- Menú de Ajustes renovado: tarjeta de vidrio ahumado adaptable a pantalla con barra de desplazamiento y bordes difuminados, secciones agrupadas en sub-tarjetas con divisores finos, interruptores visuales animados para toggles, píldoras estilizadas en selectores, íconos y chevrones `›`, corrección de contraste en barras de almacenamiento (`Row.Bar`) al enfocar, foco translúcido diferenciado en filas informativas y transiciones fluidas de subpágina acotadas al `ScrollView`.
+- Pulido general de interfaz: paleta `Glass` ahumada unificada (incluyendo `UpdatePanel`), micro-escala de foco en píldoras de `TopBar`, degradado inferior de legibilidad y borde especular en tarjetas de `TopShelfView`, pista sutil bajo el dock para descubrir *Todas las apps*, aparición suave de `gridName` y localización ES/EN en `InputsPopup` y `HdmiNotice`.
+
 ## 1.3.1 (2026-11-23)
 - Actualizador integrado: reanudación automática al volver del panel lateral traslúcido de Google TV (`onResume`), botón de autorización directa por ADB local (`REQUEST_INSTALL_PACKAGES`) sin salir del panel, opción de descarga directa y receptor explícito `UpdateResultReceiver` compatible con Android 14+ (`targetSdk` 35) e instaladores OEM.
 - Optimizaciones para TCL Google TV (`Smart TV Pro` / `BeyondTV4` / `RTD2851M`, Android 11): protección explícita de `com.tcl.tv` (Dolby Vision, HDR10+ y entradas HDMI) y `com.tcl.tcl_bt_rcu_service` frente al limpiador de bloatware; ampliación de `SAFE_BLOAT` verificada en TCL C635.
